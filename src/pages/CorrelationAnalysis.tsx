@@ -82,7 +82,7 @@ const CorrelationAnalysis = () => {
               <CardTitle className="text-lg">Significance</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-purple-600">p < 0.01</div>
+              <div className="text-3xl font-bold text-purple-600">p &lt; 0.01</div>
               <p className="text-sm text-gray-600">Statistically significant</p>
             </CardContent>
           </Card>
