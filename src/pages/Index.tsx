@@ -4,29 +4,43 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-
-const mockData = [
-  { date: '2024-01-01', sentiment: 0.6, price: 150, stock: 'AAPL' },
-  { date: '2024-01-02', sentiment: 0.7, price: 155, stock: 'AAPL' },
-  { date: '2024-01-03', sentiment: 0.5, price: 148, stock: 'AAPL' },
-  { date: '2024-01-04', sentiment: 0.8, price: 162, stock: 'AAPL' },
-  { date: '2024-01-05', sentiment: 0.4, price: 145, stock: 'AAPL' },
-];
-
+const mockData = [{
+  date: '2024-01-01',
+  sentiment: 0.6,
+  price: 150,
+  stock: 'AAPL'
+}, {
+  date: '2024-01-02',
+  sentiment: 0.7,
+  price: 155,
+  stock: 'AAPL'
+}, {
+  date: '2024-01-03',
+  sentiment: 0.5,
+  price: 148,
+  stock: 'AAPL'
+}, {
+  date: '2024-01-04',
+  sentiment: 0.8,
+  price: 162,
+  stock: 'AAPL'
+}, {
+  date: '2024-01-05',
+  sentiment: 0.4,
+  price: 145,
+  stock: 'AAPL'
+}];
 const stocks = ['All Stocks', 'AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA', 'META', 'AMZN'];
-
 const Index = () => {
   const [selectedStock, setSelectedStock] = useState('All Stocks');
   const [timeRange, setTimeRange] = useState('7d');
-
-  return (
-    <UserLayout>
+  return <UserLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Stock Market Sentiment Dashboard</h1>
-            <p className="text-gray-600 mt-2">Real-time sentiment analysis for leading technology stocks</p>
+            <p className="text-gray-600 mt-2">Near-real-time sentiment analysis for leading technology stocks</p>
           </div>
           
           <div className="flex gap-4">
@@ -35,11 +49,9 @@ const Index = () => {
                 <SelectValue placeholder="Select stock" />
               </SelectTrigger>
               <SelectContent>
-                {stocks.map((stock) => (
-                  <SelectItem key={stock} value={stock}>
+                {stocks.map(stock => <SelectItem key={stock} value={stock}>
                     {stock}
-                  </SelectItem>
-                ))}
+                  </SelectItem>)}
               </SelectContent>
             </Select>
             
@@ -118,22 +130,8 @@ const Index = () => {
                   <YAxis yAxisId="right" orientation="right" />
                   <Tooltip />
                   <Legend />
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="sentiment" 
-                    stroke="#8884d8" 
-                    strokeWidth={2}
-                    name="Sentiment Score"
-                  />
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="price" 
-                    stroke="#82ca9d" 
-                    strokeWidth={2}
-                    name="Stock Price ($)"
-                  />
+                  <Line yAxisId="left" type="monotone" dataKey="sentiment" stroke="#8884d8" strokeWidth={2} name="Sentiment Score" />
+                  <Line yAxisId="right" type="monotone" dataKey="price" stroke="#82ca9d" strokeWidth={2} name="Stock Price ($)" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -173,8 +171,6 @@ const Index = () => {
           </Card>
         </div>
       </div>
-    </UserLayout>
-  );
+    </UserLayout>;
 };
-
 export default Index;
