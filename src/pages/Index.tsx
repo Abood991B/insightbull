@@ -1,9 +1,12 @@
+
 import UserLayout from "@/components/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
 const mockData = [{
   date: '2024-01-01',
   sentiment: 0.6,
@@ -30,10 +33,38 @@ const mockData = [{
   price: 145,
   stock: 'AAPL'
 }];
+
 const stocks = ['All Stocks', 'AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA', 'META', 'AMZN'];
+
+const timeRanges = [
+  { value: '1h', label: '1 Hour' },
+  { value: '6h', label: '6 Hours' },
+  { value: '12h', label: '12 Hours' },
+  { value: '1d', label: '1 Day' },
+  { value: '3d', label: '3 Days' },
+  { value: '7d', label: '7 Days' },
+  { value: '14d', label: '14 Days' },
+  { value: '30d', label: '30 Days' },
+  { value: '90d', label: '90 Days' }
+];
+
 const Index = () => {
   const [selectedStock, setSelectedStock] = useState('All Stocks');
   const [timeRange, setTimeRange] = useState('7d');
+  const [filteredData, setFilteredData] = useState(mockData);
+  const navigate = useNavigate();
+
+  // Filter data based on time range
+  useEffect(() => {
+    // In a real app, this would filter based on actual dates
+    // For demo purposes, we'll just use the mock data
+    setFilteredData(mockData);
+  }, [timeRange, selectedStock]);
+
+  const handleQuickAction = (route: string) => {
+    navigate(route);
+  };
+
   return <UserLayout>
       <div className="space-y-6">
         {/* Header */}
@@ -60,10 +91,11 @@ const Index = () => {
                 <SelectValue placeholder="Time range" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1d">1 Day</SelectItem>
-                <SelectItem value="7d">7 Days</SelectItem>
-                <SelectItem value="14d">14 Days</SelectItem>
-                <SelectItem value="30d">30 Days</SelectItem>
+                {timeRanges.map(range => (
+                  <SelectItem key={range.value} value={range.value}>
+                    {range.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -107,7 +139,7 @@ const Index = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">12.4K</div>
-              <p className="text-xs text-muted-foreground">Last 24 hours</p>
+              <p className="text-xs text-muted-foreground">Last {timeRanges.find(r => r.value === timeRange)?.label.toLowerCase()}</p>
             </CardContent>
           </Card>
         </div>
@@ -117,13 +149,13 @@ const Index = () => {
           <CardHeader>
             <CardTitle>Sentiment vs Stock Price Trends</CardTitle>
             <CardDescription>
-              Real-time sentiment analysis overlaid with stock price movements for {selectedStock}
+              Real-time sentiment analysis overlaid with stock price movements for {selectedStock} over {timeRanges.find(r => r.value === timeRange)?.label.toLowerCase()}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-96">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={mockData}>
+                <LineChart data={filteredData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis yAxisId="left" />
@@ -140,37 +172,53 @@ const Index = () => {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => handleQuickAction('/analysis')}>
             <CardHeader>
               <CardTitle className="text-lg">Stock Analysis</CardTitle>
               <CardDescription>Deep dive into individual stock performance</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full">Explore Analysis</Button>
+              <Button className="w-full" onClick={(e) => {
+                e.stopPropagation();
+                handleQuickAction('/analysis');
+              }}>
+                Explore Analysis
+              </Button>
             </CardContent>
           </Card>
           
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => handleQuickAction('/correlation')}>
             <CardHeader>
               <CardTitle className="text-lg">Correlation Insights</CardTitle>
               <CardDescription>View dynamic correlation between sentiment and prices</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full">View Correlations</Button>
+              <Button className="w-full" onClick={(e) => {
+                e.stopPropagation();
+                handleQuickAction('/correlation');
+              }}>
+                View Correlations
+              </Button>
             </CardContent>
           </Card>
           
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => handleQuickAction('/trends')}>
             <CardHeader>
               <CardTitle className="text-lg">Trend Analysis</CardTitle>
               <CardDescription>Analyze sentiment trends over time</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full">Analyze Trends</Button>
+              <Button className="w-full" onClick={(e) => {
+                e.stopPropagation();
+                handleQuickAction('/trends');
+              }}>
+                Analyze Trends
+              </Button>
             </CardContent>
           </Card>
         </div>
       </div>
     </UserLayout>;
 };
+
 export default Index;
