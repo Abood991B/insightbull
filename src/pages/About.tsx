@@ -1,10 +1,7 @@
-
 import UserLayout from "@/components/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
 const About = () => {
-  return (
-    <UserLayout>
+  return <UserLayout>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">About This Dashboard</h1>
@@ -17,10 +14,7 @@ const About = () => {
               <CardTitle>What We Do</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p>
-                Our platform analyzes real-time sentiment data from multiple sources including Reddit, 
-                news articles, and social media to provide insights into stock market sentiment.
-              </p>
+              <p>Our platform analyzes near-real-time sentiment data from multiple sources including Reddit, news articles, and social media to provide insights into stock market sentiment.</p>
               <p>
                 We track the top technology stocks including the Magnificent Seven (AAPL, GOOGL, MSFT, 
                 TSLA, NVDA, META, AMZN) and the top 20 IXT stocks.
@@ -98,8 +92,6 @@ const About = () => {
           </CardContent>
         </Card>
       </div>
-    </UserLayout>
-  );
+    </UserLayout>;
 };
-
 export default About;
