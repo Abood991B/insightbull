@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, TrendingDown, DollarSign, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Activity, BarChart3, Search, Clock } from "lucide-react";
+
 const topPositiveStocks = [{
   symbol: 'NVDA',
   sentiment: 0.85,
@@ -178,6 +179,7 @@ const watchlistStocks = [{
   change: '+1.6%',
   sentiment: 0.79
 }];
+
 const Index = () => {
   const navigate = useNavigate();
   const getSentimentColor = (sentiment: number) => {
@@ -190,188 +192,297 @@ const Index = () => {
     if (sentiment >= 0.5) return 'bg-yellow-100 text-yellow-800';
     return 'bg-red-100 text-red-800';
   };
+  
   return <UserLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Stock Market Sentiment Dashboard</h1>
-            <p className="text-gray-600 mt-2">Near-real-time sentiment analysis and market overview</p>
+      <div className="space-y-8">
+        {/* Enhanced Header */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-8 text-white shadow-2xl">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-transparent"></div>
+          <div className="relative z-10">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              <div>
+                <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent">
+                  Stock Market Sentiment Dashboard
+                </h1>
+                <p className="text-blue-100 text-lg leading-relaxed max-w-2xl">
+                  Near-real-time sentiment analysis and comprehensive market overview for technology stocks
+                </p>
+                <div className="flex items-center gap-2 mt-4 text-blue-200">
+                  <Clock className="h-4 w-4" />
+                  <span className="text-sm">Last updated: Live • Data refreshed every 30 seconds</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Badge className="bg-green-500/20 text-green-100 border-green-400/30 px-4 py-2">
+                  <Activity className="h-4 w-4 mr-2" />
+                  20 Active Stocks
+                </Badge>
+                <Badge className="bg-blue-500/20 text-blue-100 border-blue-400/30 px-4 py-2">
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Near-real-time Analytics
+                </Badge>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Stats Cards */}
+        {/* Enhanced Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Average Sentiment</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+          <Card className="bg-gradient-to-br from-green-50 to-emerald-100 border-green-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-green-800">Average Sentiment</CardTitle>
+              <div className="p-2 bg-green-500 rounded-lg">
+                <Activity className="h-4 w-4 text-white" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">0.62</div>
-              <p className="text-xs text-muted-foreground">+12% from yesterday</p>
+              <div className="text-3xl font-bold text-green-700 mb-1">0.62</div>
+              <p className="text-xs text-green-600 flex items-center">
+                <TrendingUp className="h-3 w-3 mr-1" />
+                +12% from yesterday
+              </p>
             </CardContent>
           </Card>
           
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Market Cap</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+          <Card className="bg-gradient-to-br from-blue-50 to-sky-100 border-blue-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-blue-800">Market Cap</CardTitle>
+              <div className="p-2 bg-blue-500 rounded-lg">
+                <DollarSign className="h-4 w-4 text-white" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">$15.2T</div>
-              <p className="text-xs text-muted-foreground">Total watchlist value</p>
+              <div className="text-3xl font-bold text-blue-700 mb-1">$15.2T</div>
+              <p className="text-xs text-blue-600">Total watchlist value</p>
             </CardContent>
           </Card>
           
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Stocks</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          <Card className="bg-gradient-to-br from-purple-50 to-violet-100 border-purple-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-purple-800">Active Stocks</CardTitle>
+              <div className="p-2 bg-purple-500 rounded-lg">
+                <TrendingUp className="h-4 w-4 text-white" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">20</div>
-              <p className="text-xs text-muted-foreground">Top Technology Stocks</p>
+              <div className="text-3xl font-bold text-purple-700 mb-1">20</div>
+              <p className="text-xs text-purple-600">Top Technology Stocks</p>
             </CardContent>
           </Card>
           
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Data Points</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+          <Card className="bg-gradient-to-br from-orange-50 to-amber-100 border-orange-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-orange-800">Data Points</CardTitle>
+              <div className="p-2 bg-orange-500 rounded-lg">
+                <Activity className="h-4 w-4 text-white" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">12.4K</div>
-              <p className="text-xs text-muted-foreground">Last 24 hours</p>
+              <div className="text-3xl font-bold text-orange-700 mb-1">12.4K</div>
+              <p className="text-xs text-orange-600">Last 24 hours</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Top Performers and Stock Lists */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Enhanced Top Performers and Stock Lists */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Top Positive Stocks */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-green-600" />
+          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-green-50">
+            <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
                 Top Positive Sentiment
               </CardTitle>
-              <CardDescription>Stocks with highest positive sentiment</CardDescription>
+              <CardDescription className="text-green-100">
+                Stocks with highest positive sentiment scores
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {topPositiveStocks.map((stock, index) => <div key={stock.symbol} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
+            <CardContent className="p-6">
+              <div className="space-y-4">
+                {topPositiveStocks.map((stock, index) => (
+                  <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-green-100 hover:shadow-md transition-all duration-200 hover:border-green-200">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center justify-center w-8 h-8 bg-green-100 text-green-700 rounded-full text-sm font-bold">
+                        {index + 1}
+                      </div>
                       <div>
-                        <div className="font-semibold">{stock.symbol}</div>
-                        <div className="text-sm text-gray-600">${stock.price}</div>
+                        <div className="font-bold text-gray-900">{stock.symbol}</div>
+                        <div className="text-sm text-gray-600 font-medium">${stock.price}</div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <Badge className={getSentimentBadgeColor(stock.sentiment)}>
+                      <Badge className={`${getSentimentBadgeColor(stock.sentiment)} font-medium`}>
                         {(stock.sentiment * 100).toFixed(0)}%
                       </Badge>
-                      <div className="text-sm text-green-600 mt-1">{stock.change}</div>
+                      <div className="text-sm text-green-600 mt-2 font-medium">{stock.change}</div>
                     </div>
-                  </div>)}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
 
           {/* Top Negative Stocks */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingDown className="h-5 w-5 text-red-600" />
+          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-red-50">
+            <CardHeader className="bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <TrendingDown className="h-5 w-5" />
+                </div>
                 Top Negative Sentiment
               </CardTitle>
-              <CardDescription>Stocks with lowest sentiment scores</CardDescription>
+              <CardDescription className="text-red-100">
+                Stocks with lowest sentiment scores
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {topNegativeStocks.map((stock, index) => <div key={stock.symbol} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
+            <CardContent className="p-6">
+              <div className="space-y-4">
+                {topNegativeStocks.map((stock, index) => (
+                  <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-red-100 hover:shadow-md transition-all duration-200 hover:border-red-200">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center justify-center w-8 h-8 bg-red-100 text-red-700 rounded-full text-sm font-bold">
+                        {index + 1}
+                      </div>
                       <div>
-                        <div className="font-semibold">{stock.symbol}</div>
-                        <div className="text-sm text-gray-600">${stock.price}</div>
+                        <div className="font-bold text-gray-900">{stock.symbol}</div>
+                        <div className="text-sm text-gray-600 font-medium">${stock.price}</div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <Badge className={getSentimentBadgeColor(stock.sentiment)}>
+                      <Badge className={`${getSentimentBadgeColor(stock.sentiment)} font-medium`}>
                         {(stock.sentiment * 100).toFixed(0)}%
                       </Badge>
-                      <div className="text-sm text-red-600 mt-1">{stock.change}</div>
+                      <div className="text-sm text-red-600 mt-2 font-medium">{stock.change}</div>
                     </div>
-                  </div>)}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
 
           {/* Stock Price Live Overview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-blue-600" />
-                Live Stock Prices
+          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-blue-50">
+            <CardHeader className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <DollarSign className="h-5 w-5" />
+                </div>
+                Near-real-time Stock Prices
               </CardTitle>
-              <CardDescription>Real-time price overview (20 stocks)</CardDescription>
+              <CardDescription className="text-blue-100">
+                Live price overview (20 technology stocks)
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {watchlistStocks.map(stock => <div key={stock.symbol} className="flex items-center justify-between p-2 rounded hover:bg-gray-50 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{stock.symbol}</span>
-                      <Badge variant="outline" className={getSentimentColor(stock.sentiment)}>
+            <CardContent className="p-6">
+              <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
+                {watchlistStocks.map(stock => (
+                  <div key={stock.symbol} className="flex items-center justify-between p-3 rounded-lg bg-white border border-blue-100 hover:shadow-sm transition-all duration-200 hover:border-blue-200">
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-gray-900">{stock.symbol}</span>
+                      <Badge variant="outline" className={`${getSentimentColor(stock.sentiment)} border-current`}>
                         {(stock.sentiment * 100).toFixed(0)}%
                       </Badge>
                     </div>
                     <div className="text-right">
-                      <div className="font-medium">${stock.price}</div>
-                      <div className={stock.change.startsWith('+') ? 'text-green-600' : 'text-red-600'}>
+                      <div className="font-bold text-gray-900">${stock.price}</div>
+                      <div className={`text-sm font-medium ${stock.change.startsWith('+') ? 'text-green-600' : 'text-red-600'}`}>
                         {stock.change}
                       </div>
                     </div>
-                  </div>)}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/analysis')}>
-            <CardHeader>
-              <CardTitle className="text-lg">Stock Analysis</CardTitle>
-              <CardDescription>Deep dive into individual stock performance</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full">Explore Analysis</Button>
-            </CardContent>
-          </Card>
+        {/* Enhanced Quick Actions */}
+        <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-8 shadow-lg border border-gray-100">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Analytics & Insights</h2>
+            <p className="text-gray-600">Explore comprehensive market analysis tools</p>
+          </div>
           
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/correlation')}>
-            <CardHeader>
-              <CardTitle className="text-lg">Correlation Insights</CardTitle>
-              <CardDescription>View dynamic correlation between sentiment and prices</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full">View Correlations</Button>
-            </CardContent>
-          </Card>
-          
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/trends')}>
-            <CardHeader>
-              <CardTitle className="text-lg">Trend Analysis</CardTitle>
-              <CardDescription>Analyze sentiment trends over time</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full">Analyze Trends</Button>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-blue-50 border-blue-200" onClick={() => navigate('/analysis')}>
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-3 bg-blue-500 rounded-xl group-hover:bg-blue-600 transition-colors">
+                    <Search className="h-6 w-6 text-white" />
+                  </div>
+                  <CardTitle className="text-xl text-gray-900">Stock Analysis</CardTitle>
+                </div>
+                <CardDescription className="text-gray-600 leading-relaxed">
+                  Deep dive into individual stock performance with comprehensive sentiment metrics
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5">
+                  Explore Analysis
+                </Button>
+              </CardContent>
+            </Card>
+            
+            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-green-50 border-green-200" onClick={() => navigate('/correlation')}>
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-3 bg-green-500 rounded-xl group-hover:bg-green-600 transition-colors">
+                    <BarChart3 className="h-6 w-6 text-white" />
+                  </div>
+                  <CardTitle className="text-xl text-gray-900">Correlation Insights</CardTitle>
+                </div>
+                <CardDescription className="text-gray-600 leading-relaxed">
+                  View dynamic correlation between sentiment and stock prices across markets
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-2.5">
+                  View Correlations
+                </Button>
+              </CardContent>
+            </Card>
+            
+            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-purple-50 border-purple-200" onClick={() => navigate('/trends')}>
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-3 bg-purple-500 rounded-xl group-hover:bg-purple-600 transition-colors">
+                    <Activity className="h-6 w-6 text-white" />
+                  </div>
+                  <CardTitle className="text-xl text-gray-900">Trend Analysis</CardTitle>
+                </div>
+                <CardDescription className="text-gray-600 leading-relaxed">
+                  Analyze sentiment trends over time with advanced temporal analytics
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full bg-purple-500 hover:bg-purple-600 text-white font-medium py-2.5">
+                  Analyze Trends
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
+
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f1f5f9;
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+      `}</style>
     </UserLayout>;
 };
+
 export default Index;
