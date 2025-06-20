@@ -2,7 +2,7 @@
 import UserLayout from "@/components/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const correlationData = [
@@ -15,39 +15,9 @@ const correlationData = [
 
 const stocks = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA', 'META', 'AMZN'];
 
-const timeRanges = [
-  { value: '1h', label: '1 Hour' },
-  { value: '6h', label: '6 Hours' },
-  { value: '12h', label: '12 Hours' },
-  { value: '1d', label: '1 Day' },
-  { value: '3d', label: '3 Days' },
-  { value: '7d', label: '7 Days' },
-  { value: '14d', label: '14 Days' },
-  { value: '30d', label: '30 Days' },
-  { value: '90d', label: '90 Days' }
-];
-
 const CorrelationAnalysis = () => {
   const [selectedStock, setSelectedStock] = useState('AAPL');
   const [timeRange, setTimeRange] = useState('7d');
-  const [correlationStrength, setCorrelationStrength] = useState(0.75);
-
-  // Update correlation strength based on time range
-  useEffect(() => {
-    // Simulate different correlation strengths for different time ranges
-    const correlationMap: Record<string, number> = {
-      '1h': 0.45,
-      '6h': 0.52,
-      '12h': 0.61,
-      '1d': 0.68,
-      '3d': 0.72,
-      '7d': 0.75,
-      '14d': 0.71,
-      '30d': 0.68,
-      '90d': 0.63
-    };
-    setCorrelationStrength(correlationMap[timeRange] || 0.75);
-  }, [timeRange, selectedStock]);
 
   return (
     <UserLayout>
@@ -55,7 +25,7 @@ const CorrelationAnalysis = () => {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Correlation Analysis</h1>
-            <p className="text-gray-600 mt-2">Dynamic correlation between sentiment and stock prices over {timeRanges.find(r => r.value === timeRange)?.label.toLowerCase()}</p>
+            <p className="text-gray-600 mt-2">Dynamic correlation between sentiment and stock prices</p>
           </div>
           
           <div className="flex gap-4">
@@ -77,11 +47,10 @@ const CorrelationAnalysis = () => {
                 <SelectValue placeholder="Time range" />
               </SelectTrigger>
               <SelectContent>
-                {timeRanges.map(range => (
-                  <SelectItem key={range.value} value={range.value}>
-                    {range.label}
-                  </SelectItem>
-                ))}
+                <SelectItem value="1d">1 Day</SelectItem>
+                <SelectItem value="7d">7 Days</SelectItem>
+                <SelectItem value="14d">14 Days</SelectItem>
+                <SelectItem value="30d">30 Days</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -93,12 +62,8 @@ const CorrelationAnalysis = () => {
               <CardTitle className="text-lg">Pearson Correlation</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-blue-600">{correlationStrength.toFixed(2)}</div>
-              <p className="text-sm text-gray-600">
-                {correlationStrength > 0.7 ? 'Strong positive correlation' : 
-                 correlationStrength > 0.5 ? 'Moderate positive correlation' : 
-                 'Weak positive correlation'}
-              </p>
+              <div className="text-3xl font-bold text-blue-600">0.75</div>
+              <p className="text-sm text-gray-600">Strong positive correlation</p>
             </CardContent>
           </Card>
           
@@ -107,7 +72,7 @@ const CorrelationAnalysis = () => {
               <CardTitle className="text-lg">R-Squared</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-600">{(correlationStrength * correlationStrength).toFixed(2)}</div>
+              <div className="text-3xl font-bold text-green-600">0.56</div>
               <p className="text-sm text-gray-600">Variance explained</p>
             </CardContent>
           </Card>
@@ -127,7 +92,7 @@ const CorrelationAnalysis = () => {
           <CardHeader>
             <CardTitle>Correlation Scatter Plot - {selectedStock}</CardTitle>
             <CardDescription>
-              Scatter plot showing the relationship between sentiment scores and stock prices over {timeRanges.find(r => r.value === timeRange)?.label.toLowerCase()}
+              Scatter plot showing the relationship between sentiment scores and stock prices
             </CardDescription>
           </CardHeader>
           <CardContent>
