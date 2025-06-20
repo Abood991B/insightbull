@@ -11,8 +11,28 @@ const WatchlistManager = () => {
   const [newStock, setNewStock] = useState("");
   const { toast } = useToast();
 
-  const magnificentSeven = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA', 'META', 'AMZN'];
-  const topIXT = ['ADBE', 'CRM', 'INTC', 'ORCL', 'IBM', 'CSCO', 'QCOM', 'TXN', 'AVGO', 'AMD'];
+  const currentWatchlist = [
+    { symbol: 'MSFT', name: 'Microsoft Corp' },
+    { symbol: 'NVDA', name: 'NVIDIA Corp' },
+    { symbol: 'AAPL', name: 'Apple Inc.' },
+    { symbol: 'AVGO', name: 'Broadcom Inc.' },
+    { symbol: 'ORCL', name: 'Oracle Corp.' },
+    { symbol: 'PLTR', name: 'Palantir Technologies Inc.' },
+    { symbol: 'IBM', name: 'International Business Machines' },
+    { symbol: 'CSCO', name: 'Cisco Systems Inc.' },
+    { symbol: 'CRM', name: 'Salesforce Inc.' },
+    { symbol: 'INTU', name: 'Intuit Inc.' },
+    { symbol: 'NOW', name: 'ServiceNow Inc.' },
+    { symbol: 'AMD', name: 'Advanced Micro Devices Inc.' },
+    { symbol: 'ACN', name: 'Accenture PLC' },
+    { symbol: 'TXN', name: 'Texas Instruments Inc.' },
+    { symbol: 'QCOM', name: 'Qualcomm Inc.' },
+    { symbol: 'ADBE', name: 'Adobe Inc.' },
+    { symbol: 'AMAT', name: 'Applied Materials Inc.' },
+    { symbol: 'PANW', name: 'Palo Alto Networks Inc.' },
+    { symbol: 'MU', name: 'Micron Technology Inc.' },
+    { symbol: 'CRWD', name: 'CrowdStrike Holdings Inc.' }
+  ];
 
   const handleAddStock = () => {
     if (newStock.trim()) {
@@ -57,55 +77,35 @@ const WatchlistManager = () => {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Magnificent Seven</CardTitle>
-              <CardDescription>The seven largest tech companies by market cap</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {magnificentSeven.map((stock) => (
-                  <div key={stock} className="flex items-center gap-2">
-                    <Badge variant="outline">{stock}</Badge>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemoveStock(stock)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      ×
-                    </Button>
+        <Card>
+          <CardHeader>
+            <CardTitle>Current Watchlist (20 Stocks)</CardTitle>
+            <CardDescription>Technology stocks currently being monitored</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {currentWatchlist.map((stock, index) => (
+                <div key={stock.symbol} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
+                    <div>
+                      <Badge variant="outline" className="font-medium">{stock.symbol}</Badge>
+                      <p className="text-xs text-gray-600 mt-1">{stock.name}</p>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Top 20 IXT Stocks</CardTitle>
-              <CardDescription>Additional technology stocks being monitored</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {topIXT.map((stock) => (
-                  <div key={stock} className="flex items-center gap-2">
-                    <Badge variant="outline">{stock}</Badge>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemoveStock(stock)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      ×
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveStock(stock.symbol)}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    ×
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
@@ -115,15 +115,15 @@ const WatchlistManager = () => {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600">27</div>
+                <div className="text-3xl font-bold text-blue-600">20</div>
                 <p className="text-sm text-gray-600">Total Stocks</p>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">25</div>
+                <div className="text-3xl font-bold text-green-600">20</div>
                 <p className="text-sm text-gray-600">Active</p>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-yellow-600">2</div>
+                <div className="text-3xl font-bold text-yellow-600">0</div>
                 <p className="text-sm text-gray-600">Issues</p>
               </div>
             </div>

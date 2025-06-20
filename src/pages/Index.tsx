@@ -2,7 +2,6 @@
 import UserLayout from "@/components/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -10,9 +9,9 @@ import { TrendingUp, TrendingDown, DollarSign, Activity } from "lucide-react";
 
 const topPositiveStocks = [
   { symbol: 'NVDA', sentiment: 0.85, change: '+2.4%', price: 875.28 },
-  { symbol: 'TSLA', sentiment: 0.82, change: '+1.8%', price: 248.42 },
-  { symbol: 'GOOGL', sentiment: 0.78, change: '+1.2%', price: 165.87 },
-  { symbol: 'META', sentiment: 0.75, change: '+0.9%', price: 501.23 },
+  { symbol: 'PLTR', sentiment: 0.82, change: '+1.8%', price: 248.42 },
+  { symbol: 'AAPL', sentiment: 0.78, change: '+1.2%', price: 192.53 },
+  { symbol: 'AVGO', sentiment: 0.75, change: '+0.9%', price: 1650.34 },
   { symbol: 'MSFT', sentiment: 0.72, change: '+0.7%', price: 420.45 }
 ];
 
@@ -25,32 +24,29 @@ const topNegativeStocks = [
 ];
 
 const watchlistStocks = [
-  // Magnificent Seven
-  { symbol: 'AAPL', price: 192.53, change: '+0.5%', sentiment: 0.68 },
-  { symbol: 'GOOGL', price: 165.87, change: '+1.2%', sentiment: 0.78 },
-  { symbol: 'MSFT', price: 420.45, change: '+0.7%', sentiment: 0.72 },
-  { symbol: 'TSLA', price: 248.42, change: '+1.8%', sentiment: 0.82 },
-  { symbol: 'NVDA', price: 875.28, change: '+2.4%', sentiment: 0.85 },
-  { symbol: 'META', price: 501.23, change: '+0.9%', sentiment: 0.75 },
-  { symbol: 'AMZN', price: 151.94, change: '+0.3%', sentiment: 0.65 },
-  // Top IXT
-  { symbol: 'ADBE', price: 556.78, change: '+0.8%', sentiment: 0.62 },
-  { symbol: 'CRM', price: 267.89, change: '+1.1%', sentiment: 0.70 },
-  { symbol: 'INTC', price: 23.45, change: '-2.1%', sentiment: 0.25 },
-  { symbol: 'ORCL', price: 175.34, change: '-0.8%', sentiment: 0.42 },
-  { symbol: 'IBM', price: 182.76, change: '-1.8%', sentiment: 0.32 },
-  { symbol: 'CSCO', price: 56.12, change: '-1.2%', sentiment: 0.38 },
-  { symbol: 'QCOM', price: 157.23, change: '+0.4%', sentiment: 0.58 },
-  { symbol: 'TXN', price: 196.87, change: '-0.5%', sentiment: 0.45 },
-  { symbol: 'AVGO', price: 1650.34, change: '+1.5%', sentiment: 0.73 },
-  { symbol: 'AMD', price: 140.67, change: '+0.9%', sentiment: 0.64 }
+  { symbol: 'MSFT', name: 'Microsoft Corp', price: 420.45, change: '+0.7%', sentiment: 0.72 },
+  { symbol: 'NVDA', name: 'NVIDIA Corp', price: 875.28, change: '+2.4%', sentiment: 0.85 },
+  { symbol: 'AAPL', name: 'Apple Inc.', price: 192.53, change: '+0.5%', sentiment: 0.68 },
+  { symbol: 'AVGO', name: 'Broadcom Inc.', price: 1650.34, change: '+1.5%', sentiment: 0.73 },
+  { symbol: 'ORCL', name: 'Oracle Corp.', price: 175.34, change: '-0.8%', sentiment: 0.42 },
+  { symbol: 'PLTR', name: 'Palantir Technologies Inc.', price: 248.42, change: '+1.8%', sentiment: 0.82 },
+  { symbol: 'IBM', name: 'International Business Machines', price: 182.76, change: '-1.8%', sentiment: 0.32 },
+  { symbol: 'CSCO', name: 'Cisco Systems Inc.', price: 56.12, change: '-1.2%', sentiment: 0.38 },
+  { symbol: 'CRM', name: 'Salesforce Inc.', price: 267.89, change: '+1.1%', sentiment: 0.70 },
+  { symbol: 'INTU', name: 'Intuit Inc.', price: 556.78, change: '+0.8%', sentiment: 0.62 },
+  { symbol: 'NOW', name: 'ServiceNow Inc.', price: 789.45, change: '+1.3%', sentiment: 0.76 },
+  { symbol: 'AMD', name: 'Advanced Micro Devices Inc.', price: 140.67, change: '+0.9%', sentiment: 0.64 },
+  { symbol: 'ACN', name: 'Accenture PLC', price: 345.23, change: '+0.6%', sentiment: 0.59 },
+  { symbol: 'TXN', name: 'Texas Instruments Inc.', price: 196.87, change: '-0.5%', sentiment: 0.45 },
+  { symbol: 'QCOM', name: 'Qualcomm Inc.', price: 157.23, change: '+0.4%', sentiment: 0.58 },
+  { symbol: 'ADBE', name: 'Adobe Inc.', price: 556.78, change: '+0.8%', sentiment: 0.62 },
+  { symbol: 'AMAT', name: 'Applied Materials Inc.', price: 189.34, change: '+0.2%', sentiment: 0.55 },
+  { symbol: 'PANW', name: 'Palo Alto Networks Inc.', price: 345.67, change: '+1.4%', sentiment: 0.74 },
+  { symbol: 'MU', name: 'Micron Technology Inc.', price: 98.45, change: '-0.3%', sentiment: 0.48 },
+  { symbol: 'CRWD', name: 'CrowdStrike Holdings Inc.', price: 278.90, change: '+1.6%', sentiment: 0.79 }
 ];
 
-const timeRanges = ['1h', '4h', '1d', '7d', '14d', '30d', '60d', '90d', '180d'];
-
 const Index = () => {
-  const [selectedStock, setSelectedStock] = useState('All Stocks');
-  const [timeRange, setTimeRange] = useState('7d');
   const navigate = useNavigate();
 
   const getSentimentColor = (sentiment: number) => {
@@ -74,21 +70,6 @@ const Index = () => {
             <h1 className="text-3xl font-bold text-gray-900">Stock Market Sentiment Dashboard</h1>
             <p className="text-gray-600 mt-2">Real-time sentiment analysis and market overview</p>
           </div>
-          
-          <div className="flex gap-4">
-            <Select value={timeRange} onValueChange={setTimeRange}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Time range" />
-              </SelectTrigger>
-              <SelectContent>
-                {timeRanges.map((range) => (
-                  <SelectItem key={range} value={range}>
-                    {range.toUpperCase()}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
         </div>
 
         {/* Stats Cards */}
@@ -110,7 +91,7 @@ const Index = () => {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">$12.4T</div>
+              <div className="text-2xl font-bold text-blue-600">$15.2T</div>
               <p className="text-xs text-muted-foreground">Total watchlist value</p>
             </CardContent>
           </Card>
@@ -121,8 +102,8 @@ const Index = () => {
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">17</div>
-              <p className="text-xs text-muted-foreground">Magnificent 7 + Top 10 IXT</p>
+              <div className="text-2xl font-bold">20</div>
+              <p className="text-xs text-muted-foreground">Top Technology Stocks</p>
             </CardContent>
           </Card>
           
@@ -211,7 +192,7 @@ const Index = () => {
                 <DollarSign className="h-5 w-5 text-blue-600" />
                 Live Stock Prices
               </CardTitle>
-              <CardDescription>Real-time price overview</CardDescription>
+              <CardDescription>Real-time price overview (20 stocks)</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-64 overflow-y-auto">

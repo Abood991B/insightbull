@@ -13,10 +13,10 @@ const mockData = [
   { date: '2024-01-05', sentiment: 0.4, price: 145 },
 ];
 
-const stocks = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA', 'META', 'AMZN'];
+const stocks = ['MSFT', 'NVDA', 'AAPL', 'AVGO', 'ORCL', 'PLTR', 'IBM', 'CSCO', 'CRM', 'INTU', 'NOW', 'AMD', 'ACN', 'TXN', 'QCOM', 'ADBE', 'AMAT', 'PANW', 'MU', 'CRWD'];
 
 const SentimentVsPrice = () => {
-  const [selectedStock, setSelectedStock] = useState('AAPL');
+  const [selectedStock, setSelectedStock] = useState('MSFT');
   const [timeRange, setTimeRange] = useState('7d');
 
   return (
@@ -50,7 +50,6 @@ const SentimentVsPrice = () => {
                 <SelectItem value="1d">1 Day</SelectItem>
                 <SelectItem value="7d">7 Days</SelectItem>
                 <SelectItem value="14d">14 Days</SelectItem>
-                <SelectItem value="30d">30 Days</SelectItem>
               </SelectContent>
             </Select>
           </div>

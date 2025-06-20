@@ -3,7 +3,7 @@ import UserLayout from "@/components/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const trendData = [
   { date: '2024-01-01', positive: 45, neutral: 35, negative: 20 },
@@ -13,7 +13,7 @@ const trendData = [
   { date: '2024-01-05', positive: 35, neutral: 45, negative: 20 },
 ];
 
-const stocks = ['All Stocks', 'AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA', 'META', 'AMZN'];
+const stocks = ['All Stocks', 'MSFT', 'NVDA', 'AAPL', 'AVGO', 'ORCL', 'PLTR', 'IBM', 'CSCO', 'CRM', 'INTU', 'NOW', 'AMD', 'ACN', 'TXN', 'QCOM', 'ADBE', 'AMAT', 'PANW', 'MU', 'CRWD'];
 
 const SentimentTrends = () => {
   const [selectedStock, setSelectedStock] = useState('All Stocks');
@@ -50,7 +50,6 @@ const SentimentTrends = () => {
                 <SelectItem value="1d">1 Day</SelectItem>
                 <SelectItem value="7d">7 Days</SelectItem>
                 <SelectItem value="14d">14 Days</SelectItem>
-                <SelectItem value="30d">30 Days</SelectItem>
               </SelectContent>
             </Select>
           </div>
