@@ -95,16 +95,6 @@ const UserLayout = ({ children }: UserLayoutProps) => {
             );
           })}
         </nav>
-
-        {/* Footer */}
-        {isSidebarOpen && (
-          <div className="absolute bottom-4 left-4 right-4">
-            <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-3 border">
-              <p className="text-xs text-gray-600 font-medium">Real-time Data</p>
-              <p className="text-xs text-gray-500">Last updated: Live</p>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main Content */}
