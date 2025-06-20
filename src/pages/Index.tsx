@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TrendingUp, TrendingDown, DollarSign, Activity, BarChart3, Search, Clock } from "lucide-react";
-
 const topPositiveStocks = [{
   symbol: 'NVDA',
   sentiment: 0.85,
@@ -179,7 +178,6 @@ const watchlistStocks = [{
   change: '+1.6%',
   sentiment: 0.79
 }];
-
 const Index = () => {
   const navigate = useNavigate();
   const getSentimentColor = (sentiment: number) => {
@@ -192,7 +190,6 @@ const Index = () => {
     if (sentiment >= 0.5) return 'bg-yellow-100 text-yellow-800';
     return 'bg-red-100 text-red-800';
   };
-  
   return <UserLayout>
       <div className="space-y-8">
         {/* Enhanced Header */}
@@ -209,7 +206,7 @@ const Index = () => {
                 </p>
                 <div className="flex items-center gap-2 mt-4 text-blue-200">
                   <Clock className="h-4 w-4" />
-                  <span className="text-sm">Last updated: Live • Data refreshed every 30 seconds</span>
+                  <span className="text-sm">Last updated: Live • Data refreshed 2 hours Ago</span>
                 </div>
               </div>
               <div className="flex flex-wrap gap-3">
@@ -301,8 +298,7 @@ const Index = () => {
             </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-4">
-                {topPositiveStocks.map((stock, index) => (
-                  <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-green-100 hover:shadow-md transition-all duration-200 hover:border-green-200">
+                {topPositiveStocks.map((stock, index) => <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-green-100 hover:shadow-md transition-all duration-200 hover:border-green-200">
                     <div className="flex items-center gap-4">
                       <div className="flex items-center justify-center w-8 h-8 bg-green-100 text-green-700 rounded-full text-sm font-bold">
                         {index + 1}
@@ -318,8 +314,7 @@ const Index = () => {
                       </Badge>
                       <div className="text-sm text-green-600 mt-2 font-medium">{stock.change}</div>
                     </div>
-                  </div>
-                ))}
+                  </div>)}
               </div>
             </CardContent>
           </Card>
@@ -339,8 +334,7 @@ const Index = () => {
             </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-4">
-                {topNegativeStocks.map((stock, index) => (
-                  <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-red-100 hover:shadow-md transition-all duration-200 hover:border-red-200">
+                {topNegativeStocks.map((stock, index) => <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-red-100 hover:shadow-md transition-all duration-200 hover:border-red-200">
                     <div className="flex items-center gap-4">
                       <div className="flex items-center justify-center w-8 h-8 bg-red-100 text-red-700 rounded-full text-sm font-bold">
                         {index + 1}
@@ -356,8 +350,7 @@ const Index = () => {
                       </Badge>
                       <div className="text-sm text-red-600 mt-2 font-medium">{stock.change}</div>
                     </div>
-                  </div>
-                ))}
+                  </div>)}
               </div>
             </CardContent>
           </Card>
@@ -377,8 +370,7 @@ const Index = () => {
             </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
-                {watchlistStocks.map(stock => (
-                  <div key={stock.symbol} className="flex items-center justify-between p-3 rounded-lg bg-white border border-blue-100 hover:shadow-sm transition-all duration-200 hover:border-blue-200">
+                {watchlistStocks.map(stock => <div key={stock.symbol} className="flex items-center justify-between p-3 rounded-lg bg-white border border-blue-100 hover:shadow-sm transition-all duration-200 hover:border-blue-200">
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-gray-900">{stock.symbol}</span>
                       <Badge variant="outline" className={`${getSentimentColor(stock.sentiment)} border-current`}>
@@ -391,8 +383,7 @@ const Index = () => {
                         {stock.change}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  </div>)}
               </div>
             </CardContent>
           </Card>
@@ -484,5 +475,4 @@ const Index = () => {
       `}</style>
     </UserLayout>;
 };
-
 export default Index;
