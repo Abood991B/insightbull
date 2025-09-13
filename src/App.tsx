@@ -1,23 +1,27 @@
 
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/shared/components/ui/toaster";
+import { Toaster as Sonner } from "@/shared/components/ui/sonner";
+import { TooltipProvider } from "@/shared/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
-import StockAnalysis from "./pages/StockAnalysis";
-import SentimentVsPrice from "./pages/SentimentVsPrice";
-import CorrelationAnalysis from "./pages/CorrelationAnalysis";
-import SentimentTrends from "./pages/SentimentTrends";
-import About from "./pages/About";
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import ModelAccuracy from "./pages/admin/ModelAccuracy";
-import ApiConfig from "./pages/admin/ApiConfig";
-import WatchlistManager from "./pages/admin/WatchlistManager";
-import StorageSettings from "./pages/admin/StorageSettings";
-import SystemLogs from "./pages/admin/SystemLogs";
-import AdminLogin from "./pages/admin/AdminLogin";
-import NotFound from "./pages/NotFound";
+
+// Feature imports
+import { Index, About, NotFound } from "@/features/dashboard";
+import { 
+  StockAnalysis, 
+  SentimentVsPrice, 
+  CorrelationAnalysis, 
+  SentimentTrends 
+} from "@/features/analysis";
+import { 
+  AdminDashboard, 
+  AdminLogin,
+  ModelAccuracy, 
+  ApiConfig, 
+  WatchlistManager, 
+  StorageSettings, 
+  SystemLogs 
+} from "@/features/admin";
 
 const queryClient = new QueryClient();
 
