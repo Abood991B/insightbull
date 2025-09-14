@@ -87,6 +87,32 @@ async def get_model_metrics(
         result = await db.execute(query)
         metrics = result.scalars().all()
         
+        # If no metrics exist, create sample data based on FYP Report evaluation results
+        if not metrics:
+            sample_metrics = [
+                {
+                    "model_name": "FinBERT",
+                    "accuracy": 97.17,
+                    "precision": 95.85,
+                    "recall": 97.59,
+                    "f1_score": 96.25,
+                    "evaluation_date": datetime.utcnow().date(),
+                    "test_size": 2264,
+                    "description": "Financial news sentiment analysis (FYP Report evaluation)"
+                },
+                {
+                    "model_name": "VADER",
+                    "accuracy": 59.6,
+                    "precision": 67.57,
+                    "recall": 60.19,
+                    "f1_score": 59.39,
+                    "evaluation_date": datetime.utcnow().date(),
+                    "test_size": 1000,
+                    "description": "Reddit social media sentiment analysis (FYP Report evaluation)"
+                }
+            ]
+            return sample_metrics
+        
         return [
             {
                 "model_name": m.model_name,

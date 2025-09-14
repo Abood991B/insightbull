@@ -1,5 +1,6 @@
 """
 Main FastAPI application entry point
+Enhanced with rate limiting and comprehensive logging
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,7 @@ from app.api import api_router
 from app.core.database import init_db
 from app.core.websocket import sio_app
 from app.core.logging import setup_logging
+from app.core.rate_limiter import get_rate_limiter, RateLimitMiddleware
 
 # Setup logging
 setup_logging()
@@ -27,6 +29,10 @@ async def lifespan(app: FastAPI):
     
     # Initialize database
     await init_db()
+    
+    # Initialize rate limiter
+    rate_limiter = await get_rate_limiter()
+    logger.info("Rate limiter initialized")
     
     # Start background tasks
     from app.core.scheduler import start_scheduler
@@ -59,6 +65,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add rate limiting middleware
+@app.middleware("http")
+async def rate_limit_middleware(request, call_next):
+    """Apply rate limiting to all requests"""
+    rate_limiter = await get_rate_limiter()
+    middleware = RateLimitMiddleware(rate_limiter)
+    return await middleware(request, call_next)
+
 # Include API router
 app.include_router(api_router, prefix=settings.API_PREFIX)
 
@@ -71,7 +85,12 @@ if settings.WEBSOCKET_ENABLED:
 async def health_check():
     return {
         "status": "healthy",
-        "version": settings.APP_VERSION
+        "version": settings.APP_VERSION,
+        "features": {
+            "rate_limiting": True,
+            "websockets": settings.WEBSOCKET_ENABLED,
+            "pipeline_logging": True
+        }
     }
 
 

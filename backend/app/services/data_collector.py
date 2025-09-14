@@ -1,5 +1,6 @@
 """
 Data collection service for fetching data from external APIs
+Enhanced with rate limiting as per SY-FR6 functional requirement
 """
 import asyncio
 import logging
@@ -12,17 +13,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.models import Stock, SentimentData, PriceData, ApiConfig, SystemLog
+from app.core.rate_limiter import external_rate_limiter
 from config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class DataCollector:
-    """Service for collecting data from various sources"""
+    """
+    Service for collecting data from various sources
+    Implements rate limiting and error handling per FYP requirements
+    """
     
     def __init__(self):
         self.session = None
         self.api_configs = {}
+        self.rate_limiter = external_rate_limiter
         
     async def __aenter__(self):
         self.session = AsyncSessionLocal()
