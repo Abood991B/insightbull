@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/shared/components/ui/button";
+import { Badge } from "@/shared/components/ui/badge";
 import { 
   LayoutDashboard, 
   Settings, 
@@ -10,8 +11,12 @@ import {
   Users, 
   ChevronLeft, 
   ChevronRight,
-  LogOut
+  LogOut,
+  Shield,
+  Clock
 } from "lucide-react";
+import { authService } from "@/features/admin/services/auth.service";
+import { useToast } from "@/shared/hooks/use-toast";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -19,12 +24,54 @@ interface AdminLayoutProps {
 
 const AdminLayout = ({ children }: AdminLayoutProps) => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [session, setSession] = useState<any>(null);
+  const [timeRemaining, setTimeRemaining] = useState<string>("");
+
+  useEffect(() => {
+    // Update session info
+    const updateSession = () => {
+      const currentSession = authService.getSession();
+      setSession(currentSession);
+      
+      if (currentSession) {
+        // Calculate time remaining
+        const remaining = currentSession.expiresAt - Date.now();
+        const minutes = Math.floor(remaining / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+        setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+        
+        // Warn when session is about to expire
+        if (remaining < 300000 && remaining > 295000) { // 5 minutes warning
+          toast({
+            title: "Session Expiring Soon",
+            description: "Your session will expire in 5 minutes. Please save your work.",
+          });
+        }
+      }
+    };
+
+    updateSession();
+    const interval = setInterval(updateSession, 1000);
+    
+    return () => clearInterval(interval);
+  }, [toast]);
+
+  const handleLogout = () => {
+    authService.logout();
+    toast({
+      title: "Logged Out",
+      description: "You have been securely logged out.",
+    });
+    navigate('/admin');
+  };
   
   const navigation = [
     {
       name: "Dashboard",
-      href: "/admin",
+      href: "/admin/dashboard",
       icon: LayoutDashboard
     },
     {
@@ -97,14 +144,30 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t">
-          <Link
-            to="/"
-            className="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+        <div className="p-4 border-t space-y-2">
+          {session && isSidebarOpen && (
+            <div className="px-3 py-2 space-y-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Shield className="h-4 w-4 text-green-600" />
+                  <span className="text-xs font-medium">Secure Session</span>
+                </div>
+                <Badge variant="outline" className="text-xs">
+                  <Clock className="h-3 w-3 mr-1" />
+                  {timeRemaining}
+                </Badge>
+              </div>
+              <p className="text-xs text-gray-500 truncate">{session?.user?.email}</p>
+            </div>
+          )}
+          <Button
+            onClick={handleLogout}
+            variant="outline"
+            className="w-full justify-start text-red-600 hover:bg-red-50 hover:text-red-700"
           >
             <LogOut className="h-5 w-5 mr-3 flex-shrink-0" />
-            {isSidebarOpen && <span>Back to Dashboard</span>}
-          </Link>
+            {isSidebarOpen && <span>Secure Logout</span>}
+          </Button>
         </div>
       </div>
 
@@ -117,9 +180,17 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
               Admin Dashboard
             </h2>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500">
-                Welcome, Administrator
-              </span>
+              {session && (
+                <div className="flex items-center space-x-3">
+                  <Badge variant="outline" className="text-xs">
+                    <Shield className="h-3 w-3 mr-1 text-green-600" />
+                    2FA Verified
+                  </Badge>
+                  <span className="text-sm text-gray-500">
+                    {session.user?.name || session.user?.email}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </header>
