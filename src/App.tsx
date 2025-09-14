@@ -22,6 +22,8 @@ import {
   StorageSettings, 
   SystemLogs 
 } from "@/features/admin";
+import OAuth2AdminAuth from "@/features/admin/components/OAuth2AdminAuth";
+import AdminProtectedRoute from "@/features/admin/components/AdminProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -41,13 +43,38 @@ const App = () => (
           <Route path="/about" element={<About />} />
           
           {/* Admin Routes */}
-          <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/model-accuracy" element={<ModelAccuracy />} />
-          <Route path="/admin/api-config" element={<ApiConfig />} />
-          <Route path="/admin/watchlist" element={<WatchlistManager />} />
-          <Route path="/admin/storage" element={<StorageSettings />} />
-          <Route path="/admin/logs" element={<SystemLogs />} />
+          <Route path="/admin" element={<OAuth2AdminAuth />} />
+          <Route path="/admin/auth/callback" element={<OAuth2AdminAuth />} />
+          <Route path="/admin/dashboard" element={
+            <AdminProtectedRoute>
+              <AdminDashboard />
+            </AdminProtectedRoute>
+          } />
+          <Route path="/admin/model-accuracy" element={
+            <AdminProtectedRoute>
+              <ModelAccuracy />
+            </AdminProtectedRoute>
+          } />
+          <Route path="/admin/api-config" element={
+            <AdminProtectedRoute>
+              <ApiConfig />
+            </AdminProtectedRoute>
+          } />
+          <Route path="/admin/watchlist" element={
+            <AdminProtectedRoute>
+              <WatchlistManager />
+            </AdminProtectedRoute>
+          } />
+          <Route path="/admin/storage" element={
+            <AdminProtectedRoute>
+              <StorageSettings />
+            </AdminProtectedRoute>
+          } />
+          <Route path="/admin/logs" element={
+            <AdminProtectedRoute>
+              <SystemLogs />
+            </AdminProtectedRoute>
+          } />
           
           <Route path="*" element={<NotFound />} />
         </Routes>

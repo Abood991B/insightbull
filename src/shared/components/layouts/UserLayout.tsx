@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/shared/components/ui/button";
-import { LayoutDashboard, Search, TrendingUp, BarChart3, Activity, Info, ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import { LayoutDashboard, Search, TrendingUp, BarChart3, Activity, Info, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface UserLayoutProps {
   children: React.ReactNode;
@@ -96,22 +96,6 @@ const UserLayout = ({ children }: UserLayoutProps) => {
           })}
         </nav>
 
-        {/* Temporary Admin Access */}
-        {isSidebarOpen && (
-          <div className="absolute bottom-4 left-4 right-4">
-            <div className="border-t border-gray-200 pt-4">
-              <Link to="/admin">
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-                >
-                  <Settings className="h-4 w-4 mr-3" />
-                  <span className="font-medium">Admin Panel</span>
-                </Button>
-              </Link>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main Content */}
