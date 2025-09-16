@@ -17,10 +17,10 @@ class Settings(BaseSettings):
     """All application settings in one class."""
     
     # Database Configuration
-    database_url: str = "sqlite+aiosqlite:///./insight_stock_db.sqlite"
+    database_url: str = "sqlite+aiosqlite:///./data/insight_stock.db"
     database_host: str = "localhost"
     database_port: int = 5432
-    database_name: str = "insight_stock_db"
+    database_name: str = "insight_stock.db"
     database_user: str = ""
     database_password: str = ""
     

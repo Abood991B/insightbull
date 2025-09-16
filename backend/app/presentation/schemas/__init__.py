@@ -1,5 +1,54 @@
-"""Schemas package for presentation layer."""
+"""
+Presentation Schemas
 
-from .dashboard_schemas import DashboardResponse, SentimentOverview, StockData, SentimentTrend, NewsSummary
+Centralized imports for all API response schemas.
+"""
 
-__all__ = ["DashboardResponse", "SentimentOverview", "StockData", "SentimentTrend", "NewsSummary"]
+from .dashboard import (
+    DashboardSummary,
+    MarketSentimentOverview,
+    StockSummary,
+    SystemStatus
+)
+
+from .stock import (
+    StockDetail,
+    StockList,
+    StockListItem,
+    StockMetrics,
+    PriceDataPoint,
+    SentimentDataPoint
+)
+
+from .analysis import (
+    SentimentHistory,
+    CorrelationAnalysis,
+    CorrelationMetrics,
+    SentimentTrendPoint,
+    TrendAnalysis,
+    ComparisonAnalysis
+)
+
+__all__ = [
+    # Dashboard schemas
+    "DashboardSummary",
+    "MarketSentimentOverview", 
+    "StockSummary",
+    "SystemStatus",
+    
+    # Stock schemas
+    "StockDetail",
+    "StockList",
+    "StockListItem",
+    "StockMetrics",
+    "PriceDataPoint",
+    "SentimentDataPoint",
+    
+    # Analysis schemas
+    "SentimentHistory",
+    "CorrelationAnalysis",
+    "CorrelationMetrics",
+    "SentimentTrendPoint",
+    "TrendAnalysis",
+    "ComparisonAnalysis"
+]

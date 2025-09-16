@@ -15,14 +15,15 @@ import time
 from contextlib import asynccontextmanager
 
 from app.infrastructure.config import get_settings
-from app.presentation.controllers import (
-    dashboard_controller,
-    sentiment_controller, 
-    admin_controller
+from app.presentation.routes import (
+    dashboard_router,
+    stocks_router,
+    analysis_router
 )
 from app.presentation.middleware.logging_middleware import LoggingMiddleware
 from app.presentation.middleware.security_middleware import setup_security_middleware
 from app.data_access.database.connection import init_database
+from app.infrastructure.database.connection import get_database_url
 
 
 # Configure structured logging
@@ -55,7 +56,8 @@ async def lifespan(app: FastAPI):
     
     # Initialize database
     await init_database()
-    logger.info("Database initialized")
+    logger.info(f"Database URL: {get_database_url()}")
+    logger.info("Database initialized and configured")
     
     yield
     
@@ -83,26 +85,10 @@ def create_app() -> FastAPI:
     # Add custom logging middleware (after security middleware)
     app.add_middleware(LoggingMiddleware)
     
-    # Include routers
-    app.include_router(
-        dashboard_controller.router,
-        prefix="/api/v1/dashboard",
-        tags=["dashboard"]
-    )
-    
-    app.include_router(
-        sentiment_controller.router,
-        prefix="/api/v1/sentiment", 
-        tags=["sentiment"]
-    )
-    
-    app.include_router(
-        admin_controller.router,
-        prefix="/api/v1/admin",
-        tags=["admin"]
-    )
-    
-    # Global exception handlers
+    # Include routers - Phase 4 Implementation
+    app.include_router(dashboard_router)  # Already has /api/dashboard prefix
+    app.include_router(stocks_router)     # Already has /api/stocks prefix  
+    app.include_router(analysis_router)   # Already has /api/analysis prefix    # Global exception handlers
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         logger.error(

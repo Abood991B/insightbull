@@ -35,7 +35,7 @@ ENV/
 *.db
 *.sqlite3
 *.sqlite
-insight_stock_db.sqlite
+data/insight_stock.db
 
 # Logs
 *.log
