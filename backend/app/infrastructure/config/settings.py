@@ -42,8 +42,21 @@ class Settings(BaseSettings):
     
     # Security
     secret_key: str = secrets.token_urlsafe(32)
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    jwt_secret_key: str = secrets.token_urlsafe(32)
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_days: int = 7
+    
+    # API Key Encryption
+    api_key_encryption_key: str = secrets.token_urlsafe(32)
+    
+    # Rate Limiting
+    rate_limit_requests: int = 100
+    rate_limit_window: int = 3600  # 1 hour in seconds
+    
+    # Security Headers
+    enable_security_headers: bool = True
+    csrf_protection: bool = True
     
     # CORS Settings
     allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000"

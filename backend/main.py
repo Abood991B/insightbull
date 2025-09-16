@@ -21,6 +21,7 @@ from app.presentation.controllers import (
     admin_controller
 )
 from app.presentation.middleware.logging_middleware import LoggingMiddleware
+from app.presentation.middleware.security_middleware import setup_security_middleware
 from app.data_access.database.connection import init_database
 
 
@@ -76,16 +77,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
     
-    # Add CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.get_allowed_origins_list(),
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
-    )
+    # Setup all security middleware (includes CORS, rate limiting, headers, etc.)
+    setup_security_middleware(app, settings)
     
-    # Add custom logging middleware
+    # Add custom logging middleware (after security middleware)
     app.add_middleware(LoggingMiddleware)
     
     # Include routers
