@@ -6,7 +6,7 @@ Pydantic models for dashboard API responses implementing U-FR1 requirements.
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class StockSummary(BaseModel):
@@ -46,7 +46,4 @@ class DashboardSummary(BaseModel):
     system_status: SystemStatus
     generated_at: datetime = Field(default_factory=datetime.utcnow, description="Response generation timestamp")
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()

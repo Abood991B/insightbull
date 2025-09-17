@@ -1,13 +1,14 @@
 """
-Security Utilities for Backend System
+API Key Manager and Security Utilities
+======================================
 
-This module provides security utilities including:
+Provides comprehensive security functionality including:
+- API key encryption/decryption (APIKeyManager)
 - Password hashing and verification
-- API key encryption/decryption  
 - Input sanitization
 - Security headers
 
-Following FYP security requirements and best practices.
+Implements the APIKeyManager component from the FYP Implementation Plan.
 """
 
 import hashlib
@@ -115,6 +116,33 @@ class SecurityUtils:
             return decrypted_key.decode('utf-8')
         except Exception:
             return None
+    
+    def get_api_key(self, env_key: str, fallback_key: str = None) -> str:
+        """
+        Retrieve API key from environment variables or configuration
+        
+        Args:
+            env_key: Environment variable name (e.g., 'REDDIT_CLIENT_ID')
+            fallback_key: Optional fallback key name
+            
+        Returns:
+            API key value or empty string if not found
+        """
+        import os
+        
+        # Try environment variable first
+        api_key = os.getenv(env_key)
+        if api_key:
+            return api_key
+            
+        # Try fallback key if provided
+        if fallback_key:
+            api_key = os.getenv(fallback_key)
+            if api_key:
+                return api_key
+        
+        # Return empty string as safe fallback (collectors can handle this)
+        return ""
     
     @staticmethod
     def sanitize_input(input_string: str) -> str:

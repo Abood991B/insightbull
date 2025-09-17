@@ -19,13 +19,8 @@ from main import create_app
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
+# Remove the custom event_loop fixture to use pytest-asyncio's default
+# The event_loop fixture is now configured in pytest.ini
 
 @pytest.fixture(scope="session")
 async def test_engine():

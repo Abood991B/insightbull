@@ -23,7 +23,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent
 sys.path.insert(0, str(backend_dir))
 
-from app.infrastructure.database.migration_manager import MigrationManager
+from app.data_access.database.migration_manager import MigrationManager
 
 # Setup logging
 logging.basicConfig(

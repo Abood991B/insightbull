@@ -6,7 +6,7 @@ Pydantic models for stock API responses implementing U-FR2 and U-FR3 requirement
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class PriceDataPoint(BaseModel):
@@ -55,10 +55,7 @@ class StockDetail(BaseModel):
     last_updated: datetime = Field(..., description="Last data update")
     generated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()
 
 
 class StockListItem(BaseModel):
@@ -79,7 +76,4 @@ class StockList(BaseModel):
     active_count: int = Field(..., description="Number of actively tracked stocks")
     generated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()

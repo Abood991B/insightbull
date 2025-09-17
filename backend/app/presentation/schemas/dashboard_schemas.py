@@ -5,7 +5,7 @@ Dashboard Schemas
 Pydantic schemas for dashboard-related API requests and responses.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -47,7 +47,4 @@ class DashboardResponse(BaseModel):
     sentiment_trends: List[SentimentTrend] = Field(default_factory=list)
     news_summary: NewsSummary
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict()

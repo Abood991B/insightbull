@@ -18,12 +18,12 @@ from app.infrastructure.config import get_settings
 from app.presentation.routes import (
     dashboard_router,
     stocks_router,
-    analysis_router
+    analysis_router,
+    pipeline_router
 )
 from app.presentation.middleware.logging_middleware import LoggingMiddleware
 from app.presentation.middleware.security_middleware import setup_security_middleware
 from app.data_access.database.connection import init_database
-from app.infrastructure.database.connection import get_database_url
 
 
 # Configure structured logging
@@ -56,7 +56,8 @@ async def lifespan(app: FastAPI):
     
     # Initialize database
     await init_database()
-    logger.info(f"Database URL: {get_database_url()}")
+    settings = get_settings()
+    logger.info(f"Database URL: {settings.database_url.split('@')[0] + '@***' if '@' in settings.database_url else settings.database_url}")
     logger.info("Database initialized and configured")
     
     yield
@@ -85,10 +86,11 @@ def create_app() -> FastAPI:
     # Add custom logging middleware (after security middleware)
     app.add_middleware(LoggingMiddleware)
     
-    # Include routers - Phase 4 Implementation
+    # Include routers - Phase 4 & 5 Implementation
     app.include_router(dashboard_router)  # Already has /api/dashboard prefix
     app.include_router(stocks_router)     # Already has /api/stocks prefix  
-    app.include_router(analysis_router)   # Already has /api/analysis prefix    # Global exception handlers
+    app.include_router(analysis_router)   # Already has /api/analysis prefix
+    app.include_router(pipeline_router)   # Phase 5: Pipeline management (admin only)    # Global exception handlers
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         logger.error(
@@ -150,7 +152,7 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.debug,
+        reload=False,
         log_level=settings.log_level.lower(),
         access_log=True
     )

@@ -91,7 +91,7 @@ async def get_all_stocks(
 @router.get("/{symbol}", response_model=StockDetail)
 async def get_stock_detail(
     symbol: str = Path(..., description="Stock symbol (e.g., AAPL)"),
-    timeframe: str = Query("7d", regex="^(1d|7d|14d)$", description="Data timeframe: 1d, 7d, or 14d"),
+    timeframe: str = Query("7d", pattern="^(1d|7d|14d)$", description="Data timeframe: 1d, 7d, or 14d"),
     stock_repo: StockRepository = Depends(get_stock_repository),
     sentiment_repo: SentimentDataRepository = Depends(get_sentiment_repository),
     price_repo: StockPriceRepository = Depends(get_price_repository)

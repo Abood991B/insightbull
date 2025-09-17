@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 @router.get("/stocks/{symbol}/sentiment", response_model=SentimentHistory)
 async def get_sentiment_history(
     symbol: str = Path(..., description="Stock symbol"),
-    timeframe: str = Query("7d", regex="^(1d|7d|14d)$", description="Analysis timeframe"),
+    timeframe: str = Query("7d", pattern="^(1d|7d|14d)$", description="Analysis timeframe"),
     limit: int = Query(100, le=1000, description="Maximum data points to return"),
     stock_repo: StockRepository = Depends(get_stock_repository),
     sentiment_repo: SentimentDataRepository = Depends(get_sentiment_repository),
@@ -123,7 +123,7 @@ async def get_sentiment_history(
 @router.get("/stocks/{symbol}/correlation", response_model=CorrelationAnalysis)
 async def get_correlation_analysis(
     symbol: str = Path(..., description="Stock symbol"),
-    timeframe: str = Query("7d", regex="^(1d|7d|14d)$", description="Analysis timeframe"),
+    timeframe: str = Query("7d", pattern="^(1d|7d|14d)$", description="Analysis timeframe"),
     stock_repo: StockRepository = Depends(get_stock_repository),
     sentiment_repo: SentimentDataRepository = Depends(get_sentiment_repository),
     price_repo: StockPriceRepository = Depends(get_price_repository)
