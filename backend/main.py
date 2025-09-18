@@ -6,6 +6,10 @@ Entry point for the Insight Stock Dashboard backend.
 Implements the 5-layer architecture with proper dependency injection.
 """
 
+# Load environment variables first
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -24,6 +28,7 @@ from app.presentation.routes import (
 from app.presentation.middleware.logging_middleware import LoggingMiddleware
 from app.presentation.middleware.security_middleware import setup_security_middleware
 from app.data_access.database.connection import init_database
+from app.business.scheduler import Scheduler
 
 
 # Configure structured logging
@@ -60,10 +65,19 @@ async def lifespan(app: FastAPI):
     logger.info(f"Database URL: {settings.database_url.split('@')[0] + '@***' if '@' in settings.database_url else settings.database_url}")
     logger.info("Database initialized and configured")
     
+    # Phase 7: Start Scheduler for automated pipeline orchestration
+    scheduler = Scheduler()
+    await scheduler.start()
+    logger.info("Scheduler started for automated pipeline orchestration")
+    
     yield
     
     # Shutdown
     logger.info("Shutting down Insight Stock Dashboard Backend")
+    
+    # Phase 7: Stop Scheduler
+    await scheduler.stop()
+    logger.info("Phase 7: Scheduler stopped")
 
 
 def create_app() -> FastAPI:
@@ -86,11 +100,13 @@ def create_app() -> FastAPI:
     # Add custom logging middleware (after security middleware)
     app.add_middleware(LoggingMiddleware)
     
-    # Include routers - Phase 4 & 5 Implementation
+    # Include routers - Phase 4, 5 Implementation
     app.include_router(dashboard_router)  # Already has /api/dashboard prefix
     app.include_router(stocks_router)     # Already has /api/stocks prefix  
     app.include_router(analysis_router)   # Already has /api/analysis prefix
-    app.include_router(pipeline_router)   # Phase 5: Pipeline management (admin only)    # Global exception handlers
+    app.include_router(pipeline_router)   # Phase 5: Pipeline management (admin only)
+    
+    # Global exception handlers
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         logger.error(
@@ -142,7 +158,6 @@ def create_app() -> FastAPI:
 
 # Create the application instance
 app = create_app()
-
 
 if __name__ == "__main__":
     import uvicorn

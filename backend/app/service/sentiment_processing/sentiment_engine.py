@@ -17,20 +17,25 @@ from datetime import datetime
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+import threading
 
 from .models.sentiment_model import (
     SentimentModel,
     SentimentResult, 
     SentimentLabel, 
     TextInput,
-    DataSource,
     ModelInfo,
     SentimentModelError
 )
+from ...infrastructure.collectors.base_collector import DataSource
 from .models.vader_model import VADERModel
 from .models.finbert_model import FinBERTModel
 
 logger = logging.getLogger(__name__)
+
+# Global singleton instance
+_sentiment_engine_instance = None
+_sentiment_engine_lock = threading.Lock()
 
 
 @dataclass
@@ -101,13 +106,13 @@ class SentimentEngine:
         self._active_jobs: Dict[str, AnalysisJob] = {}
         
         # Model routing configuration
+        # Model routing configuration - VADER for social media, FinBERT for financial sources
+        # Following FYP specification: "VADER IS FOR REDDIT AND FINBERT FOR THE OTHER 3 SOURCES(MARKETAUX, NEWSAPI, FINHUB)"
         self._model_routing = {
-            DataSource.REDDIT: "VADER",
-            DataSource.TWITTER: "VADER", 
-            DataSource.NEWS: "FinBERT",
-            DataSource.FINNHUB: "FinBERT",
-            DataSource.MARKETAUX: "FinBERT",
-            DataSource.NEWSAPI: "FinBERT"
+            DataSource.REDDIT: "VADER",      # Social media -> VADER
+            DataSource.FINNHUB: "FinBERT",   # Financial news -> FinBERT
+            DataSource.MARKETAUX: "FinBERT", # Financial news -> FinBERT  
+            DataSource.NEWSAPI: "FinBERT"    # Financial news -> FinBERT
         }
     
     async def initialize(self) -> None:
@@ -161,6 +166,7 @@ class SentimentEngine:
         if not inputs:
             return []
         
+        logger.debug(f"Processing {len(inputs)} sentiment analysis inputs")
         start_time = time.time()
         
         try:
@@ -173,6 +179,7 @@ class SentimentEngine:
             
             for model_name, group_inputs in model_groups.items():
                 if model_name in self.models:
+                    logger.debug(f"Using model '{model_name}' for {len(group_inputs)} inputs")
                     task = self._process_model_group(model_name, group_inputs)
                     tasks.append(task)
                 else:
@@ -235,9 +242,11 @@ class SentimentEngine:
     async def _process_model_group(self, model_name: str, inputs: List[TextInput]) -> List[Tuple[TextInput, SentimentResult]]:
         """Process a group of inputs with a specific model."""
         model = self.models[model_name]
+        logger.debug(f"Processing {len(inputs)} inputs with model '{model_name}'")
         
         try:
             results = await model.analyze(inputs)
+            logger.debug(f"Model '{model_name}' returned {len(results)} results")
             
             # Update model usage stats
             self.stats.model_usage[model_name] += len(inputs)
@@ -268,6 +277,7 @@ class SentimentEngine:
         
         for input_obj in inputs:
             model_name = self._model_routing.get(input_obj.source, "VADER")
+            logger.debug(f"Routing {input_obj.source.name} -> {model_name}")
             groups[model_name].append(input_obj)
         
         return dict(groups)
@@ -486,3 +496,43 @@ if __name__ == "__main__":
     
     # Run test if executed directly
     asyncio.run(test_sentiment_engine())
+
+
+def get_sentiment_engine(config: Optional[EngineConfig] = None) -> SentimentEngine:
+    """
+    Get the global singleton SentimentEngine instance.
+    
+    This ensures that models are only loaded once across the entire application,
+    preventing duplicate initialization messages and improving performance.
+    
+    Args:
+        config: Engine configuration (only used for first initialization)
+        
+    Returns:
+        The singleton SentimentEngine instance
+    """
+    global _sentiment_engine_instance
+    
+    if _sentiment_engine_instance is None:
+        with _sentiment_engine_lock:
+            # Double-check locking pattern
+            if _sentiment_engine_instance is None:
+                logger.info("Creating singleton SentimentEngine instance")
+                _sentiment_engine_instance = SentimentEngine(config)
+    
+    return _sentiment_engine_instance
+
+
+def reset_sentiment_engine():
+    """
+    Reset the singleton SentimentEngine instance.
+    
+    This is primarily for testing purposes to ensure clean state between tests.
+    """
+    global _sentiment_engine_instance
+    
+    with _sentiment_engine_lock:
+        if _sentiment_engine_instance is not None:
+            _sentiment_engine_instance.shutdown()
+            _sentiment_engine_instance = None
+            logger.info("Singleton SentimentEngine instance reset")

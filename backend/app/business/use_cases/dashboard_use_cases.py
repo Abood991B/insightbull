@@ -35,21 +35,26 @@ class DashboardUseCases:
         """
         self.logger.info("Getting dashboard overview", time_period=time_period)
         
-        # This will be implemented in later phases
-        # For now, return a mock structure
+        # Use DashboardService for real data
+        from app.service.dashboard_service import DashboardService
+        dashboard_service = DashboardService(self.db)
+        
+        # Get real dashboard data
+        overview_data = await dashboard_service.get_dashboard_overview(time_period)
+        
+        # Convert to DashboardData schema
+        from app.presentation.schemas.dashboard import SentimentMetrics
+        
         return DashboardData(
             sentiment_overview=SentimentMetrics(
-                overall_sentiment="neutral",
-                sentiment_score=0.1,
-                confidence=0.75
+                overall_sentiment=overview_data["sentiment_overview"]["overall_sentiment"],
+                sentiment_score=overview_data["sentiment_overview"]["sentiment_score"],
+                confidence=overview_data["sentiment_overview"]["confidence"]
             ),
             time_period=time_period,
-            stock_data=[],
-            sentiment_trends=[],
-            news_summary={
-                "total_articles": 0,
-                "sentiment_distribution": {"positive": 0, "neutral": 0, "negative": 0}
-            }
+            stock_data=overview_data["stock_data"],
+            sentiment_trends=overview_data["sentiment_trends"],
+            news_summary=overview_data["news_summary"]
         )
     
     async def get_time_range_data(self, start_date: datetime, end_date: datetime) -> DashboardData:

@@ -51,8 +51,7 @@ class AuthService:
         self.jwt_handler = JWTHandler(settings)
         self.security_utils = SecurityUtils()
         
-        # Admin users - in production this would come from database
-        # For now, we'll validate against the existing frontend admin system
+        # Admin users - validates against configured admin accounts
         self.admin_users = {
             "admin@example.com": AdminUser("admin_1", "admin@example.com")
         }

@@ -246,11 +246,12 @@ class LogSystem:
     
     def log_error(self, error_type: str, context: Dict[str, Any]):
         """Log error with detailed context"""
-        # Filter out 'message' from context to avoid conflicts
+        # Filter out 'message' from context to avoid conflicts, but keep error_type
         filtered_context = {k: v for k, v in context.items() if k != 'message'}
+        # Ensure error_type is in the context
+        filtered_context['error_type'] = error_type
         self.error(
             f"Error: {error_type}",
-            error_type=error_type,
             **filtered_context
         )
 

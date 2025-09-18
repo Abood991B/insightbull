@@ -193,13 +193,13 @@ class TextProcessor:
         start_time = datetime.utcnow()
         
         try:
-            processed_text = self.process_text(raw_data.text)
+            processed_text, removed_elements = self.process_text_with_tracking(raw_data.text)
             execution_time = (datetime.utcnow() - start_time).total_seconds()
             
             return ProcessingResult(
                 original_text=raw_data.text,
                 processed_text=processed_text,
-                removed_elements={},  # TODO: Track removed elements
+                removed_elements=removed_elements,
                 processing_time=execution_time,
                 success=True
             )
@@ -215,6 +215,52 @@ class TextProcessor:
                 error_message=str(e)
             )
     
+    def process_text_with_tracking(self, text: str) -> tuple[str, dict]:
+        """
+        Process text and track removed elements.
+        
+        Args:
+            text: Text to process
+            
+        Returns:
+            Tuple of (processed_text, removed_elements_dict)
+        """
+        if not text or not text.strip():
+            return "", {}
+        
+        removed_elements = {
+            "urls": [],
+            "mentions": [],
+            "hashtags": [],
+            "html_tags": [],
+            "special_chars": 0
+        }
+        
+        processed = text
+        
+        # Track URLs before removal
+        if self.config.remove_urls:
+            urls = self.url_pattern.findall(processed) + self.url_short_pattern.findall(processed)
+            removed_elements["urls"] = urls
+            processed = self._remove_urls(processed)
+        
+        # Track mentions before removal  
+        if self.config.remove_mentions:
+            mentions = self.mention_pattern.findall(processed)
+            removed_elements["mentions"] = mentions
+            processed = self._remove_mentions(processed)
+        
+        # Track hashtags before removal
+        if self.config.remove_hashtags:
+            hashtags = self.hashtag_pattern.findall(processed)
+            removed_elements["hashtags"] = hashtags
+            processed = self._remove_hashtags(processed)
+        
+        # Continue with normal processing
+        processed = self.process_text(processed)
+        
+        return processed, removed_elements
+
     def process_text(self, text: str) -> str:
         """
         Process a single text string.

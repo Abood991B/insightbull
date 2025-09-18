@@ -11,15 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
 from app.data_access.database import get_db
-from app.presentation.schemas.dashboard_schemas import DashboardResponse
-from app.business.use_cases.dashboard_use_cases import DashboardUseCases
+from app.presentation.schemas.dashboard import DashboardSummary
+from app.service.dashboard_service import DashboardService
 
 
 logger = structlog.get_logger()
 router = APIRouter()
 
 
-@router.get("/overview", response_model=DashboardResponse)
+@router.get("/overview", response_model=DashboardSummary)
 async def get_dashboard_overview(
     time_period: str = "7d",
     db: AsyncSession = Depends(get_db)
@@ -32,22 +32,11 @@ async def get_dashboard_overview(
     try:
         logger.info("Getting dashboard overview", time_period=time_period)
         
-        # For now, return mock data structure
-        # This will be implemented in later phases
-        return {
-            "sentiment_overview": {
-                "overall_sentiment": "neutral",
-                "sentiment_score": 0.1,
-                "confidence": 0.75
-            },
-            "time_period": time_period,
-            "stock_data": [],
-            "sentiment_trends": [],
-            "news_summary": {
-                "total_articles": 0,
-                "sentiment_distribution": {"positive": 0, "neutral": 0, "negative": 0}
-            }
-        }
+        # Use real dashboard service
+        dashboard_service = DashboardService(db)
+        overview = await dashboard_service.get_dashboard_overview(time_period)
+        
+        return overview
         
     except Exception as e:
         logger.error("Error getting dashboard overview", error=str(e), exc_info=True) 

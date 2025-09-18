@@ -31,6 +31,7 @@ from app.infrastructure.collectors import (
 from app.infrastructure.rate_limiter import RateLimitHandler
 from app.infrastructure.log_system import get_logger
 from app.infrastructure.security.security_utils import SecurityUtils
+from app.infrastructure.security.api_key_manager import SecureAPIKeyLoader
 from app.business.entities.dashboard_entities import StockInfo
 
 
@@ -68,25 +69,68 @@ class DataCollector:
         self.rate_limiter = RateLimitHandler()
         self.security = SecurityUtils()
         
-        # Initialize collectors with proper credentials
-        self.reddit_collector = RedditCollector(
-            client_id=self.security.get_api_key("REDDIT_CLIENT_ID", "reddit_client_id"),
-            client_secret=self.security.get_api_key("REDDIT_CLIENT_SECRET", "reddit_client_secret"),
-            user_agent="StockInsight/1.0",
-            rate_limiter=self.rate_limiter
-        )
-        self.finnhub_collector = FinHubCollector(
-            api_key=self.security.get_api_key("FINNHUB_API_KEY", "finnhub_api_key"),
-            rate_limiter=self.rate_limiter
-        )
-        self.marketaux_collector = MarketauxCollector(
-            api_key=self.security.get_api_key("MARKETAUX_API_KEY", "marketaux_api_key"), 
-            rate_limiter=self.rate_limiter
-        )
-        self.newsapi_collector = NewsAPICollector(
-            api_key=self.security.get_api_key("NEWSAPI_KEY", "newsapi_key"),
-            rate_limiter=self.rate_limiter
-        )
+        # Initialize secure API key loader with encryption/decryption
+        self.secure_loader = SecureAPIKeyLoader()
+        
+        # Log API key loading process
+        self.logger.info("🔐 Loading and decrypting API keys...")
+        
+        # Initialize collectors with encrypted/decrypted credentials
+        reddit_client_id = self.secure_loader.get_decrypted_key("REDDIT_CLIENT_ID")
+        reddit_client_secret = self.secure_loader.get_decrypted_key("REDDIT_CLIENT_SECRET")
+        
+        if reddit_client_id and reddit_client_secret:
+            self.reddit_collector = RedditCollector(
+                client_id=reddit_client_id,
+                client_secret=reddit_client_secret,
+                user_agent="StockInsight/1.0",
+                rate_limiter=self.rate_limiter
+            )
+            self.logger.info("✅ Reddit collector configured")
+        else:
+            self.reddit_collector = None
+            self.logger.info("⚠️ Reddit collector skipped - missing REDDIT_CLIENT_ID or REDDIT_CLIENT_SECRET")
+        
+        finnhub_key = self.secure_loader.get_decrypted_key("FINNHUB_API_KEY")
+        if finnhub_key:
+            self.finnhub_collector = FinHubCollector(
+                api_key=finnhub_key,
+                rate_limiter=self.rate_limiter
+            )
+            self.logger.info("✅ FinHub collector configured")
+        else:
+            self.finnhub_collector = None
+            self.logger.info("⚠️ FinHub collector skipped - missing FINNHUB_API_KEY")
+        
+        marketaux_key = self.secure_loader.get_decrypted_key("MARKETAUX_API_KEY")
+        if marketaux_key:
+            self.marketaux_collector = MarketauxCollector(
+                api_key=marketaux_key,
+                rate_limiter=self.rate_limiter
+            )
+            self.logger.info("✅ MarketAux collector configured")
+        else:
+            self.marketaux_collector = None
+            self.logger.info("⚠️ MarketAux collector skipped - missing MARKETAUX_API_KEY")
+        
+        newsapi_key = self.secure_loader.get_decrypted_key("NEWSAPI_KEY")
+        if newsapi_key:
+            self.newsapi_collector = NewsAPICollector(
+                api_key=newsapi_key,
+                rate_limiter=self.rate_limiter
+            )
+            self.logger.info("✅ NewsAPI collector configured")
+        else:
+            self.newsapi_collector = None
+            self.logger.info("⚠️ NewsAPI collector skipped - missing NEWSAPI_KEY")
+        
+        # Count active collectors
+        active_collectors = sum(1 for collector in [
+            self.reddit_collector, self.finnhub_collector, 
+            self.marketaux_collector, self.newsapi_collector
+        ] if collector is not None)
+        
+        self.logger.info(f"🔧 Auto-configured {active_collectors} collectors with encrypted API keys")
         
         self.active_jobs: Dict[str, CollectionJob] = {}
         
@@ -180,14 +224,44 @@ class DataCollector:
     async def _collect_reddit_data(self, symbols: List[str], 
                                   date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
         """Collect Reddit data for symbols"""
+        if not self.reddit_collector:
+            return []
+        
         try:
             await self.rate_limiter.acquire("reddit")
-            data = await self.reddit_collector.collect_posts(
-                symbols, 
-                date_range['start'], 
-                date_range['end']
+            
+            # Import required classes
+            from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
+            
+            # Create proper configuration
+            date_range_obj = DateRange(
+                start_date=date_range['start'],
+                end_date=date_range['end']
             )
-            return data
+            config = CollectionConfig(
+                symbols=symbols,
+                date_range=date_range_obj,
+                max_items_per_symbol=50,
+                include_comments=True
+            )
+            
+            # Use the standardized collect_data method
+            result = await self.reddit_collector.collect_data(config)
+            
+            # Convert RawData objects to dictionaries
+            return [
+                {
+                    'source': data.source.value,
+                    'content_type': data.content_type,
+                    'text': data.text,
+                    'timestamp': data.timestamp,
+                    'stock_symbol': data.stock_symbol,
+                    'url': data.url,
+                    'metadata': data.metadata or {}
+                }
+                for data in result.data
+            ] if result.success else []
+            
         except Exception as e:
             self.logger.error(f"Reddit collection failed: {str(e)}")
             raise
@@ -195,14 +269,43 @@ class DataCollector:
     async def _collect_finnhub_data(self, symbols: List[str], 
                                    date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
         """Collect Finnhub news data"""
+        if not self.finnhub_collector:
+            return []
+        
         try:
             await self.rate_limiter.acquire("finnhub")
-            data = await self.finnhub_collector.collect_news(
-                symbols,
-                date_range['start'],
-                date_range['end']
+            
+            # Import required classes
+            from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
+            
+            # Create proper configuration
+            date_range_obj = DateRange(
+                start_date=date_range['start'],
+                end_date=date_range['end']
             )
-            return data
+            config = CollectionConfig(
+                symbols=symbols,
+                date_range=date_range_obj,
+                max_items_per_symbol=25
+            )
+            
+            # Use the standardized collect_data method
+            result = await self.finnhub_collector.collect_data(config)
+            
+            # Convert RawData objects to dictionaries
+            return [
+                {
+                    'source': data.source.value,
+                    'content_type': data.content_type,
+                    'text': data.text,
+                    'timestamp': data.timestamp,
+                    'stock_symbol': data.stock_symbol,
+                    'url': data.url,
+                    'metadata': data.metadata or {}
+                }
+                for data in result.data
+            ] if result.success else []
+            
         except Exception as e:
             self.logger.error(f"Finnhub collection failed: {str(e)}")
             raise
@@ -210,14 +313,43 @@ class DataCollector:
     async def _collect_marketaux_data(self, symbols: List[str], 
                                      date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
         """Collect Marketaux news data"""
+        if not self.marketaux_collector:
+            return []
+        
         try:
             await self.rate_limiter.acquire("marketaux")
-            data = await self.marketaux_collector.collect_news(
-                symbols,
-                date_range['start'],
-                date_range['end']
+            
+            # Import required classes
+            from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
+            
+            # Create proper configuration
+            date_range_obj = DateRange(
+                start_date=date_range['start'],
+                end_date=date_range['end']
             )
-            return data
+            config = CollectionConfig(
+                symbols=symbols,
+                date_range=date_range_obj,
+                max_items_per_symbol=25
+            )
+            
+            # Use the standardized collect_data method
+            result = await self.marketaux_collector.collect_data(config)
+            
+            # Convert RawData objects to dictionaries
+            return [
+                {
+                    'source': data.source.value,
+                    'content_type': data.content_type,
+                    'text': data.text,
+                    'timestamp': data.timestamp,
+                    'stock_symbol': data.stock_symbol,
+                    'url': data.url,
+                    'metadata': data.metadata or {}
+                }
+                for data in result.data
+            ] if result.success else []
+            
         except Exception as e:
             self.logger.error(f"Marketaux collection failed: {str(e)}")
             raise
@@ -225,14 +357,43 @@ class DataCollector:
     async def _collect_newsapi_data(self, symbols: List[str], 
                                    date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
         """Collect NewsAPI data"""
+        if not self.newsapi_collector:
+            return []
+        
         try:
             await self.rate_limiter.acquire("newsapi")
-            data = await self.newsapi_collector.collect_news(
-                symbols,
-                date_range['start'],
-                date_range['end']
+            
+            # Import required classes
+            from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
+            
+            # Create proper configuration
+            date_range_obj = DateRange(
+                start_date=date_range['start'],
+                end_date=date_range['end']
             )
-            return data
+            config = CollectionConfig(
+                symbols=symbols,
+                date_range=date_range_obj,
+                max_items_per_symbol=25
+            )
+            
+            # Use the standardized collect_data method
+            result = await self.newsapi_collector.collect_data(config)
+            
+            # Convert RawData objects to dictionaries
+            return [
+                {
+                    'source': data.source.value,
+                    'content_type': data.content_type,
+                    'text': data.text,
+                    'timestamp': data.timestamp,
+                    'stock_symbol': data.stock_symbol,
+                    'url': data.url,
+                    'metadata': data.metadata or {}
+                }
+                for data in result.data
+            ] if result.success else []
+            
         except Exception as e:
             self.logger.error(f"NewsAPI collection failed: {str(e)}")
             raise

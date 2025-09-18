@@ -6,11 +6,12 @@ SQLAlchemy models for data persistence.
 Maps business entities to database tables.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Float, Text, Boolean, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Float, Text, Boolean, ForeignKey, JSON, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
+import hashlib
 
 from app.data_access.database.base import Base
 
@@ -40,12 +41,25 @@ class SentimentData(Base):
     source = Column(String(50), nullable=False)  # reddit, news, financial_reports
     sentiment_score = Column(Float, nullable=False)
     confidence = Column(Float, nullable=False)
+    model_used = Column(String(50), nullable=True)  # VADER, FinBERT (nullable for migration compatibility)
     raw_text = Column(Text)
     extra_data = Column(JSON)  # Additional source-specific data
+    content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
     stock = relationship("Stock", back_populates="sentiment_data")
+    
+    # Composite index for duplicate detection (stock + source + content_hash)
+    __table_args__ = (
+        Index('idx_sentiment_duplicate_check', 'stock_id', 'source', 'content_hash'),
+    )
+    
+    @staticmethod
+    def generate_content_hash(text: str, source: str, stock_symbol: str) -> str:
+        """Generate a hash for duplicate detection based on content, source, and stock."""
+        content = f"{stock_symbol}:{source}:{text.strip().lower()}"
+        return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
 
 class StockPrice(Base):
@@ -109,7 +123,10 @@ class SystemLog(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     level = Column(String(20), nullable=False)
     message = Column(Text, nullable=False)
-    component = Column(String(100))
+    logger = Column(String(100), nullable=False)  # Logger name/component
+    component = Column(String(100))  # Component/module
+    function = Column(String(100))  # Function name
+    line_number = Column(Integer)  # Line number
     extra_data = Column(JSON)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 

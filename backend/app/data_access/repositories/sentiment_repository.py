@@ -48,6 +48,36 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
         )
         return result.scalars().all()
     
+    async def exists_by_content_hash(
+        self, 
+        stock_id: str, 
+        source: str, 
+        content_hash: str
+    ) -> bool:
+        """
+        Check if sentiment data already exists for the given content hash.
+        
+        Args:
+            stock_id: Stock UUID
+            source: Data source name
+            content_hash: SHA-256 hash of content
+            
+        Returns:
+            True if duplicate exists, False otherwise
+        """
+        result = await self.db_session.execute(
+            select(SentimentData.id)
+            .where(
+                and_(
+                    SentimentData.stock_id == stock_id,
+                    SentimentData.source == source,
+                    SentimentData.content_hash == content_hash
+                )
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+    
     async def get_sentiment_by_date_range(
         self, 
         symbol: str, 

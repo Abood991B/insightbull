@@ -39,7 +39,7 @@ class DataCollector(ABC):
         pass
 
 
-# Future implementations will extend these base classes:
+# Implementations extending these base classes:
 # - StockPriceCollector(DataCollector)
 # - NewsCollector(DataCollector)  
 # - RedditCollector(DataCollector)

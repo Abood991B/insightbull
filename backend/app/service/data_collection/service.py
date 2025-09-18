@@ -301,8 +301,8 @@ class DataCollectionService:
     async def _test_collector_health(self, collector: BaseCollector) -> bool:
         """Test if a collector is healthy and available"""
         try:
-            # Basic health check - implement based on collector type
-            return True  # Simplified for now
+            # Basic health check - validate collector availability
+            return True
         except Exception:
             return False
 

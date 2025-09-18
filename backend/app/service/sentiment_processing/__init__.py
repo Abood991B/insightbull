@@ -10,7 +10,7 @@ Contains all sentiment analysis processing components including:
 This module handles the SY-FR3 requirement: Perform Sentiment Analysis
 """
 
-from .sentiment_engine import SentimentEngine, EngineConfig
+from .sentiment_engine import SentimentEngine, EngineConfig, get_sentiment_engine, reset_sentiment_engine
 from .models.finbert_model import FinBERTModel
 from .models.vader_model import VADERModel
 from .models.sentiment_model import (
@@ -26,6 +26,8 @@ from .models.sentiment_model import (
 __all__ = [
     "SentimentEngine",
     "EngineConfig",
+    "get_sentiment_engine",
+    "reset_sentiment_engine",
     "FinBERTModel", 
     "VADERModel",
     "SentimentModel",

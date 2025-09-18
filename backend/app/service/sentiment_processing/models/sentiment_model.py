@@ -16,6 +16,9 @@ from enum import Enum
 import asyncio
 import logging
 
+# Import DataSource from the canonical location
+from ....infrastructure.collectors.base_collector import DataSource
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,16 +27,6 @@ class SentimentLabel(Enum):
     POSITIVE = "positive"
     NEGATIVE = "negative"
     NEUTRAL = "neutral"
-
-
-class DataSource(Enum):
-    """Data source types for model routing."""
-    REDDIT = "reddit"
-    TWITTER = "twitter"
-    NEWS = "news"
-    FINNHUB = "finnhub"
-    MARKETAUX = "marketaux"
-    NEWSAPI = "newsapi"
 
 
 @dataclass

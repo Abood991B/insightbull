@@ -27,7 +27,6 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.infrastructure.log_system import get_logger
-from app.business.data_collector import DataCollector
 from app.business.pipeline import DataPipeline
 
 
@@ -70,17 +69,16 @@ class Scheduler:
         """Initialize the scheduler"""
         self.logger = get_logger()
         self.scheduler = AsyncIOScheduler()
-        self.data_collector = DataCollector()
+        # Remove duplicate DataCollector - pipeline handles its own collectors
         self.pipeline = DataPipeline()
         
         self.jobs: Dict[str, ScheduledJob] = {}
         self._is_running = False
         
-        # Default stock symbols for scheduled jobs
+        # Default stock symbols for scheduled jobs - Top 20 IXT Technology + Magnificent Seven
         self.default_symbols = [
-            "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
-            "INTC", "CSCO", "AMD", "AVGO", "ORCL", "PLTR", "IBM", 
-            "CRM", "INTU"
+            "NVDA", "MSFT", "AAPL", "AVGO", "ORCL", "PLTR", "CSCO", "AMD", "IBM", "CRM",
+            "NOW", "INTU", "QCOM", "MU", "TXN", "ADBE", "GOOGL", "AMZN", "META", "TSLA"
         ]
     
     async def start(self):
@@ -153,13 +151,14 @@ class Scheduler:
             }
         )
         
-        # Schedule with APScheduler
+        # Schedule with APScheduler (replace existing to prevent duplicates)
         self.scheduler.add_job(
             func=self._execute_data_collection,
             trigger=CronTrigger.from_crontab(cron_expression),
             id=job_id,
             args=[job_id],
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1  # Prevent multiple instances of same job
         )
         
         self.jobs[job_id] = job
@@ -196,13 +195,14 @@ class Scheduler:
             parameters={"symbols": symbols}
         )
         
-        # Schedule with APScheduler
+        # Schedule with APScheduler (replace existing to prevent duplicates)
         self.scheduler.add_job(
             func=self._execute_sentiment_analysis,
             trigger=CronTrigger.from_crontab(cron_expression),
             id=job_id,
             args=[job_id],
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1  # Prevent multiple instances of same job
         )
         
         self.jobs[job_id] = job
@@ -243,13 +243,14 @@ class Scheduler:
             }
         )
         
-        # Schedule with APScheduler
+        # Schedule with APScheduler (replace existing to prevent duplicates)
         self.scheduler.add_job(
             func=self._execute_full_pipeline,
             trigger=CronTrigger.from_crontab(cron_expression),
             id=job_id,
             args=[job_id],
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1  # Prevent multiple instances of same job
         )
         
         self.jobs[job_id] = job
@@ -279,21 +280,24 @@ class Scheduler:
             end_date = datetime.utcnow()
             start_date = end_date - timedelta(days=job.parameters["lookback_days"])
             
-            # Execute data collection
-            collection_job = await self.data_collector.collect_all_data(
+            # Execute data collection using pipeline
+            from .pipeline import PipelineConfig, DateRange
+            config = PipelineConfig(
                 symbols=job.parameters["symbols"],
-                date_range={"start": start_date, "end": end_date}
+                date_range=DateRange(start_date=start_date, end_date=end_date),
+                max_items_per_symbol=job.parameters.get("max_items", 100)
             )
+            collection_result = await self.pipeline.run_pipeline(config)
             
-            if collection_job.status == "completed":
+            if collection_result.status.value == "completed":
                 job.status = JobStatus.COMPLETED
                 job.run_count += 1
                 self.logger.info(f"Data collection job {job_id} completed successfully")
             else:
                 job.status = JobStatus.FAILED
                 job.error_count += 1
-                job.last_error = f"Collection failed: {collection_job.errors}"
-                self.logger.error(f"Data collection job {job_id} failed", errors=collection_job.errors)
+                job.last_error = f"Pipeline failed: {collection_result.errors}"
+                self.logger.error(f"Data collection job {job_id} failed", errors=collection_result.errors)
         
         except Exception as e:
             job.status = JobStatus.FAILED

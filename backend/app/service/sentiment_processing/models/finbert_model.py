@@ -87,8 +87,7 @@ class FinBERTModel(SentimentModel):
             version="1.0.0",
             description="BERT-based sentiment analyzer for financial content",
             supported_sources=[
-                DataSource.NEWS,
-                DataSource.FINNHUB,
+                DataSource.FINNHUB,   # Financial news sources -> FinBERT
                 DataSource.MARKETAUX,
                 DataSource.NEWSAPI
             ],

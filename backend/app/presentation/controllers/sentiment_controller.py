@@ -12,6 +12,7 @@ from typing import Optional
 import structlog
 
 from app.data_access.database import get_db
+from app.service.sentiment_service import SentimentService
 
 
 logger = structlog.get_logger()
@@ -32,14 +33,11 @@ async def get_sentiment_trends(
     try:
         logger.info("Getting sentiment trends", stock_symbol=stock_symbol, time_period=time_period)
         
-        # Mock response for now
-        return {
-            "stock_symbol": stock_symbol,
-            "time_period": time_period,
-            "sentiment_data": [],
-            "overall_sentiment": "neutral",
-            "confidence": 0.5
-        }
+        # Use real sentiment service
+        sentiment_service = SentimentService(db)
+        trends = await sentiment_service.get_sentiment_trends(stock_symbol, time_period)
+        
+        return trends
         
     except Exception as e:
         logger.error("Error getting sentiment trends", error=str(e), exc_info=True)
@@ -62,18 +60,11 @@ async def get_stock_sentiment_analysis(
     try:
         logger.info("Getting stock sentiment analysis", stock_symbol=stock_symbol)
         
-        # Mock response for now
-        return {
-            "stock_symbol": stock_symbol,
-            "sentiment_score": 0.1,
-            "confidence": 0.75,
-            "source_breakdown": {
-                "reddit": {"score": 0.2, "count": 0},
-                "news": {"score": 0.0, "count": 0},
-                "financial_reports": {"score": 0.1, "count": 0}
-            },
-            "recent_mentions": []
-        }
+        # Use real sentiment service
+        sentiment_service = SentimentService(db)
+        analysis = await sentiment_service.get_stock_sentiment_analysis(stock_symbol)
+        
+        return analysis
         
     except Exception as e:
         logger.error("Error getting sentiment analysis", error=str(e), exc_info=True)

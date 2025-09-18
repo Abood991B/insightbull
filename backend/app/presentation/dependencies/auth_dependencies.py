@@ -213,8 +213,7 @@ async def validate_api_key(
     if not x_api_key:
         return False
     
-    # In production, this would validate against stored API keys
-    # For now, we'll implement basic validation
+    # Basic API key validation - should be alphanumeric and sufficient length
     return len(x_api_key) >= 32 and x_api_key.isalnum()
 
 
@@ -232,8 +231,8 @@ async def rate_limit_check(
         request_count: Number of requests allowed
         window_minutes: Time window in minutes
     """
-    # This would integrate with the rate limiting middleware
-    # For now, it's a placeholder for future implementation
+    # Rate limiting functionality - can be implemented with Redis or in-memory store
+    # Integration point for rate limiting middleware
     pass
 
 

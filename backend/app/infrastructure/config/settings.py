@@ -7,6 +7,7 @@ Handles environment variables, validation, and configuration loading.
 """
 
 from typing import List, Optional, Union
+from pydantic import Field
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 from functools import lru_cache
@@ -37,8 +38,8 @@ class Settings(BaseSettings):
     # Application Settings
     app_name: str = "Insight Stock Dashboard"
     app_version: str = "1.0.0"
-    debug: bool = True
-    environment: str = "development"
+    debug: bool = Field(default=False, description="Enable debug mode")
+    environment: str = Field(default="production", description="Environment: development, staging, production")
     
     # Security
     secret_key: str = secrets.token_urlsafe(32)

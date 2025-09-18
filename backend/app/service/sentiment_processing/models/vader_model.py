@@ -64,8 +64,7 @@ class VADERModel(SentimentModel):
             version="3.3.2",
             description="Dictionary-based sentiment analyzer for social media",
             supported_sources=[
-                DataSource.REDDIT,
-                DataSource.TWITTER
+                DataSource.REDDIT  # VADER for social media only
             ],
             max_batch_size=100,  # Can handle large batches efficiently
             avg_processing_time=5.0  # Very fast processing

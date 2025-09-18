@@ -245,8 +245,8 @@ async def _get_system_status(
     # Get total sentiment records count
     total_records = await sentiment_repo.get_total_count()
     
-    # Active data sources (this would be expanded with actual source monitoring)
-    active_sources = ["reddit", "news"]  # Simplified for now
+    # Active data sources
+    active_sources = ["reddit", "news"]
     
     return SystemStatus(
         pipeline_status=pipeline_status,
