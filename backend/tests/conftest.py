@@ -1,65 +1,70 @@
 """
 Test Configuration
-==================
-
 Pytest configuration and fixtures for backend testing.
 """
 
 import pytest
 import asyncio
+import os
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, Mock
 
-from app.data_access.database.connection import Base, get_db
+from app.data_access.database.base import Base
+from app.data_access.database.connection import get_db
 from main import create_app
 
+# Test database URL (use in-memory SQLite for testing)
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-# Test database URL (use SQLite for testing)
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+# Configure pytest-asyncio mode
+pytest_plugins = ("pytest_asyncio",)
 
-
-# Remove the custom event_loop fixture to use pytest-asyncio's default
-# The event_loop fixture is now configured in pytest.ini
-
-@pytest.fixture(scope="session")
-async def test_engine():
-    """Create test database engine."""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=True)
-    
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
-    yield engine
-    
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    
-    await engine.dispose()
-
-
-@pytest.fixture
-async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
-    """Create test database session."""
-    async_session_factory = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
-    
-    async with async_session_factory() as session:
-        yield session
-
-
-@pytest.fixture
-def test_client(test_session):
-    """Create test client with database dependency override."""
+@pytest.fixture(scope="function")
+def client():
+    """Create test client with mocked database."""
     app = create_app()
     
-    async def override_get_db():
-        yield test_session
+    # Mock the database dependency completely
+    def mock_get_db():
+        # Return a mock session that doesn't require database connection
+        mock_session = Mock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+        mock_session.close = AsyncMock()
+        mock_session.add = Mock()
+        mock_session.execute = AsyncMock()
+        mock_session.scalar = AsyncMock()
+        return mock_session
     
-    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_db] = mock_get_db
     
-    with TestClient(app) as client:
-        yield client
+    with TestClient(app) as test_client:
+        yield test_client
     
     app.dependency_overrides.clear()
+
+@pytest.fixture
+def mock_admin_auth():
+    """Mock admin authentication for testing."""
+    mock_admin = {
+        "id": "test-admin-id", 
+        "email": "admin@test.com",
+        "permissions": ["admin"]
+    }
+    
+    mock_func = AsyncMock(return_value=mock_admin)
+    return mock_func
+
+@pytest.fixture
+def mock_db_session():
+    """Mock database session for testing."""
+    mock_session = Mock()
+    mock_session.commit = AsyncMock()
+    mock_session.rollback = AsyncMock()
+    mock_session.close = AsyncMock()
+    mock_session.add = Mock()
+    mock_session.execute = AsyncMock()
+    mock_session.scalar = AsyncMock()
+    return mock_session

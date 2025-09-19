@@ -132,7 +132,7 @@ class FinBERTModel(SentimentModel):
                 model=self.model,
                 tokenizer=self.tokenizer,
                 device=0 if self.use_gpu and torch.cuda.is_available() else -1,
-                return_all_scores=True,
+                top_k=None,  # Return all scores (replaces deprecated return_all_scores=True)
                 truncation=True,
                 max_length=self.max_length
             )

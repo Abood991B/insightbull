@@ -16,7 +16,10 @@ import structlog
 from app.data_access.models import Stock, SentimentData, StockPrice, SystemLog
 from app.infrastructure.log_system import get_logger
 from app.presentation.schemas.admin_schemas import *
-from app.business.pipeline import DEFAULT_TARGET_STOCKS
+from app.service.watchlist_service import get_watchlist_service, get_current_stock_symbols
+from app.business.watchlist_observer import (
+    WatchlistSubject, WatchlistEvent, WatchlistEventType, observer_manager
+)
 
 if TYPE_CHECKING:
     from app.business.pipeline import DataPipeline
@@ -25,7 +28,7 @@ if TYPE_CHECKING:
 logger = get_logger()
 
 
-class AdminService:
+class AdminService(WatchlistSubject):
     """
     Service class for admin panel operations
     
@@ -35,11 +38,18 @@ class AdminService:
     - Stock watchlist management
     - Data storage management
     - System logs retrieval
+    
+    Implements Observer pattern for watchlist change notifications.
     """
     
     def __init__(self, db: AsyncSession):
+        super().__init__()  # Initialize WatchlistSubject
         self.db = db
         self.logger = logger
+        
+        # Register all observers for watchlist notifications
+        for observer in observer_manager.get_all_observers():
+            self.attach(observer)
     
     async def get_model_accuracy_metrics(self) -> ModelAccuracyResponse:
         """
@@ -196,9 +206,12 @@ class AdminService:
                     added_date=stock.created_at
                 ))
             
-            # If no stocks in database, use default list
+            # If no stocks in database, use dynamic watchlist
             if not stocks:
-                for symbol in DEFAULT_TARGET_STOCKS:
+                watchlist_service = await get_watchlist_service(self.db)
+                watchlist_symbols = await watchlist_service.get_current_watchlist()
+                
+                for symbol in watchlist_symbols:
                     stocks.append(StockInfo(
                         symbol=symbol,
                         company_name=f"{symbol} Inc.",  
@@ -285,6 +298,10 @@ class AdminService:
             # Get updated watchlist
             updated_watchlist = await self.get_stock_watchlist()
             
+            # Notify observers of watchlist changes (Observer pattern implementation)
+            if success:
+                await self._notify_watchlist_observers(request.action, request.symbol)
+            
             return WatchlistUpdateResponse(
                 success=success,
                 action=request.action,
@@ -296,6 +313,49 @@ class AdminService:
         except Exception as e:
             self.logger.error("Error updating stock watchlist", error=str(e))
             raise
+    
+    async def _notify_watchlist_observers(self, action: str, symbol: str) -> None:
+        """
+        Notify observers of watchlist changes.
+        
+        Implements Observer pattern for real-time dashboard updates.
+        """
+        try:
+            # Determine event type based on action
+            event_type_map = {
+                "add": WatchlistEventType.STOCK_ADDED,
+                "remove": WatchlistEventType.STOCK_REMOVED,
+                "activate": WatchlistEventType.WATCHLIST_UPDATED,
+                "deactivate": WatchlistEventType.WATCHLIST_UPDATED
+            }
+            
+            event_type = event_type_map.get(action, WatchlistEventType.WATCHLIST_UPDATED)
+            
+            # Create watchlist event
+            event = WatchlistEvent(
+                event_type=event_type,
+                stocks_affected=[symbol],
+                metadata={
+                    "action": action,
+                    "admin_triggered": True,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            
+            # Notify all observers
+            await self.notify(event)
+            
+            self.logger.info(
+                "Watchlist observers notified",
+                action=action,
+                symbol=symbol,
+                event_type=event_type.value,
+                observer_count=len(self._observers)
+            )
+            
+        except Exception as e:
+            self.logger.error("Error notifying watchlist observers", error=str(e))
+            # Don't raise exception here - observer notification failure shouldn't break watchlist update
     
     async def get_storage_settings(self) -> StorageSettingsResponse:
         """
@@ -447,10 +507,15 @@ class AdminService:
             self.logger.info("Triggering manual data collection", request=request.dict())
             
             # Import pipeline components
-            from app.business.pipeline import DataPipeline, DEFAULT_TARGET_STOCKS
+            from app.business.pipeline import DataPipeline
             
-            # Determine target symbols
-            symbols = request.stock_symbols or DEFAULT_TARGET_STOCKS[:10]  # Limit to prevent overload
+            # Determine target symbols - use dynamic watchlist or provided symbols
+            if request.stock_symbols:
+                symbols = request.stock_symbols
+            else:
+                # Get current watchlist
+                current_watchlist = await get_current_stock_symbols(self.db)
+                symbols = current_watchlist[:10]  # Limit to prevent overload
             
             # Initialize pipeline
             pipeline = DataPipeline()

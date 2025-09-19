@@ -81,10 +81,16 @@ class SystemService:
             self.logger.info("Triggering manual data collection", stock_symbols=stock_symbols)
             
             # Import pipeline components
-            from app.business.pipeline import DataPipeline, DEFAULT_TARGET_STOCKS
+            from app.business.pipeline import DataPipeline
+            from app.service.watchlist_service import get_current_stock_symbols
             
-            # Use provided symbols or default list
-            symbols = stock_symbols or DEFAULT_TARGET_STOCKS[:10]  # Limit to prevent overload
+            # Use provided symbols or dynamic watchlist
+            if stock_symbols:
+                symbols = stock_symbols
+            else:
+                # Get current watchlist
+                current_watchlist = await get_current_stock_symbols(self.db)
+                symbols = current_watchlist[:10]  # Limit to prevent overload
             
             # Initialize pipeline
             pipeline = DataPipeline()

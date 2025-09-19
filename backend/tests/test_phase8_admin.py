@@ -133,15 +133,23 @@ class TestPhase8ModelAccuracy:
     
     def test_get_model_accuracy_success(self, client, mock_admin_auth):
         """Test successful model accuracy retrieval"""
-        with patch('app.service.sentiment_processing.get_sentiment_engine') as mock_engine:
-            # Mock sentiment engine with models
-            mock_sentiment_engine = Mock()
-            mock_sentiment_engine.models = {
-                "VADER": Mock(),
-                "FinBERT": Mock()
+        # Mock AdminService to avoid database dependency
+        with patch('app.service.admin_service.AdminService') as mock_admin_service_class, \
+             patch('app.presentation.dependencies.auth_dependencies.get_current_admin_user', mock_admin_auth):
+            
+            mock_admin_service = Mock()
+            mock_admin_service_class.return_value = mock_admin_service
+            
+            # Mock the model accuracy response
+            mock_admin_service.get_models_accuracy.return_value = {
+                "models": [
+                    {"name": "VADER", "accuracy": 0.85, "usage_count": 1000},
+                    {"name": "FinBERT", "accuracy": 0.92, "usage_count": 800}
+                ],
+                "overall_accuracy": 0.88,
+                "total_data_points": 1800,
+                "last_updated": datetime.now().isoformat()
             }
-            mock_sentiment_engine.stats.model_usage = {"VADER": 1000, "FinBERT": 800}
-            mock_engine.return_value = mock_sentiment_engine
             
             response = client.get("/admin/models/accuracy")
             

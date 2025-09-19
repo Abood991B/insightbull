@@ -23,7 +23,8 @@ from app.presentation.routes import (
     dashboard_router,
     stocks_router,
     analysis_router,
-    pipeline_router
+    pipeline_router,
+    admin_router
 )
 from app.presentation.middleware.logging_middleware import LoggingMiddleware
 from app.presentation.middleware.security_middleware import setup_security_middleware
@@ -100,11 +101,12 @@ def create_app() -> FastAPI:
     # Add custom logging middleware (after security middleware)
     app.add_middleware(LoggingMiddleware)
     
-    # Include routers - Phase 4, 5 Implementation
+    # Include routers - Phase 4, 5, 8 Implementation
     app.include_router(dashboard_router)  # Already has /api/dashboard prefix
     app.include_router(stocks_router)     # Already has /api/stocks prefix  
     app.include_router(analysis_router)   # Already has /api/analysis prefix
     app.include_router(pipeline_router)   # Phase 5: Pipeline management (admin only)
+    app.include_router(admin_router)      # Phase 8: Admin panel functionality
     
     # Global exception handlers
     @app.exception_handler(RequestValidationError)

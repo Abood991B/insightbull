@@ -406,9 +406,10 @@ async def get_stock_watchlist(
         )
         stocks_data = stocks_result.scalars().all()
         
-        # If no stocks in database, use default configuration
+        # If no stocks in database, use dynamic watchlist
         if not stocks_data:
-            from app.business.pipeline import DEFAULT_TARGET_STOCKS
+            from app.service.watchlist_service import get_current_stock_symbols
+            watchlist_symbols = await get_current_stock_symbols(db)
             stocks = [
                 StockInfo(
                     symbol=symbol,
@@ -416,7 +417,7 @@ async def get_stock_watchlist(
                     sector="Technology",
                     is_active=True,
                     added_date=datetime.utcnow()
-                ) for symbol in DEFAULT_TARGET_STOCKS
+                ) for symbol in watchlist_symbols
             ]
         else:
             stocks = [
@@ -699,9 +700,9 @@ async def trigger_manual_data_collection(
             if stocks_data:
                 symbols = list(stocks_data)
             else:
-                # Fallback to default stocks
-                from app.business.pipeline import DEFAULT_TARGET_STOCKS
-                symbols = DEFAULT_TARGET_STOCKS
+                # Fallback to dynamic watchlist
+                from app.service.watchlist_service import get_current_stock_symbols
+                symbols = await get_current_stock_symbols(db)
         
         # Create pipeline instance and trigger collection
         from app.business.pipeline import DataPipeline, PipelineConfig, DateRange

@@ -131,6 +131,26 @@ class SystemLog(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class WatchlistEntry(Base):
+    """Watchlist entry model for dynamic stock tracking."""
+    __tablename__ = "watchlist_entries"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks.id"), nullable=False)
+    added_date = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(Boolean, default=True, nullable=False)
+    priority = Column(Integer, default=0)  # For ordering/prioritization
+    
+    # Relationships
+    stock = relationship("Stock", backref="watchlist_entries")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_watchlist_active', 'is_active'),
+        Index('idx_watchlist_stock_active', 'stock_id', 'is_active'),
+    )
+
+
 # Export all models for easy import
 __all__ = [
     "Stock", 
@@ -138,5 +158,6 @@ __all__ = [
     "StockPrice", 
     "NewsArticle", 
     "RedditPost", 
-    "SystemLog"
+    "SystemLog",
+    "WatchlistEntry"
 ]
