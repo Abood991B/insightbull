@@ -400,12 +400,26 @@ class WatchlistObserverManager:
     notification, and lifecycle management.
     """
     
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self._observers: Dict[str, WatchlistObserver] = {}
-        self._logger = get_logger()
+        if not self._initialized:
+            self._observers: Dict[str, WatchlistObserver] = {}
+            self._logger = get_logger()
+            self._initialized = True
     
     def register_default_observers(self) -> None:
-        """Register default system observers"""
+        """Register default system observers (only once)"""
+        # Check if observers are already registered
+        if len(self._observers) >= 3:  # We expect 3 default observers
+            return
+            
         observers = [
             DashboardObserver(),
             AnalyticsObserver(),
@@ -413,8 +427,9 @@ class WatchlistObserverManager:
         ]
         
         for observer in observers:
-            self._observers[observer.observer_id] = observer
-            self._logger.info("Registered default observer", observer_id=observer.observer_id)
+            if observer.observer_id not in self._observers:
+                self._observers[observer.observer_id] = observer
+                self._logger.info("Registered default observer", observer_id=observer.observer_id)
     
     def get_observer(self, observer_id: str) -> Optional[WatchlistObserver]:
         """Get observer by ID"""

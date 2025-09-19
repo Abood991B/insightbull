@@ -97,9 +97,9 @@ class TestPhase7SchedulerIntegration:
         
         # Test that scheduler has required components
         assert hasattr(scheduler, 'pipeline'), "Scheduler should have Pipeline instance"
-        assert hasattr(scheduler, 'data_collector'), "Scheduler should have DataCollector"
         assert hasattr(scheduler, 'scheduler'), "Scheduler should have APScheduler instance"
         assert hasattr(scheduler, 'jobs'), "Scheduler should track jobs"
+        assert hasattr(scheduler, 'default_symbols'), "Scheduler should have default symbols"
         
         print("✅ Scheduler initializes with proper Pipeline integration")
     

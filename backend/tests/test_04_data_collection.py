@@ -85,17 +85,16 @@ class Phase5TestSuite:
             'errors': []
         }
         
-        # Test configuration - using complete Top 20 target stock list
-        # Top 20 IXT Technology Stocks including Magnificent Seven
+        # Test configuration - using limited symbols to avoid API rate limits
+        # Use only 3 major stocks for testing to prevent hitting rate limits
         self.test_symbols = [
-            "NVDA", "MSFT", "AAPL", "AVGO", "ORCL", "PLTR", "CSCO", "AMD", "IBM", "CRM",
-            "NOW", "INTU", "QCOM", "MU", "TXN", "ADBE", "GOOGL", "AMZN", "META", "TSLA"
+            "NVDA", "MSFT", "AAPL"  # Reduced from 20 to 3 stocks for testing
         ]
         self.test_config = PipelineConfig(
             symbols=self.test_symbols,
-            date_range=DateRange.last_days(5),  # Near real-time: 5 days for better API coverage
-            max_items_per_symbol=5,
-            include_marketaux=False  # Disable MarketAux due to API quota limits
+            date_range=DateRange.last_days(2),  # Reduced from 5 to 2 days
+            max_items_per_symbol=2,  # Reduced from 5 to 2 items
+            include_marketaux=False  # Keep disabled due to API quota limits
         )
     
     def log_test(self, test_name: str, success: bool, details: Dict[str, Any] = None):
@@ -391,11 +390,11 @@ class Phase5TestSuite:
         benchmarks = {}
         
         try:
-            # Test different configurations
+            # Test different configurations - reduced to prevent API rate limits
             configs = [
-                ('Small Load', replace(self.test_config, max_items_per_symbol=2)),
-                ('Medium Load', replace(self.test_config, max_items_per_symbol=5)),
-                ('Large Load', replace(self.test_config, max_items_per_symbol=10))
+                ('Light Test', replace(self.test_config, max_items_per_symbol=1)),
+                ('Standard Test', replace(self.test_config, max_items_per_symbol=2))
+                # Removed large load test to prevent API rate limiting
             ]
             
             pipeline = DataPipeline()
@@ -404,6 +403,9 @@ class Phase5TestSuite:
                 start_time = time.time()
                 result = await pipeline.run_pipeline(config)
                 execution_time = time.time() - start_time
+                
+                # Add delay between configs to prevent rate limiting
+                await asyncio.sleep(2)
                 
                 items_per_second = result.total_items_collected / execution_time if execution_time > 0 else 0
                 

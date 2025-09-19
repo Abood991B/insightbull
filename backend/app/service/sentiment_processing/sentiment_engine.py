@@ -529,10 +529,21 @@ def reset_sentiment_engine():
     
     This is primarily for testing purposes to ensure clean state between tests.
     """
+    import asyncio
     global _sentiment_engine_instance
     
     with _sentiment_engine_lock:
         if _sentiment_engine_instance is not None:
-            _sentiment_engine_instance.shutdown()
-            _sentiment_engine_instance = None
-            logger.info("Singleton SentimentEngine instance reset")
+            # Properly handle async shutdown
+            try:
+                loop = asyncio.get_running_loop()
+                # Create a task to run the shutdown
+                asyncio.create_task(_sentiment_engine_instance.shutdown())
+            except RuntimeError:
+                # No running loop, run shutdown synchronously
+                asyncio.run(_sentiment_engine_instance.shutdown())
+            except Exception as e:
+                logger.warning(f"Error during sentiment engine shutdown: {e}")
+            finally:
+                _sentiment_engine_instance = None
+                logger.info("Singleton SentimentEngine instance reset")

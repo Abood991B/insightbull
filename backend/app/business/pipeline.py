@@ -344,7 +344,24 @@ class DataPipeline:
                 'newsapi_key': secure_loader.get_decrypted_key('NEWSAPI_KEY'),
                 'marketaux_key': secure_loader.get_decrypted_key('MARKETAUX_API_KEY')
             }
-            self.configure_collectors(api_keys)
+            
+            # Reddit collector
+            reddit_client_id = api_keys.get('reddit_client_id')
+            reddit_client_secret = api_keys.get('reddit_client_secret')
+            if reddit_client_id and reddit_client_secret:
+                try:
+                    self._collectors["reddit"] = RedditCollector(
+                        client_id=reddit_client_id,
+                        client_secret=reddit_client_secret,
+                        user_agent="StockSentimentBot/1.0",
+                        rate_limiter=self.rate_limiter
+                    )
+                    collectors_configured += 1
+                    self.logger.info("✅ Reddit collector configured")
+                except Exception as e:
+                    self.logger.warning(f"❌ Failed to configure Reddit collector: {str(e)}")
+            else:
+                self.logger.info("⚠️  Reddit collector skipped - missing REDDIT_CLIENT_ID or REDDIT_CLIENT_SECRET")
             
             # FinHub collector
             finnhub_api_key = api_keys.get('finnhub_api_key')
