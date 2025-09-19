@@ -209,7 +209,7 @@ class SystemService:
             yesterday = datetime.utcnow() - timedelta(days=1)
             recent_sentiment = await self.db.scalar(
                 select(func.count()).select_from(SentimentData)
-                .where(SentimentData.processed_at >= yesterday)
+                .where(SentimentData.created_at >= yesterday)
             )
             
             recent_news = await self.db.scalar(
@@ -237,7 +237,7 @@ class SystemService:
         try:
             # Get last processing time
             last_sentiment = await self.db.scalar(
-                select(func.max(SentimentData.processed_at)).select_from(SentimentData)
+                select(func.max(SentimentData.created_at)).select_from(SentimentData)
             )
             
             last_news = await self.db.scalar(
@@ -249,7 +249,7 @@ class SystemService:
             
             sentiment_rate = await self.db.scalar(
                 select(func.count()).select_from(SentimentData)
-                .where(SentimentData.processed_at >= yesterday)
+                .where(SentimentData.created_at >= yesterday)
             )
             
             return {

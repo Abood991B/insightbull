@@ -43,7 +43,7 @@ const App = () => (
           <Route path="/about" element={<About />} />
           
           {/* Admin Routes */}
-          <Route path="/admin" element={<OAuth2AdminAuth />} />
+          <Route path="/admin" element={<AdminLogin />} />
           <Route path="/admin/auth/callback" element={<OAuth2AdminAuth />} />
           <Route path="/admin/dashboard" element={
             <AdminProtectedRoute>

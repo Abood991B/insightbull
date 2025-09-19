@@ -356,38 +356,44 @@ class DataCollectionObserver(WatchlistObserver):
     async def _add_collection_targets(self, stocks: List[str]) -> None:
         """Add stocks to data collection targets"""
         self._logger.info("Adding stocks to collection targets", stocks=stocks)
-        # In a real implementation, this would:
-        # - Add stocks to collection scheduler
-        # - Start immediate collection for new stocks
-        # - Update collection frequency settings
-        # - Configure collectors for new symbols
+        # Refresh scheduler with updated watchlist
+        await self._refresh_data_collection_scheduler()
     
     async def _remove_collection_targets(self, stocks: List[str]) -> None:
         """Remove stocks from data collection targets"""
         self._logger.info("Removing stocks from collection targets", stocks=stocks)
-        # In a real implementation, this would:
-        # - Remove stocks from collection scheduler
-        # - Cancel pending collection jobs
-        # - Optionally archive existing data
-        # - Update collector configurations
+        # Refresh scheduler with updated watchlist
+        await self._refresh_data_collection_scheduler()
     
     async def _update_collection_schedule(self) -> None:
         """Update data collection schedule"""
         self._logger.info("Updating data collection schedule")
-        # In a real implementation, this would:
-        # - Recalculate collection priorities
-        # - Adjust collection frequencies
-        # - Rebalance collector workloads
-        # - Update scheduler configurations
+        # Refresh scheduler with updated watchlist
+        await self._refresh_data_collection_scheduler()
     
     async def _clear_collection_targets(self) -> None:
         """Clear all data collection targets"""
         self._logger.info("Clearing all collection targets")
-        # In a real implementation, this would:
-        # - Stop all active collection jobs
-        # - Clear collection scheduler
-        # - Pause all collectors
-        # - Archive current data collection state
+        # Refresh scheduler with updated watchlist
+        await self._refresh_data_collection_scheduler()
+    
+    async def _refresh_data_collection_scheduler(self) -> None:
+        """Refresh the data collection scheduler with updated watchlist"""
+        try:
+            # Import here to avoid circular imports
+            from app.business.scheduler import Scheduler
+            
+            # Get scheduler instance (assuming singleton pattern)
+            # Note: In a production system, you might want to inject this dependency
+            scheduler = Scheduler()
+            if scheduler._is_running:
+                await scheduler.refresh_scheduled_jobs()
+                self._logger.info("Successfully refreshed data collection scheduler")
+            else:
+                self._logger.warning("Scheduler is not running, cannot refresh jobs")
+                
+        except Exception as e:
+            self._logger.error("Failed to refresh data collection scheduler", error=str(e))
 
 
 # Observer Manager and Factory

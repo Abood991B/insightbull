@@ -28,6 +28,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.infrastructure.log_system import get_logger
 from app.business.pipeline import DataPipeline
+from app.service.watchlist_service import get_current_stock_symbols
+from app.data_access.database.connection import get_db_session
 
 
 class JobStatus(Enum):
@@ -75,8 +77,8 @@ class Scheduler:
         self.jobs: Dict[str, ScheduledJob] = {}
         self._is_running = False
         
-        # Default stock symbols for scheduled jobs - Top 20 IXT Technology + Magnificent Seven
-        self.default_symbols = [
+        # Fallback stock symbols (used only if dynamic watchlist fails)
+        self.fallback_symbols = [
             "NVDA", "MSFT", "AAPL", "AVGO", "ORCL", "PLTR", "CSCO", "AMD", "IBM", "CRM",
             "NOW", "INTU", "QCOM", "MU", "TXN", "ADBE", "GOOGL", "AMZN", "META", "TSLA"
         ]
@@ -98,14 +100,65 @@ class Scheduler:
             self._is_running = False
             self.logger.info("Scheduler stopped")
     
+    async def get_current_symbols(self) -> List[str]:
+        """
+        Get current stock symbols from dynamic watchlist.
+        Falls back to hardcoded symbols if watchlist is unavailable.
+        """
+        try:
+            # Get database session
+            async with get_db_session() as db:
+                symbols = await get_current_stock_symbols(db)
+                if symbols:
+                    self.logger.info(f"Using dynamic watchlist with {len(symbols)} symbols")
+                    return symbols
+                else:
+                    self.logger.warning("Dynamic watchlist is empty, using fallback symbols")
+                    return self.fallback_symbols
+        except Exception as e:
+            self.logger.warning(f"Failed to get dynamic watchlist: {e}, using fallback symbols")
+            return self.fallback_symbols
+    
+    async def refresh_scheduled_jobs(self):
+        """
+        Refresh all scheduled jobs with updated watchlist.
+        This should be called when the admin updates the watchlist.
+        """
+        try:
+            self.logger.info("Refreshing scheduled jobs with updated watchlist")
+            
+            # Get updated symbols
+            current_symbols = await self.get_current_symbols()
+            
+            # Cancel existing recurring jobs (but keep running jobs)
+            jobs_to_refresh = ["Daily Data Collection", "Hourly Sentiment Analysis", "Weekly Full Pipeline"]
+            for job_name in jobs_to_refresh:
+                # Find and remove the job
+                for job_id, job in list(self.jobs.items()):
+                    if job.name == job_name and job.status in [JobStatus.PENDING]:
+                        self.scheduler.remove_job(job_id)
+                        del self.jobs[job_id]
+                        self.logger.info(f"Removed old scheduled job: {job_name}")
+            
+            # Recreate default jobs with new symbols
+            await self._setup_default_jobs()
+            
+            self.logger.info(f"Successfully refreshed scheduled jobs with {len(current_symbols)} symbols")
+            
+        except Exception as e:
+            self.logger.error(f"Error refreshing scheduled jobs: {e}")
+    
     async def _setup_default_jobs(self):
         """Setup default scheduled jobs for the pipeline"""
+        
+        # Get current symbols from dynamic watchlist
+        current_symbols = await self.get_current_symbols()
         
         # Daily data collection job at 6 AM UTC
         await self.schedule_data_collection(
             name="Daily Data Collection",
             cron_expression="0 6 * * *",  # Daily at 6 AM
-            symbols=self.default_symbols,
+            symbols=current_symbols,
             lookback_days=1
         )
         
@@ -113,14 +166,14 @@ class Scheduler:
         await self.schedule_sentiment_analysis(
             name="Hourly Sentiment Analysis", 
             cron_expression="0 9-16 * * 1-5",  # Hourly 9AM-4PM weekdays
-            symbols=self.default_symbols
+            symbols=current_symbols
         )
         
         # Weekly full pipeline run on Sundays
         await self.schedule_full_pipeline(
             name="Weekly Full Pipeline",
             cron_expression="0 2 * * 0",  # Sundays at 2 AM
-            symbols=self.default_symbols,
+            symbols=current_symbols,
             lookback_days=7
         )
     

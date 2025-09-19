@@ -48,6 +48,21 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
     
+    # Google OAuth2 Configuration
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    
+    # Admin Configuration
+    admin_emails: Optional[List[str]] = Field(default_factory=list)
+    
+    @field_validator('admin_emails', mode='before')
+    @classmethod
+    def parse_admin_emails(cls, v):
+        """Parse comma-separated admin emails from environment variable."""
+        if isinstance(v, str):
+            return [email.strip() for email in v.split(',') if email.strip()]
+        return v or []
+    
     # API Key Encryption
     api_key_encryption_key: str = secrets.token_urlsafe(32)
     
@@ -60,7 +75,7 @@ class Settings(BaseSettings):
     csrf_protection: bool = True
     
     # CORS Settings
-    allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000"
+    allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080"
     
     # Redis Configuration
     redis_url: str = "redis://localhost:6379/0"

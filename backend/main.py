@@ -106,7 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(stocks_router)     # Already has /api/stocks prefix  
     app.include_router(analysis_router)   # Already has /api/analysis prefix
     app.include_router(pipeline_router)   # Phase 5: Pipeline management (admin only)
-    app.include_router(admin_router)      # Phase 8: Admin panel functionality
+    app.include_router(admin_router, prefix="/api")  # Phase 8: Admin panel functionality
     
     # Global exception handlers
     @app.exception_handler(RequestValidationError)

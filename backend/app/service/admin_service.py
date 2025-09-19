@@ -51,7 +51,7 @@ class AdminService(WatchlistSubject):
         for observer in observer_manager.get_all_observers():
             self.attach(observer)
     
-    async def get_model_accuracy_metrics(self) -> ModelAccuracyResponse:
+    async def get_model_accuracy_metrics(self) -> Dict[str, Any]:
         """
         Get sentiment analysis model accuracy metrics.
         
@@ -66,7 +66,7 @@ class AdminService(WatchlistSubject):
             # Query sentiment data for accuracy calculation
             result = await self.db.execute(
                 select(SentimentData)
-                .where(SentimentData.processed_at >= thirty_days_ago)
+                .where(SentimentData.created_at >= thirty_days_ago)
                 .limit(1000)  # Sample for performance
             )
             recent_sentiment_data = result.scalars().all()
@@ -82,7 +82,7 @@ class AdminService(WatchlistSubject):
             # VADER model metrics - based on confidence scores and distribution
             vader_metrics = self._calculate_model_metrics(vader_data, 'VADER')
             models.append(ModelMetrics(
-                model_name="VADER",
+                name="VADER",
                 accuracy=vader_metrics['accuracy'],
                 precision=vader_metrics['precision'], 
                 recall=vader_metrics['recall'],
@@ -94,7 +94,7 @@ class AdminService(WatchlistSubject):
             # FinBERT model metrics - based on confidence scores and distribution
             finbert_metrics = self._calculate_model_metrics(finbert_data, 'FinBERT')
             models.append(ModelMetrics(
-                model_name="FinBERT", 
+                name="FinBERT", 
                 accuracy=finbert_metrics['accuracy'],
                 precision=finbert_metrics['precision'],
                 recall=finbert_metrics['recall'],
@@ -106,19 +106,42 @@ class AdminService(WatchlistSubject):
             total_predictions = sum(m.total_predictions for m in models)
             overall_accuracy = sum(m.accuracy * m.total_predictions for m in models) / total_predictions if total_predictions > 0 else 0
             
-            return ModelAccuracyResponse(
-                models=models,
-                overall_accuracy=overall_accuracy,
-                evaluation_period="Last 30 days",
-                total_data_points=total_predictions,
-                last_updated=datetime.utcnow()
-            )
+            # Convert to the format expected by frontend
+            model_metrics = {}
+            for model in models:
+                if model.name == "VADER":
+                    model_metrics["vader_sentiment"] = {
+                        "accuracy": model.accuracy,
+                        "precision": model.precision,
+                        "recall": model.recall,
+                        "f1_score": model.f1_score,
+                        "total_predictions": model.total_predictions,
+                        "last_evaluated": model.last_evaluated
+                    }
+                elif model.name == "FinBERT":
+                    model_metrics["finbert_sentiment"] = {
+                        "accuracy": model.accuracy,
+                        "precision": model.precision,
+                        "recall": model.recall,
+                        "f1_score": model.f1_score,
+                        "total_predictions": model.total_predictions,
+                        "last_evaluated": model.last_evaluated
+                    }
+            
+            # Return data in the format expected by the frontend
+            return {
+                "model_metrics": model_metrics,
+                "overall_accuracy": overall_accuracy,
+                "evaluation_period": "Last 30 days",
+                "evaluation_samples": total_predictions,
+                "last_evaluation": datetime.utcnow().isoformat()
+            }
             
         except Exception as e:
             self.logger.error("Error calculating model accuracy metrics", error=str(e))
             raise
     
-    async def get_api_configuration_status(self) -> APIConfigResponse:
+    async def get_api_configuration_status(self) -> Dict[str, Any]:
         """
         Get current API configuration status.
         
@@ -154,10 +177,10 @@ class AdminService(WatchlistSubject):
             # NewsAPI status
             services.append(APIServiceConfig(
                 service_name="NewsAPI",
-                is_configured=bool(settings.newsapi_key),
-                status=APIKeyStatus.ACTIVE if settings.newsapi_key else APIKeyStatus.INACTIVE,
+                is_configured=bool(settings.news_api_key),
+                status=APIKeyStatus.ACTIVE if settings.news_api_key else APIKeyStatus.INACTIVE,
                 rate_limit=1000,
-                last_tested=datetime.utcnow() if settings.newsapi_key else None
+                last_tested=datetime.utcnow() if settings.news_api_key else None
             ))
             
             # Marketaux API status
@@ -172,12 +195,24 @@ class AdminService(WatchlistSubject):
             configured_count = sum(1 for s in services if s.is_configured)
             active_count = sum(1 for s in services if s.status == APIKeyStatus.ACTIVE)
             
-            return APIConfigResponse(
-                services=services,
-                total_configured=configured_count,
-                total_active=active_count,
-                last_updated=datetime.utcnow()
-            )
+            # Convert to the format expected by frontend
+            apis_dict = {}
+            for service in services:
+                key = service.service_name.lower()
+                if key == "finhub":
+                    key = "finnhub"
+                apis_dict[key] = {
+                    "status": service.status.value.lower(),
+                    "configured": service.is_configured,
+                    "last_test": service.last_tested.isoformat() if service.last_tested else None
+                }
+            
+            return {
+                "apis": apis_dict,
+                "total_configured": configured_count,
+                "total_active": active_count,
+                "last_updated": datetime.utcnow().isoformat()
+            }
             
         except Exception as e:
             self.logger.error("Error getting API configuration status", error=str(e))
@@ -193,16 +228,16 @@ class AdminService(WatchlistSubject):
             self.logger.info("Getting stock watchlist")
             
             # Get stocks from database
-            result = await self.db.execute(select(Stock).where(Stock.is_active == True))
+            result = await self.db.execute(select(Stock))
             db_stocks = result.scalars().all()
             
             stocks = []
             for stock in db_stocks:
                 stocks.append(StockInfo(
                     symbol=stock.symbol,
-                    company_name=stock.company_name,
+                    company_name=stock.name,
                     sector=stock.sector or "Unknown",
-                    is_active=stock.is_active,
+                    is_active=True,  # All stocks in DB are considered active
                     added_date=stock.created_at
                 ))
             
@@ -379,12 +414,12 @@ class AdminService(WatchlistSubject):
             
             # Get oldest and newest records
             oldest_sentiment_result = await self.db.execute(
-                select(func.min(SentimentData.processed_at))
+                select(func.min(SentimentData.created_at))
             )
             oldest_record = oldest_sentiment_result.scalar()
             
             newest_sentiment_result = await self.db.execute(
-                select(func.max(SentimentData.processed_at))
+                select(func.max(SentimentData.created_at))
             )
             newest_record = newest_sentiment_result.scalar()
             

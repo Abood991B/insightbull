@@ -46,29 +46,8 @@ from ..data_access.database.connection import get_db
 logger = get_logger()
 
 
-# Target Stocks Configuration - Top 20 IXT Technology Stocks including Magnificent Seven
-DEFAULT_TARGET_STOCKS = [
-    "NVDA",   # 1. NVIDIA Corporation
-    "MSFT",   # 2. Microsoft Corporation  
-    "AAPL",   # 3. Apple Inc.
-    "AVGO",   # 4. Broadcom Inc.
-    "ORCL",   # 5. Oracle Corporation
-    "PLTR",   # 6. Palantir Technologies Inc.
-    "CSCO",   # 7. Cisco Systems, Inc.
-    "AMD",    # 8. Advanced Micro Devices, Inc.
-    "IBM",    # 9. International Business Machines Corporation
-    "CRM",    # 10. Salesforce, Inc.
-    "NOW",    # 11. ServiceNow, Inc.
-    "INTU",   # 12. Intuit Inc.
-    "QCOM",   # 13. QUALCOMM Incorporated
-    "MU",     # 14. Micron Technology, Inc.
-    "TXN",    # 15. Texas Instruments Incorporated
-    "ADBE",   # 16. Adobe Inc.
-    "GOOGL",  # 17. Alphabet Inc. (Class A)
-    "AMZN",   # 18. Amazon.com, Inc.
-    "META",   # 19. Meta Platforms, Inc.
-    "TSLA"    # 20. Tesla, Inc.
-]
+# Note: TARGET_STOCKS are now managed dynamically via WatchlistService
+# The static list has been replaced with database-driven watchlist management
 
 
 class PipelineStatus(Enum):

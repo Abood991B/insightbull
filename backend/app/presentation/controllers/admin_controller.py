@@ -30,6 +30,10 @@ from app.service.system_service import SystemService
 logger = structlog.get_logger()
 router = APIRouter()
 
+# Include OAuth2 routes
+from app.presentation.controllers.oauth_controller import router as oauth_router
+router.include_router(oauth_router, tags=["admin-auth"])
+
 
 # Authentication endpoints for admin integration
 @router.post("/auth/validate", responses={**auth_responses})

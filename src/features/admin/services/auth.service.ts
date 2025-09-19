@@ -47,45 +47,49 @@ export class AuthService {
     return AuthService.instance;
   }
 
+  private getApiBaseUrl(): string {
+    return import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  }
+
   // OAuth2 Authentication
   async authenticateWithGoogle(code: string): Promise<{ success: boolean; user?: AdminUser; error?: string }> {
     try {
-      // Exchange authorization code for tokens
-      const tokenResponse = await this.exchangeCodeForTokens(code);
-      if (!tokenResponse.success || !tokenResponse.tokens) {
-        return { success: false, error: tokenResponse.error || 'Failed to exchange code for tokens' };
+      // Send the OAuth code to the backend for token exchange and validation
+      const response = await fetch(`${this.getApiBaseUrl()}/api/admin/auth/oauth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          code,
+          redirect_uri: securityConfig.oauth2.redirectUri 
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        this.logSecurityEvent('BACKEND_AUTH_ERROR', { error: errorData.detail || 'Authentication failed' });
+        return { success: false, error: errorData.detail || 'Authentication failed' };
       }
 
-      // Get user info from Google
-      const userInfo = await this.getUserInfo(tokenResponse.tokens.access_token);
-      if (!userInfo.email) {
-        return { success: false, error: 'Failed to retrieve user email' };
+      const authResult = await response.json();
+      
+      if (!authResult.access_token || !authResult.user) {
+        return { success: false, error: 'Invalid authentication response from server' };
       }
 
-      // Verify admin authorization
-      if (!this.isAuthorizedAdmin(userInfo.email)) {
-        this.logSecurityEvent('UNAUTHORIZED_ACCESS_ATTEMPT', { email: userInfo.email });
-        return { success: false, error: 'Unauthorized: You are not authorized to access the admin panel' };
-      }
-
-      // Check rate limiting
-      if (!this.checkRateLimit(userInfo.email)) {
-        this.logSecurityEvent('RATE_LIMIT_EXCEEDED', { email: userInfo.email });
-        return { success: false, error: 'Too many authentication attempts. Please try again later.' };
-      }
-
-      // Create admin user object
+      // Create admin user object from backend response
       const adminUser: AdminUser = {
-        email: userInfo.email,
-        name: userInfo.name || userInfo.email,
-        picture: userInfo.picture,
-        totpEnabled: this.hasTotpSecret(userInfo.email),
+        email: authResult.user.email,
+        name: authResult.user.name || authResult.user.email,
+        picture: authResult.user.picture,
+        totpEnabled: this.hasTotpSecret(authResult.user.email),
       };
 
-      // Create initial session (TOTP not yet verified)
-      this.createSession(adminUser, tokenResponse.tokens.access_token, tokenResponse.tokens.refresh_token);
+      // Create initial session with backend tokens (TOTP not yet verified)
+      this.createSession(adminUser, authResult.access_token, authResult.refresh_token);
       
-      this.logSecurityEvent('OAUTH_SUCCESS', { email: userInfo.email });
+      this.logSecurityEvent('OAUTH_SUCCESS', { email: adminUser.email });
       return { success: true, user: adminUser };
     } catch (error) {
       console.error('OAuth authentication error:', error);
@@ -151,26 +155,64 @@ export class AuthService {
   }
 
   async verifyTotp(email: string, token: string): Promise<boolean> {
-    const secret = this.getTotpSecret(email);
-    if (!secret) {
+    try {
+      // First verify locally to avoid unnecessary API calls
+      const secret = this.getTotpSecret(email);
+      if (secret) {
+        const localValid = await this.verifyTotpToken(secret, token);
+        if (!localValid) {
+          this.logSecurityEvent('TOTP_FAILED', { email });
+          return false;
+        }
+      }
+
+      // Verify with backend if we have a session
+      if (this.session && this.session.user.email === email) {
+        try {
+          const response = await fetch(`${this.getApiBaseUrl()}/api/admin/auth/totp/verify`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${this.session.accessToken}`,
+            },
+            body: JSON.stringify({ 
+              email,
+              totp_code: token 
+            }),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            if (result.verified) {
+              // Mark TOTP as verified in session
+              this.session.totpVerified = true;
+              this.saveSession();
+              this.logSecurityEvent('TOTP_VERIFIED', { email });
+              return true;
+            }
+          }
+        } catch (error) {
+          console.error('Backend TOTP verification failed, using local verification:', error);
+        }
+      }
+
+      // Fallback to local verification if backend is unavailable
+      if (secret) {
+        const valid = await this.verifyTotpToken(secret, token);
+        if (valid && this.session && this.session.user.email === email) {
+          this.session.totpVerified = true;
+          this.saveSession();
+          this.logSecurityEvent('TOTP_VERIFIED', { email });
+        }
+        return valid;
+      }
+
+      return false;
+    } catch (error) {
+      console.error('TOTP verification error:', error);
+      this.logSecurityEvent('TOTP_ERROR', { email, error: error });
       return false;
     }
-
-    // Verify TOTP token using Web Crypto API
-    const valid = await this.verifyTotpToken(secret, token);
-    
-    if (valid) {
-      // Mark TOTP as verified in session
-      if (this.session && this.session.user.email === email) {
-        this.session.totpVerified = true;
-        this.saveSession();
-        this.logSecurityEvent('TOTP_VERIFIED', { email });
-      }
-    } else {
-      this.logSecurityEvent('TOTP_FAILED', { email });
-    }
-    
-    return valid;
   }
 
   private async verifyTotpToken(secret: string, token: string): Promise<boolean> {
@@ -207,9 +249,10 @@ export class AuthService {
       timeView.setUint32(4, timeWindow, false); // Big endian, high 32 bits are 0
       
       // Import key for HMAC-SHA1
+      const keyBuffer = new Uint8Array(key).buffer;
       const cryptoKey = await crypto.subtle.importKey(
         'raw',
-        key,
+        keyBuffer,
         { name: 'HMAC', hash: 'SHA-1' },
         false,
         ['sign']
@@ -263,6 +306,10 @@ export class AuthService {
   // Session Management
   private createSession(user: AdminUser, accessToken: string, refreshToken?: string): void {
     const now = Date.now();
+    
+    // Store the backend JWT token for API calls
+    localStorage.setItem('admin_token', accessToken);
+    
     this.session = {
       user,
       accessToken,
@@ -320,6 +367,9 @@ export class AuthService {
     if (this.session) {
       this.logSecurityEvent('LOGOUT', { email: this.session.user.email });
     }
+    
+    // Clear admin token from localStorage
+    localStorage.removeItem('admin_token');
     
     this.session = null;
     this.clearSession();

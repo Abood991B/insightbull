@@ -149,7 +149,7 @@ class SentimentService:
             # Get sentiment data grouped by time intervals
             result = await self.db.execute(
                 select(
-                    func.date_trunc(interval, SentimentData.processed_at).label('time_bucket'),
+                    func.date_trunc(interval, SentimentData.created_at).label('time_bucket'),
                     func.avg(SentimentData.sentiment_score).label('avg_sentiment'),
                     func.avg(SentimentData.confidence).label('avg_confidence'),
                     func.count().label('data_points'),
@@ -157,10 +157,10 @@ class SentimentService:
                 )
                 .where(and_(
                     SentimentData.stock_id == stock_id,
-                    SentimentData.processed_at >= cutoff_date
+                    SentimentData.created_at >= cutoff_date
                 ))
-                .group_by(func.date_trunc(interval, SentimentData.processed_at), SentimentData.source)
-                .order_by(func.date_trunc(interval, SentimentData.processed_at))
+                .group_by(func.date_trunc(interval, SentimentData.created_at), SentimentData.source)
+                .order_by(func.date_trunc(interval, SentimentData.created_at))
             )
             
             # Group by time bucket

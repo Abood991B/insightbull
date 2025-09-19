@@ -1,116 +1,293 @@
 
+import React, { useState, useEffect } from 'react';
 import AdminLayout from "@/shared/components/layouts/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Badge } from "@/shared/components/ui/badge";
 import { Progress } from "@/shared/components/ui/progress";
+import { Button } from "@/shared/components/ui/button";
+import { useToast } from "@/shared/hooks/use-toast";
+import { adminAPI, ModelAccuracy as ModelAccuracyType } from "../../../api/services/admin.service";
+import { RefreshCw, TrendingUp, AlertCircle } from "lucide-react";
 
 const ModelAccuracy = () => {
+  const { toast } = useToast();
+  const [modelData, setModelData] = useState<ModelAccuracyType | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Load model accuracy data
+  const loadModelAccuracy = async (showRefreshToast = false) => {
+    try {
+      setRefreshing(true);
+      const data = await adminAPI.getModelAccuracy();
+      setModelData(data);
+      
+      if (showRefreshToast) {
+        toast({
+          title: "Data Updated",
+          description: "Model accuracy metrics have been refreshed.",
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load model accuracy:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load model accuracy data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadModelAccuracy();
+  }, []);
+
+  // Helper function to get performance badge
+  const getPerformanceBadge = (accuracy: number) => {
+    if (accuracy >= 0.90) {
+      return <Badge className="bg-green-100 text-green-800">Excellent</Badge>;
+    } else if (accuracy >= 0.80) {
+      return <Badge className="bg-blue-100 text-blue-800">Good</Badge>;
+    } else if (accuracy >= 0.70) {
+      return <Badge className="bg-yellow-100 text-yellow-800">Fair</Badge>;
+    } else {
+      return <Badge className="bg-red-100 text-red-800">Poor</Badge>;
+    }
+  };
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">Loading model accuracy data...</div>
+        </div>
+      </AdminLayout>
+    );
+  }
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Model Accuracy</h1>
-          <p className="text-gray-600 mt-2">Performance metrics for sentiment analysis models</p>
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Model Accuracy</h1>
+            <p className="text-gray-600 mt-2">Performance metrics for sentiment analysis models</p>
+          </div>
+          
+          <div className="flex gap-3">
+            <Button 
+              variant="outline" 
+              onClick={() => loadModelAccuracy(true)}
+              disabled={refreshing}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </div>
         </div>
+
+        {/* Overall Performance Summary */}
+        {modelData && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Overall Performance
+              </CardTitle>
+              <CardDescription>
+                Last evaluation: {new Date(modelData.last_evaluation).toLocaleString()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <div className="text-3xl font-bold">
+                    {(modelData.overall_accuracy * 100).toFixed(1)}%
+                  </div>
+                  <p className="text-sm text-gray-600">Overall Accuracy</p>
+                </div>
+                <div className="text-right">
+                  {getPerformanceBadge(modelData.overall_accuracy)}
+                  <p className="text-sm text-gray-600 mt-1">
+                    {modelData.evaluation_samples.toLocaleString()} samples evaluated
+                  </p>
+                </div>
+              </div>
+              <Progress value={modelData.overall_accuracy * 100} className="w-full" />
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle>VADER Model (Reddit Data)</CardTitle>
+              <CardTitle>VADER Model</CardTitle>
               <CardDescription>Social media sentiment analysis performance</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span>Accuracy</span>
-                <div className="flex items-center gap-2">
-                  <Progress value={85} className="w-20" />
-                  <span className="text-sm font-medium">85%</span>
+              {modelData ? (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span>Accuracy</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={modelData.model_metrics.vader_sentiment.accuracy * 100} className="w-20" />
+                      <span className="text-sm font-medium">
+                        {(modelData.model_metrics.vader_sentiment.accuracy * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Precision</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={modelData.model_metrics.vader_sentiment.precision * 100} className="w-20" />
+                      <span className="text-sm font-medium">
+                        {(modelData.model_metrics.vader_sentiment.precision * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Recall</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={modelData.model_metrics.vader_sentiment.recall * 100} className="w-20" />
+                      <span className="text-sm font-medium">
+                        {(modelData.model_metrics.vader_sentiment.recall * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>F1-Score</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={modelData.model_metrics.vader_sentiment.f1_score * 100} className="w-20" />
+                      <span className="text-sm font-medium">
+                        {(modelData.model_metrics.vader_sentiment.f1_score * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    {getPerformanceBadge(modelData.model_metrics.vader_sentiment.accuracy)}
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center py-4">
+                  <AlertCircle className="h-5 w-5 text-gray-400 mr-2" />
+                  <span className="text-gray-500">No data available</span>
                 </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>Precision</span>
-                <div className="flex items-center gap-2">
-                  <Progress value={82} className="w-20" />
-                  <span className="text-sm font-medium">82%</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>Recall</span>
-                <div className="flex items-center gap-2">
-                  <Progress value={88} className="w-20" />
-                  <span className="text-sm font-medium">88%</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>F1-Score</span>
-                <div className="flex items-center gap-2">
-                  <Progress value={85} className="w-20" />
-                  <span className="text-sm font-medium">85%</span>
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>FinBERT Model (News Data)</CardTitle>
+              <CardTitle>FinBERT Model</CardTitle>
               <CardDescription>Financial news sentiment analysis performance</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span>Accuracy</span>
-                <div className="flex items-center gap-2">
-                  <Progress value={92} className="w-20" />
-                  <span className="text-sm font-medium">92%</span>
+              {modelData ? (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span>Accuracy</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={modelData.model_metrics.finbert_sentiment.accuracy * 100} className="w-20" />
+                      <span className="text-sm font-medium">
+                        {(modelData.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Precision</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={modelData.model_metrics.finbert_sentiment.precision * 100} className="w-20" />
+                      <span className="text-sm font-medium">
+                        {(modelData.model_metrics.finbert_sentiment.precision * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Recall</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={modelData.model_metrics.finbert_sentiment.recall * 100} className="w-20" />
+                      <span className="text-sm font-medium">
+                        {(modelData.model_metrics.finbert_sentiment.recall * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>F1-Score</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={modelData.model_metrics.finbert_sentiment.f1_score * 100} className="w-20" />
+                      <span className="text-sm font-medium">
+                        {(modelData.model_metrics.finbert_sentiment.f1_score * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    {getPerformanceBadge(modelData.model_metrics.finbert_sentiment.accuracy)}
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center py-4">
+                  <AlertCircle className="h-5 w-5 text-gray-400 mr-2" />
+                  <span className="text-gray-500">No data available</span>
                 </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>Precision</span>
-                <div className="flex items-center gap-2">
-                  <Progress value={90} className="w-20" />
-                  <span className="text-sm font-medium">90%</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>Recall</span>
-                <div className="flex items-center gap-2">
-                  <Progress value={94} className="w-20" />
-                  <span className="text-sm font-medium">94%</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>F1-Score</span>
-                <div className="flex items-center gap-2">
-                  <Progress value={92} className="w-20" />
-                  <span className="text-sm font-medium">92%</span>
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Model Evaluation Summary</CardTitle>
-            <CardDescription>Overall performance and recommendations</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <Badge className="bg-green-100 text-green-800 mb-2">Excellent</Badge>
-                <p className="text-sm text-gray-600">FinBERT performance on financial news</p>
+        {modelData && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Model Evaluation Summary</CardTitle>
+              <CardDescription>Performance analysis and recommendations</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="text-center">
+                  {getPerformanceBadge(modelData.model_metrics.finbert_sentiment.accuracy)}
+                  <p className="text-sm text-gray-600 mt-2">FinBERT performance on financial news</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {(modelData.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}% accuracy
+                  </p>
+                </div>
+                <div className="text-center">
+                  {getPerformanceBadge(modelData.model_metrics.vader_sentiment.accuracy)}
+                  <p className="text-sm text-gray-600 mt-2">VADER performance on social media</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {(modelData.model_metrics.vader_sentiment.accuracy * 100).toFixed(1)}% accuracy
+                  </p>
+                </div>
+                <div className="text-center">
+                  {getPerformanceBadge(modelData.overall_accuracy)}
+                  <p className="text-sm text-gray-600 mt-2">Overall system performance</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {(modelData.overall_accuracy * 100).toFixed(1)}% combined accuracy
+                  </p>
+                </div>
               </div>
-              <div className="text-center">
-                <Badge className="bg-blue-100 text-blue-800 mb-2">Good</Badge>
-                <p className="text-sm text-gray-600">VADER performance on social media</p>
+              
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h4 className="font-medium mb-2">Evaluation Details</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Last Evaluation:</span>
+                    <span className="ml-2 font-medium">
+                      {new Date(modelData.last_evaluation).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Samples Evaluated:</span>
+                    <span className="ml-2 font-medium">
+                      {modelData.evaluation_samples.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="text-center">
-                <Badge className="bg-yellow-100 text-yellow-800 mb-2">Monitor</Badge>
-                <p className="text-sm text-gray-600">Continue monitoring for improvements</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AdminLayout>
   );
