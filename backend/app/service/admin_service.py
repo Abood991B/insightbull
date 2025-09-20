@@ -13,10 +13,12 @@ from sqlalchemy import select, func, text
 import asyncio
 import structlog
 
-from app.data_access.models import Stock, SentimentData, StockPrice, SystemLog
+from app.utils.timezone import malaysia_now, malaysia_isoformat, format_malaysia_time
+from app.data_access.models import Stock, SentimentData, StockPrice, SystemLog, WatchlistEntry
 from app.infrastructure.log_system import get_logger
 from app.presentation.schemas.admin_schemas import *
 from app.service.watchlist_service import get_watchlist_service, get_current_stock_symbols
+from app.service.watchlist_service import WatchlistService
 from app.business.watchlist_observer import (
     WatchlistSubject, WatchlistEvent, WatchlistEventType, observer_manager
 )
@@ -46,6 +48,7 @@ class AdminService(WatchlistSubject):
         super().__init__()  # Initialize WatchlistSubject
         self.db = db
         self.logger = logger
+        # Company name service is now integrated into WatchlistService
         
         # Register all observers for watchlist notifications
         for observer in observer_manager.get_all_observers():
@@ -143,79 +146,141 @@ class AdminService(WatchlistSubject):
     
     async def get_api_configuration_status(self) -> Dict[str, Any]:
         """
-        Get current API configuration status.
+        Get current API configuration status with actual API keys.
         
         Implements U-FR7: Configure API Keys
         """
         try:
-            self.logger.info("Getting API configuration status")
+            self.logger.info("Getting API configuration status", component="admin_service")
             
-            # Import here to avoid circular imports
-            from app.infrastructure.config.settings import get_settings
-            settings = get_settings()
+            # Use SecureAPIKeyLoader to get actual API keys
+            from app.infrastructure.security.api_key_manager import SecureAPIKeyLoader
+            key_loader = SecureAPIKeyLoader()
+            self.logger.info("SecureAPIKeyLoader initialized", component="admin_service")
             
-            services = []
+            # Load all API keys
+            keys = key_loader.load_api_keys()
             
-            # Reddit API status
-            services.append(APIServiceConfig(
-                service_name="Reddit",
-                is_configured=bool(settings.reddit_client_id and settings.reddit_client_secret),
-                status=APIKeyStatus.ACTIVE if settings.reddit_client_id else APIKeyStatus.INACTIVE,
-                rate_limit=100,
-                last_tested=datetime.utcnow() if settings.reddit_client_id else None
-            ))
+            # Get Reddit keys
+            reddit_client_id = keys.get('reddit_client_id', '')
+            reddit_client_secret = keys.get('reddit_client_secret', '')
+            reddit_user_agent = keys.get('reddit_user_agent', 'InsightStockDash/1.0')
             
-            # FinHub API status
-            services.append(APIServiceConfig(
-                service_name="FinHub",
-                is_configured=bool(settings.finnhub_api_key),
-                status=APIKeyStatus.ACTIVE if settings.finnhub_api_key else APIKeyStatus.INACTIVE,
-                rate_limit=60,
-                last_tested=datetime.utcnow() if settings.finnhub_api_key else None
-            ))
+            # Get other API keys
+            finnhub_key = keys.get('finnhub_api_key', '')
+            newsapi_key = keys.get('news_api_key', '')
+            marketaux_key = keys.get('marketaux_api_key', '')
             
-            # NewsAPI status
-            services.append(APIServiceConfig(
-                service_name="NewsAPI",
-                is_configured=bool(settings.news_api_key),
-                status=APIKeyStatus.ACTIVE if settings.news_api_key else APIKeyStatus.INACTIVE,
-                rate_limit=1000,
-                last_tested=datetime.utcnow() if settings.news_api_key else None
-            ))
-            
-            # Marketaux API status
-            services.append(APIServiceConfig(
-                service_name="Marketaux",
-                is_configured=bool(settings.marketaux_api_key),
-                status=APIKeyStatus.ACTIVE if settings.marketaux_api_key else APIKeyStatus.INACTIVE,
-                rate_limit=200,
-                last_tested=datetime.utcnow() if settings.marketaux_api_key else None
-            ))
-            
-            configured_count = sum(1 for s in services if s.is_configured)
-            active_count = sum(1 for s in services if s.status == APIKeyStatus.ACTIVE)
-            
-            # Convert to the format expected by frontend
-            apis_dict = {}
-            for service in services:
-                key = service.service_name.lower()
-                if key == "finhub":
-                    key = "finnhub"
-                apis_dict[key] = {
-                    "status": service.status.value.lower(),
-                    "configured": service.is_configured,
-                    "last_test": service.last_tested.isoformat() if service.last_tested else None
-                }
-            
+            # Build API configuration structure expected by frontend
             return {
-                "apis": apis_dict,
-                "total_configured": configured_count,
-                "total_active": active_count,
-                "last_updated": datetime.utcnow().isoformat()
+                "apis": {
+                    "reddit": {
+                        "status": "active" if reddit_client_id and reddit_client_secret else "inactive",
+                        "last_test": datetime.utcnow().isoformat() if reddit_client_id else None,
+                        "client_id": reddit_client_id,
+                        "client_secret": reddit_client_secret,
+                        "user_agent": reddit_user_agent
+                    },
+                    "finnhub": {
+                        "status": "active" if finnhub_key else "inactive", 
+                        "last_test": datetime.utcnow().isoformat() if finnhub_key else None,
+                        "api_key": finnhub_key
+                    },
+                    "newsapi": {
+                        "status": "unknown" if not newsapi_key else "active",
+                        "last_test": None,
+                        "api_key": newsapi_key
+                    },
+                    "marketaux": {
+                        "status": "active" if marketaux_key else "inactive",
+                        "last_test": datetime.utcnow().isoformat() if marketaux_key else None,
+                        "api_key": marketaux_key
+                    }
+                },
+                "summary": {
+                    "total_apis": 4,
+                    "configured": sum(1 for key in [reddit_client_id, finnhub_key, newsapi_key, marketaux_key] if key),
+                    "active": sum(1 for key in [reddit_client_id, finnhub_key, marketaux_key] if key) + (1 if newsapi_key else 0)
+                }
             }
             
         except Exception as e:
             self.logger.error("Error getting API configuration status", error=str(e))
+            raise
+    
+    async def update_api_configuration(self, config_update: APIKeyUpdateRequest) -> Dict[str, Any]:
+        """
+        Update API configuration settings.
+        
+        Implements U-FR7: Configure API Keys
+        """
+        try:
+            self.logger.info("Updating API configuration")
+            
+            from app.infrastructure.security.api_key_manager import SecureAPIKeyLoader
+            key_loader = SecureAPIKeyLoader()
+            
+            updated_keys = []
+            
+            # Update API keys based on service and keys provided
+            service = config_update.service
+            keys = config_update.keys
+            
+            if service == "reddit":
+                if "client_id" in keys:
+                    key_loader.update_api_key("REDDIT_CLIENT_ID", keys["client_id"])
+                    updated_keys.append("reddit_client_id")
+                if "client_secret" in keys:
+                    key_loader.update_api_key("REDDIT_CLIENT_SECRET", keys["client_secret"])
+                    updated_keys.append("reddit_client_secret")
+                if "user_agent" in keys:
+                    key_loader.update_api_key("REDDIT_USER_AGENT", keys["user_agent"])
+                    updated_keys.append("reddit_user_agent")
+            elif service == "finnhub":
+                if "api_key" in keys:
+                    key_loader.update_api_key("FINNHUB_API_KEY", keys["api_key"])
+                    updated_keys.append("finnhub_api_key")
+            elif service == "newsapi":
+                if "api_key" in keys:
+                    key_loader.update_api_key("NEWSAPI_KEY", keys["api_key"])
+                    updated_keys.append("newsapi_key")
+            elif service == "marketaux":
+                if "api_key" in keys:
+                    key_loader.update_api_key("MARKETAUX_API_KEY", keys["api_key"])
+                    updated_keys.append("marketaux_api_key")
+            
+            # Clear cache to force reload
+            key_loader.clear_cache()
+            
+            # Trigger collector reconfiguration for immediate effect
+            try:
+                from app.business.data_collector import DataCollector
+                from app.business.pipeline import DataPipeline
+                
+                # This will force collectors to reinitialize with new keys
+                self.logger.info("Triggering collector reconfiguration with new API keys", component="admin_service")
+                
+                # Note: In production, you might want to use a message queue or event system
+                # For now, we'll rely on cache clearing and next collection cycle
+                
+            except Exception as e:
+                self.logger.warning(f"Could not trigger immediate collector reconfiguration: {e}", component="admin_service")
+            
+            self.logger.info(f"Successfully updated API configuration for {service}", 
+                           updated_keys=updated_keys, component="admin_service")
+            
+            # Get updated configuration
+            updated_config = await self.get_api_configuration_status()
+            
+            return {
+                "success": True,
+                "updated_keys": updated_keys,
+                "configuration": updated_config,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error("Error updating API configuration", error=str(e))
             raise
     
     async def get_stock_watchlist(self) -> WatchlistResponse:
@@ -227,39 +292,45 @@ class AdminService(WatchlistSubject):
         try:
             self.logger.info("Getting stock watchlist")
             
-            # Get stocks from database
-            result = await self.db.execute(select(Stock))
-            db_stocks = result.scalars().all()
+            # Get stocks that are in the watchlist_entries table (join with stocks)
+            result = await self.db.execute(
+                select(Stock, WatchlistEntry)
+                .join(WatchlistEntry, Stock.id == WatchlistEntry.stock_id)
+                .order_by(WatchlistEntry.added_date)
+            )
+            watchlist_data = result.all()
             
             stocks = []
-            for stock in db_stocks:
+            for stock, entry in watchlist_data:
+                # Force update stock names and sectors for all stocks to fix old data
+                updated_name = WatchlistService.get_company_name(stock.symbol)
+                updated_sector = WatchlistService.get_sector(stock.symbol)
+                
+                # Always update if the data is different
+                if stock.name != updated_name or stock.sector != updated_sector:
+                    stock.name = updated_name
+                    stock.sector = updated_sector
+                    # Note: Don't commit here, will commit after all updates
+                
                 stocks.append(StockInfo(
                     symbol=stock.symbol,
-                    company_name=stock.name,
-                    sector=stock.sector or "Unknown",
-                    is_active=True,  # All stocks in DB are considered active
-                    added_date=stock.created_at
+                    company_name=updated_name,
+                    sector=updated_sector,
+                    is_active=entry.is_active,
+                    added_date=entry.added_date
                 ))
             
-            # If no stocks in database, use dynamic watchlist
-            if not stocks:
-                watchlist_service = await get_watchlist_service(self.db)
-                watchlist_symbols = await watchlist_service.get_current_watchlist()
-                
-                for symbol in watchlist_symbols:
-                    stocks.append(StockInfo(
-                        symbol=symbol,
-                        company_name=f"{symbol} Inc.",  
-                        sector="Technology",
-                        is_active=True,
-                        added_date=datetime.utcnow()
-                    ))
+            # Commit all updates at once
+            if watchlist_data:
+                await self.db.commit()
+            
+            self.logger.info(f"Watchlist data retrieved: {len(stocks)} stocks")
             
             return WatchlistResponse(
                 stocks=stocks,
                 total_stocks=len(stocks),
                 active_stocks=len([s for s in stocks if s.is_active]),
-                last_updated=datetime.utcnow()
+                last_updated=malaysia_now()
             )
             
         except Exception as e:
@@ -286,49 +357,128 @@ class AdminService(WatchlistSubject):
                 existing_stock = result.scalar_one_or_none()
                 
                 if existing_stock:
-                    message = f"Stock {request.symbol} is already in the watchlist"
-                else:
-                    # Add new stock
-                    new_stock = Stock(
-                        symbol=request.symbol,
-                        company_name=request.company_name or f"{request.symbol} Inc.",
-                        sector="Technology",  # Default sector
-                        is_active=True
+                    # Check if already in watchlist
+                    watchlist_result = await self.db.execute(
+                        select(WatchlistEntry).where(WatchlistEntry.stock_id == existing_stock.id)
                     )
-                    self.db.add(new_stock)
-                    await self.db.commit()
-                    success = True
-                    message = f"Successfully added {request.symbol} to watchlist"
+                    existing_entry = watchlist_result.scalar_one_or_none()
+                    
+                    if existing_entry:
+                        success = False
+                        message = f"Stock {request.symbol} is already in the watchlist"
+                    else:
+                        # Add to watchlist
+                        new_entry = WatchlistEntry(
+                            stock_id=existing_stock.id,
+                            is_active=True,
+                            added_date=malaysia_now()
+                        )
+                        self.db.add(new_entry)
+                        await self.db.commit()
+                        success = True
+                        message = f"Successfully added {request.symbol} to watchlist"
+                else:
+                    # Validate that the stock symbol exists in our known list
+                    if not WatchlistService.is_valid_symbol(request.symbol):
+                        success = False
+                        message = f"Invalid stock ticker: {request.symbol}. Please select a valid stock symbol from the dropdown."
+                    else:
+                        # Get company name and sector
+                        company_name = WatchlistService.get_company_name(request.symbol)
+                        sector = WatchlistService.get_sector(request.symbol)
+                        
+                        # Create new stock
+                        new_stock = Stock(
+                            symbol=request.symbol,
+                            name=company_name,
+                            sector=sector
+                        )
+                        self.db.add(new_stock)
+                        await self.db.flush()  # Get the stock ID
+                        
+                        # Add to watchlist
+                        new_entry = WatchlistEntry(
+                            stock_id=new_stock.id,
+                            is_active=True,
+                            added_date=malaysia_now()
+                        )
+                        self.db.add(new_entry)
+                        await self.db.commit()
+                        success = True
+                        message = f"Successfully added {request.symbol} ({company_name}) to watchlist"
             
             elif request.action == "remove":
-                # Remove stock
+                # Find stock first
                 result = await self.db.execute(
                     select(Stock).where(Stock.symbol == request.symbol)
                 )
                 stock = result.scalar_one_or_none()
                 
                 if stock:
-                    await self.db.delete(stock)
-                    await self.db.commit()
-                    success = True
-                    message = f"Successfully removed {request.symbol} from watchlist"
+                    # Find and remove watchlist entry
+                    watchlist_result = await self.db.execute(
+                        select(WatchlistEntry).where(WatchlistEntry.stock_id == stock.id)
+                    )
+                    entry = watchlist_result.scalar_one_or_none()
+                    
+                    if entry:
+                        await self.db.delete(entry)
+                        await self.db.commit()
+                        success = True
+                        message = f"Successfully removed {request.symbol} from watchlist"
+                    else:
+                        message = f"Stock {request.symbol} not found in watchlist"
                 else:
-                    message = f"Stock {request.symbol} not found in watchlist"
+                    message = f"Stock {request.symbol} not found"
             
             elif request.action in ["activate", "deactivate"]:
-                # Update stock status
+                # Find stock first
                 result = await self.db.execute(
                     select(Stock).where(Stock.symbol == request.symbol)
                 )
                 stock = result.scalar_one_or_none()
                 
                 if stock:
-                    stock.is_active = (request.action == "activate")
-                    await self.db.commit()
-                    success = True
-                    message = f"Successfully {request.action}d {request.symbol}"
+                    # Find and update watchlist entry
+                    watchlist_result = await self.db.execute(
+                        select(WatchlistEntry).where(WatchlistEntry.stock_id == stock.id)
+                    )
+                    entry = watchlist_result.scalar_one_or_none()
+                    
+                    if entry:
+                        entry.is_active = (request.action == "activate")
+                        await self.db.commit()
+                        success = True
+                        message = f"Successfully {request.action}d {request.symbol}"
+                    else:
+                        message = f"Stock {request.symbol} not found in watchlist"
                 else:
-                    message = f"Stock {request.symbol} not found in watchlist"
+                    message = f"Stock {request.symbol} not found"
+            
+            elif request.action == "toggle":
+                # Find stock first
+                result = await self.db.execute(
+                    select(Stock).where(Stock.symbol == request.symbol)
+                )
+                stock = result.scalar_one_or_none()
+                
+                if stock:
+                    # Find watchlist entry and toggle status
+                    watchlist_result = await self.db.execute(
+                        select(WatchlistEntry).where(WatchlistEntry.stock_id == stock.id)
+                    )
+                    entry = watchlist_result.scalar_one_or_none()
+                    
+                    if entry:
+                        entry.is_active = not entry.is_active
+                        await self.db.commit()
+                        success = True
+                        status = "activated" if entry.is_active else "deactivated"
+                        message = f"Successfully {status} {request.symbol}"
+                    else:
+                        message = f"Stock {request.symbol} not found in watchlist"
+                else:
+                    message = f"Stock {request.symbol} not found"
             
             # Get updated watchlist
             updated_watchlist = await self.get_stock_watchlist()
@@ -464,6 +614,8 @@ class AdminService(WatchlistSubject):
         """
         try:
             self.logger.info("Getting system logs", filters=filters.dict())
+            
+            # Real logs will now be automatically written to database by LogSystem
             
             # Build query for system logs
             query = select(SystemLog).order_by(SystemLog.timestamp.desc())

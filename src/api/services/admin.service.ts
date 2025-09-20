@@ -14,19 +14,19 @@ import { authService } from '@/features/admin/services/auth.service';
 
 // Types and Interfaces
 export interface SystemStatus {
-  status: 'online' | 'offline' | 'maintenance';
+  status: 'online' | 'offline' | 'maintenance' | 'operational' | 'degraded';
   services: {
-    database: 'healthy' | 'warning' | 'error';
-    api: 'healthy' | 'warning' | 'error';
-    pipeline: 'running' | 'stopped' | 'error';
-    storage: 'healthy' | 'warning' | 'error';
+    database: 'healthy' | 'unhealthy' | 'error';
+    sentiment_engine: 'healthy' | 'unhealthy' | 'error';
+    data_collection: 'healthy' | 'unhealthy' | 'error';
   };
   metrics: {
     uptime: string;
-    last_collection: string;
+    last_collection?: string;
     active_stocks: number;
     total_records: number;
   };
+  timestamp: string;
 }
 
 export interface ModelAccuracy {
@@ -52,27 +52,33 @@ export interface ModelAccuracy {
 export interface APIConfiguration {
   apis: {
     reddit: {
-      status: 'active' | 'inactive' | 'error';
-      configured: boolean;
-      last_test: string;
+      status: 'active' | 'inactive' | 'unknown';
+      last_test: string | null;
+      client_id: string;
+      client_secret: string;
+      user_agent: string;
     };
     finnhub: {
-      status: 'active' | 'inactive' | 'error';
-      configured: boolean;
-      last_test: string;
+      status: 'active' | 'inactive' | 'unknown';
+      last_test: string | null;
+      api_key: string;
     };
     newsapi: {
-      status: 'active' | 'inactive' | 'error';
-      configured: boolean;
-      last_test: string;
+      status: 'active' | 'inactive' | 'unknown';
+      last_test: string | null;
+      api_key: string;
     };
     marketaux: {
-      status: 'active' | 'inactive' | 'error';
-      configured: boolean;
-      last_test: string;
+      status: 'active' | 'inactive' | 'unknown';
+      last_test: string | null;
+      api_key: string;
     };
   };
-  last_updated: string;
+  summary: {
+    total_apis: number;
+    configured: number;
+    active: number;
+  };
 }
 
 export interface APIKeyUpdate {
@@ -101,6 +107,11 @@ export interface SystemLog {
   level: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
   component: string;
   message: string;
+  function?: string;
+  line_number?: number;
+  logger?: string;
+  module?: string;
+  extra_data?: Record<string, any>;
   details?: Record<string, any>;
 }
 
@@ -216,6 +227,8 @@ class AdminAPIService {
   async getSystemLogs(
     level?: string,
     component?: string,
+    startDate?: string,
+    endDate?: string,
     limit: number = 100,
     offset: number = 0
   ): Promise<SystemLogsResponse> {
@@ -226,8 +239,42 @@ class AdminAPIService {
     
     if (level) params.append('level', level);
     if (component) params.append('component', component);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
 
     const response = await fetch(`${API_BASE_URL}/api/admin/logs?${params}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async downloadSystemLogs(
+    level?: string,
+    component?: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<Blob> {
+    const params = new URLSearchParams();
+    
+    if (level) params.append('level', level);
+    if (component) params.append('component', component);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+
+    const response = await fetch(`${API_BASE_URL}/api/admin/logs/download?${params}`, {
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    return response.blob();
+  }
+
+  async clearSystemLogs(): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/logs/clear?confirm=true`, {
+      method: 'DELETE',
       headers: getAuthHeaders(),
     });
     return handleApiResponse(response);
@@ -295,6 +342,17 @@ class AdminAPIService {
     return handleApiResponse(response);
   }
 
+  async searchStockSymbols(query?: string): Promise<{ [symbol: string]: string }> {
+    const url = query 
+      ? `${API_BASE_URL}/api/admin/stocks/search?query=${encodeURIComponent(query)}`
+      : `${API_BASE_URL}/api/admin/stocks/search`;
+    
+    const response = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
   async addToWatchlist(symbol: string, companyName?: string): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/api/admin/watchlist`, {
       method: 'PUT',
@@ -320,12 +378,12 @@ class AdminAPIService {
     return handleApiResponse(response);
   }
 
-  async activateStock(symbol: string): Promise<any> {
+  async toggleStock(symbol: string): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/api/admin/watchlist`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({
-        action: 'activate',
+        action: 'toggle',
         symbol: symbol.toUpperCase(),
       }),
     });
@@ -373,12 +431,11 @@ class AdminAPIService {
   }
 
   async createBackup(): Promise<any> {
-    // TODO: Implement backup endpoint in backend
-    return Promise.resolve({
-      success: true,
-      message: 'Backup functionality not yet implemented',
-      timestamp: new Date().toISOString()
+    const response = await fetch(`${API_BASE_URL}/api/admin/storage/backup`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
     });
+    return handleApiResponse(response);
   }
 
   // ============================================================================

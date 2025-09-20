@@ -214,33 +214,7 @@ class SecureAPIKeyLoader:
         self.key_manager = APIKeyManager()
         self._cache = {}
     
-    def load_api_keys(self) -> Dict[str, str]:
-        """
-        Load and decrypt API keys from environment.
-        
-        Returns:
-            Dictionary of decrypted API keys ready for use
-        """
-        if self._cache:
-            return self._cache
-        
-        # Load keys from environment
-        encrypted_keys = {
-            'REDDIT_CLIENT_ID': os.getenv('REDDIT_CLIENT_ID', ''),
-            'REDDIT_CLIENT_SECRET': os.getenv('REDDIT_CLIENT_SECRET', ''),
-            'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
-            'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
-            'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', '')
-        }
-        
-        # Decrypt all keys
-        decrypted_keys = self.key_manager.decrypt_all_keys(encrypted_keys)
-        
-        # Cache decrypted keys
-        self._cache = decrypted_keys
-        
-        logger.info("API keys loaded and decrypted successfully")
-        return decrypted_keys
+
     
     def get_decrypted_key(self, key_name: str) -> str:
         """
@@ -258,6 +232,119 @@ class SecureAPIKeyLoader:
     def clear_cache(self):
         """Clear the decrypted keys cache for security"""
         self._cache.clear()
+    
+    def update_api_key(self, key_name: str, new_value: str):
+        """
+        Update an API key with a new encrypted value and persist to file.
+        
+        Args:
+            key_name: Name of the API key (e.g., 'FINNHUB_API_KEY')
+            new_value: New unencrypted value to store
+        """
+        # Encrypt the new value
+        encrypted_value = self.key_manager.encrypt_api_key(new_value)
+        
+        # Update environment variable (in memory for this session)
+        os.environ[key_name] = encrypted_value
+        
+        # Persist to encrypted file for next system restart
+        self._save_encrypted_key_to_file(key_name, encrypted_value)
+        
+        # Clear cache to force reload with new values
+        self.clear_cache()
+        
+        logger.info(f"Updated and persisted API key: {key_name}")
+    
+    def _save_encrypted_key_to_file(self, key_name: str, encrypted_value: str):
+        """Save encrypted API key to persistent storage file."""
+        import json
+        from pathlib import Path
+        
+        # Create secure keys directory
+        keys_dir = Path("data/secure_keys")
+        keys_dir.mkdir(parents=True, exist_ok=True)
+        
+        # File to store encrypted keys
+        keys_file = keys_dir / "encrypted_keys.json"
+        
+        # Load existing keys
+        existing_keys = {}
+        if keys_file.exists():
+            try:
+                with open(keys_file, 'r') as f:
+                    existing_keys = json.load(f)
+            except:
+                existing_keys = {}
+        
+        # Update the specific key
+        existing_keys[key_name] = encrypted_value
+        
+        # Save back to file
+        with open(keys_file, 'w') as f:
+            json.dump(existing_keys, f, indent=2)
+        
+        logger.info(f"Persisted encrypted key {key_name} to secure storage")
+    
+    def load_api_keys(self) -> Dict[str, str]:
+        """
+        Load and decrypt API keys from environment and persistent storage.
+        
+        Returns:
+            Dictionary of decrypted API keys ready for use
+        """
+        if self._cache:
+            return self._cache
+        
+        # Load keys from environment first
+        encrypted_keys = {
+            'REDDIT_CLIENT_ID': os.getenv('REDDIT_CLIENT_ID', ''),
+            'REDDIT_CLIENT_SECRET': os.getenv('REDDIT_CLIENT_SECRET', ''),
+            'REDDIT_USER_AGENT': os.getenv('REDDIT_USER_AGENT', 'InsightStockDash/1.0'),
+            'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
+            'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
+            'NEWS_API_KEY': os.getenv('NEWS_API_KEY', ''),  # Alternative name
+            'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', '')
+        }
+        
+        # Override with keys from persistent storage if they exist
+        persistent_keys = self._load_encrypted_keys_from_file()
+        encrypted_keys.update(persistent_keys)
+        
+        # Decrypt all keys
+        decrypted_keys = self.key_manager.decrypt_all_keys(encrypted_keys)
+        
+        # Map keys to expected names (lowercase with underscores)
+        mapped_keys = {
+            'reddit_client_id': decrypted_keys.get('REDDIT_CLIENT_ID', ''),
+            'reddit_client_secret': decrypted_keys.get('REDDIT_CLIENT_SECRET', ''),
+            'reddit_user_agent': decrypted_keys.get('REDDIT_USER_AGENT', 'InsightStockDash/1.0'),
+            'finnhub_api_key': decrypted_keys.get('FINNHUB_API_KEY', ''),
+            'news_api_key': decrypted_keys.get('NEWSAPI_KEY', '') or decrypted_keys.get('NEWS_API_KEY', ''),
+            'marketaux_api_key': decrypted_keys.get('MARKETAUX_API_KEY', '')
+        }
+        
+        # Cache mapped keys
+        self._cache = mapped_keys
+        
+        logger.info("API keys loaded and decrypted successfully from environment and persistent storage")
+        return mapped_keys
+    
+    def _load_encrypted_keys_from_file(self) -> Dict[str, str]:
+        """Load encrypted keys from persistent storage file."""
+        import json
+        from pathlib import Path
+        
+        keys_file = Path("data/secure_keys/encrypted_keys.json")
+        
+        if not keys_file.exists():
+            return {}
+        
+        try:
+            with open(keys_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load encrypted keys from file: {e}")
+            return {}
 
 
 def create_encrypted_env_template():

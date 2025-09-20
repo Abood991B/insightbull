@@ -109,13 +109,18 @@ const AdminDashboard: React.FC = () => {
       case 'healthy':
       case 'online':
       case 'running':
+      case 'operational':
         return <CheckCircle className="h-5 w-5 text-green-500" />;
       case 'warning':
+      case 'degraded':
         return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
       case 'error':
       case 'offline':
       case 'stopped':
+      case 'unhealthy':
         return <XCircle className="h-5 w-5 text-red-500" />;
+      case 'not_configured':
+        return <AlertTriangle className="h-5 w-5 text-gray-400" />;
       default:
         return <AlertTriangle className="h-5 w-5 text-gray-500" />;
     }
@@ -126,13 +131,18 @@ const AdminDashboard: React.FC = () => {
       case 'healthy':
       case 'online':
       case 'running':
+      case 'operational':
         return <Badge className="bg-green-100 text-green-800">{status}</Badge>;
       case 'warning':
+      case 'degraded':
         return <Badge className="bg-yellow-100 text-yellow-800">{status}</Badge>;
       case 'error':
       case 'offline':
       case 'stopped':
+      case 'unhealthy':
         return <Badge className="bg-red-100 text-red-800">{status}</Badge>;
+      case 'not_configured':
+        return <Badge className="bg-gray-100 text-gray-600">Not Required</Badge>;
       default:
         return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
     }
@@ -191,7 +201,7 @@ const AdminDashboard: React.FC = () => {
         </div>
 
         {/* System Status Alert */}
-        {systemStatus && systemStatus.status !== 'online' && (
+        {systemStatus && systemStatus.status !== 'operational' && systemStatus.status !== 'online' && (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
@@ -276,10 +286,13 @@ const AdminDashboard: React.FC = () => {
                 <div key={service} className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex items-center gap-2">
                     {service === 'database' && <Database className="h-4 w-4" />}
-                    {service === 'api' && <Server className="h-4 w-4" />}
-                    {service === 'pipeline' && <Zap className="h-4 w-4" />}
-                    {service === 'storage' && <Database className="h-4 w-4" />}
-                    <span className="capitalize font-medium">{service}</span>
+                    {service === 'sentiment_engine' && <BarChart3 className="h-4 w-4" />}
+                    {service === 'data_collection' && <Zap className="h-4 w-4" />}
+                    <span className="capitalize font-medium">
+                      {service === 'sentiment_engine' ? 'Sentiment Engine' :
+                       service === 'data_collection' ? 'Data Collection' :
+                       service}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusIcon(status)}

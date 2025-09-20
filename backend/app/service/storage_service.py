@@ -192,8 +192,8 @@ class StorageManager:
                 "timestamp": backup_timestamp,
                 "total_records": metrics.total_records,
                 "size_mb": metrics.storage_size_mb,
-                "status": "completed",
-                "location": f"/backups/{backup_id}.sql.gz"
+                "status": "completed" if success else "failed",
+                "location": f"./data/backups/{backup_id}.db"
             }
             
             self.logger.info("Data backup created", metadata=backup_metadata)
@@ -320,10 +320,11 @@ class StorageManager:
     async def _calculate_storage_growth_rate(self) -> float:
         """Calculate daily storage growth rate from historical data."""
         try:
+            # SQLite compatible query
             result = await self.db.execute(text("""
                 SELECT DATE(created_at) as date, COUNT(*) as daily_count 
                 FROM sentiment_data 
-                WHERE created_at >= NOW() - INTERVAL '7 days'
+                WHERE created_at >= datetime('now', '-7 days')
                 GROUP BY DATE(created_at)
                 ORDER BY date
             """))
@@ -360,23 +361,34 @@ class StorageManager:
     async def _create_database_backup(self, backup_id: str, timestamp: datetime) -> bool:
         """Create actual database backup."""
         try:
-            # For PostgreSQL, use pg_dump equivalent via SQL
-            backup_query = f"""
-                COPY (
-                    SELECT 'sentiment_data' as table_name, row_to_json(sentiment_data.*)
-                    FROM sentiment_data
-                    UNION ALL
-                    SELECT 'stocks' as table_name, row_to_json(stocks.*)
-                    FROM stocks
-                    UNION ALL  
-                    SELECT 'stock_prices' as table_name, row_to_json(stock_prices.*)
-                    FROM stock_prices
-                ) TO '/tmp/{backup_id}.backup'
-            """
+            import shutil
+            import os
             
-            # In production, implement proper backup mechanism
-            self.logger.info(f"Database backup initiated: {backup_id}")
-            return True
+            # Create backups directory if it doesn't exist
+            backup_dir = "./data/backups"
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            # Source database file
+            source_db = "./data/insight_stock.db"
+            
+            # Backup file path
+            backup_file = f"{backup_dir}/{backup_id}.db"
+            
+            if os.path.exists(source_db):
+                # Create a copy of the database file
+                shutil.copy2(source_db, backup_file)
+                
+                # Verify backup was created
+                if os.path.exists(backup_file):
+                    backup_size = os.path.getsize(backup_file)
+                    self.logger.info(f"Database backup created successfully: {backup_file} ({backup_size} bytes)")
+                    return True
+                else:
+                    self.logger.error("Backup file was not created")
+                    return False
+            else:
+                self.logger.error("Source database file not found")
+                return False
             
         except Exception as e:
             self.logger.error(f"Backup failed: {e}")
@@ -385,11 +397,11 @@ class StorageManager:
     async def _vacuum_database(self, operations: List[str]) -> float:
         """Perform database vacuum operations."""
         try:
-            await self.db.execute(text("VACUUM ANALYZE sentiment_data"))
-            await self.db.execute(text("VACUUM ANALYZE stocks"))
-            await self.db.execute(text("VACUUM ANALYZE stock_prices"))
+            # SQLite vacuum operations
+            await self.db.execute(text("VACUUM"))
+            await self.db.execute(text("ANALYZE"))
             
-            operations.append("Vacuumed and analyzed all tables")
+            operations.append("Vacuumed database and updated statistics")
             return 5.2  # Estimate space reclaimed
             
         except Exception as e:
@@ -399,9 +411,9 @@ class StorageManager:
     async def _rebuild_indexes(self, operations: List[str]) -> None:
         """Rebuild database indexes."""
         try:
-            await self.db.execute(text("REINDEX TABLE sentiment_data"))
-            await self.db.execute(text("REINDEX TABLE stocks"))
-            operations.append("Rebuilt table indexes")
+            # SQLite reindex operations
+            await self.db.execute(text("REINDEX"))
+            operations.append("Rebuilt all database indexes")
             
         except Exception as e:
             self.logger.error(f"Index rebuild failed: {e}")
@@ -409,9 +421,9 @@ class StorageManager:
     async def _update_statistics(self, operations: List[str]) -> None:
         """Update table statistics."""
         try:
-            await self.db.execute(text("ANALYZE sentiment_data"))
-            await self.db.execute(text("ANALYZE stocks"))
-            operations.append("Updated table statistics")
+            # SQLite analyze operations
+            await self.db.execute(text("ANALYZE"))
+            operations.append("Updated database statistics")
             
         except Exception as e:
             self.logger.error(f"Statistics update failed: {e}")

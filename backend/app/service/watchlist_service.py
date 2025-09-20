@@ -10,18 +10,130 @@ This module provides:
 - Fallback to default stocks if no watchlist exists
 - Integration with Observer pattern for real-time updates
 - Centralized watchlist management across the application
+- Stock company name mapping and validation
 """
 
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from typing import List, Optional, Dict, Any, Tuple
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete, and_
 import structlog
+import aiohttp
+import asyncio
 
 from app.data_access.models import Stock, WatchlistEntry
 from app.infrastructure.log_system import get_logger
 
 logger = get_logger()
+
+# Comprehensive static mapping for common stocks
+COMPANY_NAMES = {
+    # Technology - Large Cap
+    "AAPL": "Apple Inc.",
+    "MSFT": "Microsoft Corporation",
+    "GOOGL": "Alphabet Inc. (Class A)",
+    "GOOG": "Alphabet Inc. (Class C)",
+    "AMZN": "Amazon.com, Inc.",
+    "META": "Meta Platforms, Inc.",
+    "TSLA": "Tesla, Inc.",
+    "NVDA": "NVIDIA Corporation",
+    "ADBE": "Adobe Inc.",
+    "CRM": "Salesforce, Inc.",
+    "ORCL": "Oracle Corporation",
+    "NOW": "ServiceNow, Inc.",
+    "INTU": "Intuit Inc.",
+    
+    # Technology - Semiconductors
+    "AMD": "Advanced Micro Devices, Inc.",
+    "QCOM": "QUALCOMM Incorporated",
+    "MU": "Micron Technology, Inc.",
+    "TXN": "Texas Instruments Incorporated",
+    "AVGO": "Broadcom Inc.",
+    "INTC": "Intel Corporation",
+    "AMAT": "Applied Materials, Inc.",
+    
+    # Technology - Software & IT
+    "IBM": "International Business Machines Corporation",
+    "CSCO": "Cisco Systems, Inc.",
+    "PLTR": "Palantir Technologies Inc.",
+    "SNOW": "Snowflake Inc.",
+    "ZM": "Zoom Video Communications, Inc.",
+    "DDOG": "Datadog, Inc.",
+    "CRWD": "CrowdStrike Holdings, Inc.",
+    
+    # Financial Services
+    "JPM": "JPMorgan Chase & Co.",
+    "BAC": "Bank of America Corporation",
+    "WFC": "Wells Fargo & Company",
+    "GS": "The Goldman Sachs Group, Inc.",
+    "MS": "Morgan Stanley",
+    "C": "Citigroup Inc.",
+    "V": "Visa Inc.",
+    "MA": "Mastercard Incorporated",
+    "PYPL": "PayPal Holdings, Inc.",
+    "SQ": "Block, Inc.",
+    "AXP": "American Express Company",
+    "COF": "Capital One Financial Corporation",
+    "BLK": "BlackRock, Inc.",
+    
+    # Healthcare & Biotech
+    "JNJ": "Johnson & Johnson",
+    "PFE": "Pfizer Inc.",
+    "UNH": "UnitedHealth Group Incorporated",
+    "MRK": "Merck & Co., Inc.",
+    "ABBV": "AbbVie Inc.",
+    "TMO": "Thermo Fisher Scientific Inc.",
+    "DHR": "Danaher Corporation",
+    "BMY": "Bristol-Myers Squibb Company",
+    "AMGN": "Amgen Inc.",
+    "GILD": "Gilead Sciences, Inc.",
+    
+    # Consumer & Retail
+    "WMT": "Walmart Inc.",
+    "PG": "The Procter & Gamble Company",
+    "KO": "The Coca-Cola Company",
+    "PEP": "PepsiCo, Inc.",
+    "NFLX": "Netflix, Inc.",
+    "DIS": "The Walt Disney Company",
+    "NKE": "Nike, Inc.",
+    "SBUX": "Starbucks Corporation",
+    "MCD": "McDonald's Corporation",
+    "HD": "The Home Depot, Inc.",
+    
+    # Energy & Utilities
+    "XOM": "Exxon Mobil Corporation",
+    "CVX": "Chevron Corporation",
+    "COP": "ConocoPhillips",
+    "SLB": "Schlumberger Limited",
+    "KMI": "Kinder Morgan, Inc.",
+    "NEE": "NextEra Energy, Inc.",
+    
+    # Industrial & Manufacturing
+    "BA": "The Boeing Company",
+    "CAT": "Caterpillar Inc.",
+    "GE": "General Electric Company",
+    "MMM": "3M Company",
+    "LMT": "Lockheed Martin Corporation",
+    "RTX": "Raytheon Technologies Corporation",
+    
+    # Real Estate & REITs
+    "AMT": "American Tower Corporation",
+    "PLD": "Prologis, Inc.",
+    "CCI": "Crown Castle Inc.",
+    "EQIX": "Equinix, Inc.",
+    "SPG": "Simon Property Group, Inc.",
+    
+    # Communication Services
+    "T": "AT&T Inc.",
+    "VZ": "Verizon Communications Inc.",
+    "TMUS": "T-Mobile US, Inc.",
+    "CHTR": "Charter Communications, Inc.",
+    "CMCSA": "Comcast Corporation"
+}
+
+# Cache for API lookups to avoid repeated calls
+_company_cache: Dict[str, Tuple[str, datetime]] = {}
+_cache_duration = timedelta(hours=24)  # Cache for 24 hours
 
 
 # Default fallback stocks (same as original DEFAULT_TARGET_STOCKS)
@@ -84,7 +196,7 @@ class WatchlistService:
                     .order_by(WatchlistEntry.added_date)
                 )
                 
-                watchlist_symbols = [row.symbol for row in result.scalars()]
+                watchlist_symbols = list(result.scalars())
                 
                 if watchlist_symbols:
                     self.logger.info("Retrieved dynamic watchlist", 
@@ -351,6 +463,162 @@ class WatchlistService:
             self.logger.info("Created new stock entry", symbol=symbol)
         
         return stock
+    
+    # Company Name Service Methods
+    @staticmethod
+    def is_valid_symbol(symbol: str) -> bool:
+        """Check if a stock symbol is valid (exists in our mapping)."""
+        symbol = symbol.upper().strip()
+        return symbol in COMPANY_NAMES
+    
+    @staticmethod
+    def get_all_symbols() -> dict:
+        """Get all available stock symbols with their company names."""
+        return COMPANY_NAMES.copy()
+    
+    @staticmethod
+    def search_symbols(query: str) -> dict:
+        """Search for stock symbols that match the query."""
+        query = query.upper().strip()
+        if not query:
+            return {}
+        
+        matches = {}
+        for symbol, name in COMPANY_NAMES.items():
+            if query in symbol or query in name.upper():
+                matches[symbol] = name
+        
+        return matches
+    
+    @staticmethod
+    def get_sector(symbol: str) -> str:
+        """Get sector for a stock symbol."""
+        symbol = symbol.upper().strip()
+        
+        # Technology stocks
+        tech_stocks = ["AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "ADBE", "CRM", "ORCL", "NOW", "INTU", "IBM", "CSCO", "PLTR", "SNOW", "ZM", "DDOG", "CRWD"]
+        semiconductor_stocks = ["NVDA", "AMD", "QCOM", "MU", "TXN", "AVGO", "INTC", "AMAT"]
+        financial_stocks = ["JPM", "BAC", "WFC", "GS", "MS", "C", "V", "MA", "PYPL", "SQ", "AXP", "COF", "BLK"]
+        healthcare_stocks = ["JNJ", "PFE", "ABT", "TMO", "DHR", "BMY", "AMGN", "MDT", "GILD", "VRTX"]
+        energy_stocks = ["XOM", "CVX", "COP", "EOG", "SLB", "PXD", "KMI", "OXY", "MPC", "VLO"]
+        industrial_stocks = ["BA", "CAT", "DE", "HON", "MMM", "GE", "UNP", "RTX", "LMT", "FDX"]
+        
+        if symbol in tech_stocks:
+            return "Technology"
+        elif symbol in semiconductor_stocks:
+            return "Technology - Semiconductors"
+        elif symbol in financial_stocks:
+            return "Financial Services"
+        elif symbol in healthcare_stocks:
+            return "Healthcare"
+        elif symbol in energy_stocks:
+            return "Energy"
+        elif symbol in industrial_stocks:
+            return "Industrials"
+        else:
+            return "Technology"  # Default
+    
+    @staticmethod
+    def get_company_name(symbol: str) -> str:
+        """
+        Get company name for a stock symbol.
+        
+        Args:
+            symbol: Stock ticker symbol (e.g., 'AAPL')
+            
+        Returns:
+            Company name string
+        """
+        symbol = symbol.upper().strip()
+        
+        # First try static mapping
+        if symbol in COMPANY_NAMES:
+            return COMPANY_NAMES[symbol]
+        
+        # If not found, return formatted default
+        return f"{symbol} Inc."
+    
+    @staticmethod
+    async def validate_and_get_company_name(symbol: str) -> Tuple[bool, str]:
+        """
+        Validate stock symbol and get company name using external API.
+        
+        Args:
+            symbol: Stock ticker symbol to validate
+            
+        Returns:
+            Tuple of (is_valid, company_name)
+        """
+        symbol = symbol.upper().strip()
+        
+        # Check cache first
+        if symbol in _company_cache:
+            cached_name, cached_time = _company_cache[symbol]
+            if datetime.utcnow() - cached_time < _cache_duration:
+                return True, cached_name
+        
+        # Try static mapping first
+        if symbol in COMPANY_NAMES:
+            company_name = COMPANY_NAMES[symbol]
+            _company_cache[symbol] = (company_name, datetime.utcnow())
+            return True, company_name
+        
+        # Try to validate using a free API (Alpha Vantage, Yahoo Finance, etc.)
+        try:
+            company_name = await WatchlistService._fetch_from_api(symbol)
+            if company_name:
+                _company_cache[symbol] = (company_name, datetime.utcnow())
+                return True, company_name
+        except Exception as e:
+            logger.warning(f"Failed to validate symbol {symbol} via API: {e}")
+        
+        # If validation fails, return false but provide a default name
+        default_name = f"{symbol} Inc."
+        return False, default_name
+    
+    @staticmethod
+    async def _fetch_from_api(symbol: str) -> Optional[str]:
+        """
+        Fetch company name from external API.
+        Using a simple approach that doesn't require API keys.
+        """
+        try:
+            # Using Yahoo Finance API (no key required)
+            url = f"https://query1.finance.yahoo.com/v1/finance/search?q={symbol}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        
+                        if data.get('quotes'):
+                            for quote in data['quotes']:
+                                if quote.get('symbol', '').upper() == symbol.upper():
+                                    return quote.get('longname') or quote.get('shortname')
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error fetching company name for {symbol}: {e}")
+            return None
+    
+    @staticmethod
+    def add_company_mapping(symbol: str, company_name: str) -> None:
+        """
+        Add a new company mapping to the static dictionary.
+        
+        Args:
+            symbol: Stock ticker symbol
+            company_name: Full company name
+        """
+        symbol = symbol.upper().strip()
+        COMPANY_NAMES[symbol] = company_name
+        logger.info(f"Added company mapping: {symbol} -> {company_name}")
+    
+    @staticmethod
+    def get_all_known_symbols() -> Dict[str, str]:
+        """Get all known symbol to company name mappings"""
+        return COMPANY_NAMES.copy()
 
 
 # Global watchlist service factory

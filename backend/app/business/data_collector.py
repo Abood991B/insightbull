@@ -75,54 +75,58 @@ class DataCollector:
         # Log API key loading process
         self.logger.info("🔐 Loading and decrypting API keys...")
         
-        # Initialize collectors with encrypted/decrypted credentials
-        reddit_client_id = self.secure_loader.get_decrypted_key("REDDIT_CLIENT_ID")
-        reddit_client_secret = self.secure_loader.get_decrypted_key("REDDIT_CLIENT_SECRET")
+        # Reddit collector - use the mapped key names from SecureAPIKeyLoader
+        api_keys = self.secure_loader.load_api_keys()
+        reddit_client_id = api_keys.get('reddit_client_id', '')
+        reddit_client_secret = api_keys.get('reddit_client_secret', '')
+        reddit_user_agent = api_keys.get('reddit_user_agent', 'InsightStockDash/1.0')
         
         if reddit_client_id and reddit_client_secret:
             self.reddit_collector = RedditCollector(
                 client_id=reddit_client_id,
                 client_secret=reddit_client_secret,
-                user_agent="StockInsight/1.0",
-                rate_limiter=self.rate_limiter
+                user_agent=reddit_user_agent
             )
-            self.logger.info("✅ Reddit collector configured")
+            self.logger.info("Reddit collector configured", component="data_collector")
         else:
             self.reddit_collector = None
-            self.logger.info("⚠️ Reddit collector skipped - missing REDDIT_CLIENT_ID or REDDIT_CLIENT_SECRET")
+            self.logger.warning("Reddit collector skipped - API keys not configured", component="data_collector")
         
-        finnhub_key = self.secure_loader.get_decrypted_key("FINNHUB_API_KEY")
+        # FinHub collector
+        finnhub_key = api_keys.get('finnhub_api_key', '')
         if finnhub_key:
             self.finnhub_collector = FinHubCollector(
                 api_key=finnhub_key,
                 rate_limiter=self.rate_limiter
             )
-            self.logger.info("✅ FinHub collector configured")
+            self.logger.info("FinHub collector configured", component="data_collector")
         else:
             self.finnhub_collector = None
-            self.logger.info("⚠️ FinHub collector skipped - missing FINNHUB_API_KEY")
+            self.logger.warning("FinHub collector skipped - API key not configured", component="data_collector")
         
-        marketaux_key = self.secure_loader.get_decrypted_key("MARKETAUX_API_KEY")
+        # MarketAux collector
+        marketaux_key = api_keys.get('marketaux_api_key', '')
         if marketaux_key:
             self.marketaux_collector = MarketauxCollector(
                 api_key=marketaux_key,
                 rate_limiter=self.rate_limiter
             )
-            self.logger.info("✅ MarketAux collector configured")
+            self.logger.info("MarketAux collector configured", component="data_collector")
         else:
             self.marketaux_collector = None
-            self.logger.info("⚠️ MarketAux collector skipped - missing MARKETAUX_API_KEY")
+            self.logger.warning("MarketAux collector skipped - API key not configured", component="data_collector")
         
-        newsapi_key = self.secure_loader.get_decrypted_key("NEWSAPI_KEY")
+        # NewsAPI collector
+        newsapi_key = api_keys.get('news_api_key', '')
         if newsapi_key:
             self.newsapi_collector = NewsAPICollector(
                 api_key=newsapi_key,
                 rate_limiter=self.rate_limiter
             )
-            self.logger.info("✅ NewsAPI collector configured")
+            self.logger.info("NewsAPI collector configured", component="data_collector")
         else:
             self.newsapi_collector = None
-            self.logger.info("⚠️ NewsAPI collector skipped - missing NEWSAPI_KEY")
+            self.logger.warning("NewsAPI collector skipped - API key not configured", component="data_collector")
         
         # Count active collectors
         active_collectors = sum(1 for collector in [
@@ -130,7 +134,7 @@ class DataCollector:
             self.marketaux_collector, self.newsapi_collector
         ] if collector is not None)
         
-        self.logger.info(f"🔧 Auto-configured {active_collectors} collectors with encrypted API keys")
+        self.logger.info(f"Auto-configured {active_collectors} collectors with encrypted API keys")
         
         self.active_jobs: Dict[str, CollectionJob] = {}
         

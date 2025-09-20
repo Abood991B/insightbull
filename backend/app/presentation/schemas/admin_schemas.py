@@ -91,15 +91,15 @@ class APIConfigResponse(BaseModel):
 
 class APIKeyUpdateRequest(BaseModel):
     """API key update request"""
-    service_name: str = Field(..., description="Name of the API service")
-    api_key: str = Field(..., min_length=1, description="New API key")
+    service: str = Field(..., description="Name of the API service")
+    keys: Dict[str, str] = Field(..., description="API keys for the service")
     additional_config: Optional[Dict[str, Any]] = Field(None, description="Additional configuration")
 
 
 class APIKeyUpdateResponse(BaseModel):
     """API key update response"""
     success: bool
-    service_name: str
+    service: str
     status: APIKeyStatus
     message: str
 
@@ -124,7 +124,7 @@ class WatchlistResponse(BaseModel):
 
 class WatchlistUpdateRequest(BaseModel):
     """Watchlist update request"""
-    action: str = Field(..., pattern="^(add|remove|activate|deactivate)$")
+    action: str = Field(..., pattern="^(add|remove|activate|deactivate|toggle)$")
     symbol: str = Field(..., max_length=10, description="Stock symbol")
     company_name: Optional[str] = Field(None, description="Company name (required for add)")
 

@@ -23,6 +23,12 @@ from typing import Dict, Any, Optional
 from uuid import uuid4
 import structlog
 from pathlib import Path
+import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import inspect
+import os
 
 
 class LogSystem:
@@ -47,21 +53,10 @@ class LogSystem:
     
     def __init__(self):
         """Initialize the logging system"""
-        if self._initialized:
+        if hasattr(self, '_initialized') and self._initialized:
             return
             
-        self._correlation_ids = {}
-        self._logger = self._setup_logger()
-        self._initialized = True
-    
-    def _setup_logger(self) -> structlog.BoundLogger:
-        """Configure structured logging with proper formatting"""
-        
-        # Create logs directory if it doesn't exist
-        log_dir = Path("logs")
-        log_dir.mkdir(exist_ok=True)
-        
-        # Configure structlog
+        # Configure structured logging
         structlog.configure(
             processors=[
                 structlog.stdlib.filter_by_level,
@@ -79,6 +74,32 @@ class LogSystem:
             wrapper_class=structlog.stdlib.BoundLogger,
             cache_logger_on_first_use=True,
         )
+        
+        # Create logger instance
+        self._logger = structlog.get_logger()
+        
+        # Thread-local storage for correlation IDs
+        self._local = threading.local()
+        self._correlation_ids = {}  # Thread ID -> correlation ID mapping
+        
+        # Log deduplication cache (message hash -> last logged time)
+        self._log_cache = {}
+        self._cache_lock = threading.Lock()
+        
+        # Rate limiting settings
+        self.DEDUP_WINDOW_SECONDS = 60  # Don't repeat same log within 60 seconds
+        self.MAX_CACHE_SIZE = 1000  # Limit cache size
+        
+        # Setup file logging
+        self._setup_file_logging()
+        
+        # Mark as initialized
+        self._initialized = True
+    
+    def _setup_file_logging(self):
+        # Create logs directory if it doesn't exist
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
         
         # Setup file handlers
         root_logger = logging.getLogger()
@@ -134,25 +155,227 @@ class LogSystem:
         }
         return {k: v for k, v in context.items() if v is not None}
     
+    def _should_log(self, level: str, message: str, **kwargs) -> bool:
+        """Check if this log should be written (deduplication and noise filtering)"""
+        # Skip deduplication for ERROR and CRITICAL logs
+        if level in ["ERROR", "CRITICAL"]:
+            return True
+        
+        # Filter out noisy/repetitive messages
+        noisy_patterns = [
+            "Getting system logs",
+            "Getting system status", 
+            "Admin requesting",
+            "Loading and decrypting API keys",
+            "API keys loaded and decrypted successfully",
+            "Repository initialization configured",
+            "Database health check",
+            "Service health check completed",
+            "SecureAPIKeyLoader initialized",
+            "Auto-configured",
+            "collectors with encrypted API keys",
+            "Registered default observer",
+            "Observer registered",
+            "Watchlist observer",
+            "Administrator initiated system logs export",
+            "Reddit collector configured",
+            "FinHub collector configured", 
+            "NewsAPI collector configured",
+            "MarketAux collector configured",
+            "collector configured"
+        ]
+        
+        # Skip noisy INFO messages
+        if level == "INFO":
+            for pattern in noisy_patterns:
+                if pattern.lower() in message.lower():
+                    return False
+        
+        # Create a hash of the message and key context
+        import hashlib
+        context_key = f"{level}:{message}:{kwargs.get('component', '')}:{kwargs.get('function', '')}"
+        message_hash = hashlib.md5(context_key.encode()).hexdigest()
+        
+        current_time = datetime.utcnow().timestamp()
+        
+        with self._cache_lock:
+            # Clean old entries from cache
+            if len(self._log_cache) > self.MAX_CACHE_SIZE:
+                cutoff_time = current_time - self.DEDUP_WINDOW_SECONDS
+                self._log_cache = {
+                    k: v for k, v in self._log_cache.items() 
+                    if v > cutoff_time
+                }
+            
+            # Check if we've logged this recently
+            last_logged = self._log_cache.get(message_hash, 0)
+            if current_time - last_logged < self.DEDUP_WINDOW_SECONDS:
+                return False  # Skip this log
+            
+            # Update cache
+            self._log_cache[message_hash] = current_time
+            return True
+    
+    def _write_to_database(self, level: str, message: str, **kwargs):
+        """Write log entry to database asynchronously"""
+        try:
+            # Get caller information
+            frame = inspect.currentframe()
+            caller_frame = frame.f_back.f_back.f_back  # Go back 3 frames to get actual caller
+            
+            logger_name = kwargs.get('logger', 'app.infrastructure.log_system')
+            
+            # Smart component detection
+            component = kwargs.get('component')
+            if not component or component == 'unknown':
+                # Try to extract component from caller's module path
+                if caller_frame:
+                    module_name = caller_frame.f_globals.get('__name__', '')
+                    
+                    if 'admin_service' in module_name:
+                        component = 'admin_service'
+                    elif 'system_service' in module_name:
+                        component = 'system_service'
+                    elif 'data_collector' in module_name:
+                        component = 'data_collector'
+                    elif 'pipeline' in module_name:
+                        component = 'pipeline'
+                    elif 'sentiment' in module_name:
+                        component = 'sentiment_engine'
+                    elif 'auth' in module_name:
+                        component = 'auth_service'
+                    elif 'watchlist' in module_name:
+                        component = 'watchlist_service'
+                    elif 'routes' in module_name or 'admin.py' in module_name:
+                        component = 'api_routes'
+                    else:
+                        # Extract the last meaningful part of the module name
+                        parts = module_name.split('.')
+                        if len(parts) > 1:
+                            component = parts[-1]  # Use the last part
+                        else:
+                            component = 'system'
+                else:
+                    component = 'system'
+            
+            function_name = caller_frame.f_code.co_name if caller_frame else 'unknown'
+            line_number = caller_frame.f_lineno if caller_frame else None
+            
+            # Filter out standard context from extra_data
+            extra_data = {k: v for k, v in kwargs.items() 
+                         if k not in ['logger', 'component', 'timestamp', 'correlation_id']}
+            
+            # Create log entry in background task
+            asyncio.create_task(self._async_write_to_db(
+                level=level,
+                message=message,
+                logger=logger_name,
+                component=component,
+                function=function_name,
+                line_number=line_number,
+                extra_data=extra_data
+            ))
+        except Exception as e:
+            # Don't let database logging errors break the application
+            print(f"Failed to write log to database: {e}")
+    
+    async def _async_write_to_db(self, level: str, message: str, logger: str, 
+                                component: str, function: str, line_number: int, 
+                                extra_data: Dict[str, Any]):
+        """Async method to write log to database"""
+        try:
+            # Import here to avoid circular imports
+            from app.data_access.database.connection import get_db_session
+            from app.data_access.models import SystemLog
+            
+            async with get_db_session() as db:
+                log_entry = SystemLog(
+                    level=level,
+                    message=message,
+                    logger=logger,
+                    component=component,
+                    function=function,
+                    line_number=line_number,
+                    extra_data=extra_data or {}
+                )
+                db.add(log_entry)
+                await db.commit()
+        except Exception as e:
+            # Don't let database logging errors break the application
+            print(f"Failed to write log to database: {e}")
+    
     def info(self, message: str, **kwargs):
         """Log info level message"""
-        context = self._add_context(**kwargs)
-        self._logger.info(message, **context)
+        try:
+            # Check if we should log this (deduplication)
+            if not self._should_log("INFO", message, **kwargs):
+                return
+                
+            context = self._add_context(**kwargs)
+            self._logger.info(message, **context)
+            # Also write to database
+            self._write_to_database("INFO", message, **kwargs)
+        except Exception as e:
+            # Fallback logging to prevent startup failures
+            print(f"LogSystem.info failed: {e} - Message: {message}")
+            try:
+                self._logger.info(message)
+            except:
+                print(f"INFO: {message}")
     
     def warning(self, message: str, **kwargs):
         """Log warning level message"""
-        context = self._add_context(**kwargs)
-        self._logger.warning(message, **context)
+        try:
+            # Check if we should log this (deduplication)
+            if not self._should_log("WARNING", message, **kwargs):
+                return
+                
+            context = self._add_context(**kwargs)
+            self._logger.warning(message, **context)
+            # Also write to database
+            self._write_to_database("WARNING", message, **kwargs)
+        except Exception as e:
+            # Fallback logging to prevent startup failures
+            print(f"LogSystem.warning failed: {e} - Message: {message}")
+            try:
+                self._logger.warning(message)
+            except:
+                print(f"WARNING: {message}")
     
     def error(self, message: str, **kwargs):
         """Log error level message"""
-        context = self._add_context(**kwargs)
-        self._logger.error(message, **context)
+        try:
+            # Always log errors (no deduplication)
+            context = self._add_context(**kwargs)
+            self._logger.error(message, **context)
+            # Also write to database
+            self._write_to_database("ERROR", message, **kwargs)
+        except Exception as e:
+            # Fallback logging to prevent startup failures
+            print(f"LogSystem.error failed: {e} - Message: {message}")
+            try:
+                self._logger.error(message)
+            except:
+                print(f"ERROR: {message}")
     
     def debug(self, message: str, **kwargs):
         """Log debug level message"""
-        context = self._add_context(**kwargs)
-        self._logger.debug(message, **context)
+        try:
+            # Check if we should log this (deduplication)
+            if not self._should_log("DEBUG", message, **kwargs):
+                return
+                
+            context = self._add_context(**kwargs)
+            self._logger.debug(message, **context)
+            # Also write to database
+            self._write_to_database("DEBUG", message, **kwargs)
+        except Exception as e:
+            # Fallback logging to prevent startup failures
+            print(f"LogSystem.debug failed: {e} - Message: {message}")
+            try:
+                self._logger.debug(message)
+            except:
+                print(f"DEBUG: {message}")
     
     def log_api_call(self, method: str, endpoint: str, status_code: int, 
                      duration: float, **kwargs):

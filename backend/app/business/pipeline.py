@@ -237,7 +237,7 @@ class DataPipeline:
             # This prevents the SQLAlchemy connection pool warnings about unclosed connections
             self.sentiment_repository = "INITIALIZED"  # Marker to show it will be created per operation
             self.stock_repository = "INITIALIZED"  # Marker to show it will be created per operation
-            self.logger.info("✅ Repository initialization configured for per-operation session management")
+            self.logger.info("Repository initialization configured for per-operation session management")
                     
             self._repository_initialized = True
             
@@ -316,31 +316,26 @@ class DataPipeline:
             secure_loader = SecureAPIKeyLoader()
             
             # Load decrypted API keys using SecureAPIKeyLoader (same as DataCollector)
-            api_keys = {
-                'reddit_client_id': secure_loader.get_decrypted_key('REDDIT_CLIENT_ID'),
-                'reddit_client_secret': secure_loader.get_decrypted_key('REDDIT_CLIENT_SECRET'),
-                'finnhub_api_key': secure_loader.get_decrypted_key('FINNHUB_API_KEY'),
-                'newsapi_key': secure_loader.get_decrypted_key('NEWSAPI_KEY'),
-                'marketaux_key': secure_loader.get_decrypted_key('MARKETAUX_API_KEY')
-            }
+            api_keys = secure_loader.load_api_keys()
             
             # Reddit collector
             reddit_client_id = api_keys.get('reddit_client_id')
             reddit_client_secret = api_keys.get('reddit_client_secret')
+            reddit_user_agent = api_keys.get('reddit_user_agent')
+            
             if reddit_client_id and reddit_client_secret:
                 try:
                     self._collectors["reddit"] = RedditCollector(
                         client_id=reddit_client_id,
                         client_secret=reddit_client_secret,
-                        user_agent="StockSentimentBot/1.0",
+                        user_agent=reddit_user_agent,
                         rate_limiter=self.rate_limiter
                     )
-                    collectors_configured += 1
-                    self.logger.info("✅ Reddit collector configured")
+                    self.logger.info("Reddit collector configured", component="pipeline")
                 except Exception as e:
-                    self.logger.warning(f"❌ Failed to configure Reddit collector: {str(e)}")
+                    self.logger.warning(f"Failed to configure Reddit collector: {str(e)}", component="pipeline")
             else:
-                self.logger.info("⚠️  Reddit collector skipped - missing REDDIT_CLIENT_ID or REDDIT_CLIENT_SECRET")
+                self.logger.warning("Reddit collector skipped - API keys not configured", component="pipeline")
             
             # FinHub collector
             finnhub_api_key = api_keys.get('finnhub_api_key')
@@ -351,14 +346,14 @@ class DataPipeline:
                         rate_limiter=self.rate_limiter
                     )
                     collectors_configured += 1
-                    self.logger.info("✅ FinHub collector configured")
+                    self.logger.info("FinHub collector configured", component="pipeline")
                 except Exception as e:
-                    self.logger.warning(f"❌ Failed to configure FinHub collector: {str(e)}")
+                    self.logger.warning(f"Failed to configure FinHub collector: {str(e)}", component="pipeline")
             else:
-                self.logger.info("⚠️  FinHub collector skipped - missing FINNHUB_API_KEY")
+                self.logger.warning("FinHub collector skipped - API key not configured", component="pipeline")
             
             # NewsAPI collector
-            newsapi_key = api_keys.get('newsapi_key')
+            newsapi_key = api_keys.get('news_api_key')
             if newsapi_key:
                 try:
                     self._collectors["newsapi"] = NewsAPICollector(
@@ -366,14 +361,14 @@ class DataPipeline:
                         rate_limiter=self.rate_limiter
                     )
                     collectors_configured += 1
-                    self.logger.info("✅ NewsAPI collector configured")
+                    self.logger.info("NewsAPI collector configured", component="pipeline")
                 except Exception as e:
-                    self.logger.warning(f"❌ Failed to configure NewsAPI collector: {str(e)}")
+                    self.logger.warning(f"Failed to configure NewsAPI collector: {str(e)}", component="pipeline")
             else:
-                self.logger.info("⚠️  NewsAPI collector skipped - missing NEWSAPI_KEY")
+                self.logger.warning("NewsAPI collector skipped - API key not configured", component="pipeline")
             
             # MarketAux collector
-            marketaux_key = api_keys.get('marketaux_key')
+            marketaux_key = api_keys.get('marketaux_api_key')
             if marketaux_key:
                 try:
                     self._collectors["marketaux"] = MarketauxCollector(
@@ -381,19 +376,19 @@ class DataPipeline:
                         rate_limiter=self.rate_limiter
                     )
                     collectors_configured += 1
-                    self.logger.info("✅ MarketAux collector configured")
+                    self.logger.info("MarketAux collector configured", component="pipeline")
                 except Exception as e:
-                    self.logger.warning(f"❌ Failed to configure MarketAux collector: {str(e)}")
+                    self.logger.warning(f"Failed to configure MarketAux collector: {str(e)}", component="pipeline")
             else:
-                self.logger.info("⚠️  MarketAux collector skipped - missing MARKETAUX_API_KEY")
+                self.logger.warning("MarketAux collector skipped - API key not configured", component="pipeline")
             
             # Clear decrypted keys from memory for security
             # Cache cleared automatically
             
-            self.logger.info(f"🔧 Auto-configured {collectors_configured} collectors with encrypted API keys")
+            self.logger.info(f"Auto-configured {collectors_configured} collectors with encrypted API keys")
             
         except Exception as e:
-            self.logger.error(f"❌ Error auto-configuring collectors: {str(e)}")
+            self.logger.error(f"Error auto-configuring collectors: {str(e)}")
             # Don't raise - pipeline can still work with manually configured collectors
     
     async def run_pipeline(self, config: PipelineConfig) -> PipelineResult:
