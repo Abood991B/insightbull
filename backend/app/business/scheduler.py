@@ -61,14 +61,29 @@ class ScheduledJob:
 
 class Scheduler:
     """
-    Job scheduler for automated pipeline operations.
+    Background job scheduler for data collection, sentiment analysis, and pipeline execution.
     
-    Implements the Scheduler component from FYP Implementation Plan
-    Layer 2: Business Layer - handles automated job scheduling and triggers.
+    Features:
+    - Automated data collection scheduling
+    - Sentiment analysis orchestration  
+    - Full pipeline execution
+    - Dynamic watchlist integration
+    - Error handling and retry logic
     """
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
     
     def __init__(self):
         """Initialize the scheduler"""
+        # Prevent re-initialization of singleton
+        if hasattr(self, 'logger'):
+            return
+            
         self.logger = get_logger()
         self.scheduler = AsyncIOScheduler()
         # Remove duplicate DataCollector - pipeline handles its own collectors

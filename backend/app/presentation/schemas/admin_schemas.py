@@ -205,7 +205,7 @@ class LogEntry(BaseModel):
     level: LogLevel = Field(..., description="Log level")
     logger: str = Field(..., description="Logger name")
     message: str = Field(..., description="Log message")
-    module: Optional[str] = Field(None, description="Module that generated the log")
+    component: Optional[str] = Field(None, description="Component that generated the log")
     function: Optional[str] = Field(None, description="Function that generated the log")
     line_number: Optional[int] = Field(None, description="Line number")
     extra_data: Optional[Dict[str, Any]] = Field(None, description="Additional log data")

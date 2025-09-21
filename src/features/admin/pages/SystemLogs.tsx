@@ -181,26 +181,15 @@ const SystemLogs = () => {
   };
 
   const getUniqueComponents = () => {
-    // Get components from current logs
-    const logComponents = logs.map(log => log.component).filter(Boolean);
-    const uniqueLogComponents = Array.from(new Set(logComponents));
+    // Get components from current logs and filter out null/undefined/empty
+    const logComponents = logs
+      .map(log => log.component)
+      .filter(comp => comp && comp !== 'unknown' && comp.trim() !== '');
     
-    // Always include common system components
-    const systemComponents = [
-      'admin_service',
-      'system_service', 
-      'data_collector',
-      'pipeline',
-      'sentiment_engine',
-      'auth_service',
-      'watchlist_service',
-      'api_routes',
-      'system'
-    ];
+    // Only use actual components from logs - no hardcoded list
+    const uniqueComponents = Array.from(new Set(logComponents)).sort();
     
-    // Combine and deduplicate
-    const allComponents = [...systemComponents, ...uniqueLogComponents];
-    return Array.from(new Set(allComponents)).sort();
+    return uniqueComponents;
   };
 
   const filteredLogs = logs.filter(log => {
@@ -317,6 +306,9 @@ const SystemLogs = () => {
                                         comp === 'auth_service' ? 'Auth Service' :
                                         comp === 'watchlist_service' ? 'Watchlist Service' :
                                         comp === 'api_routes' ? 'API Routes' :
+                                        comp === 'storage_service' ? 'Storage Service' :
+                                        comp === 'system_core' ? 'System Core' :
+                                        comp === 'scheduler' ? 'Scheduler' :
                                         comp === 'system' ? 'System Core' :
                                         comp;
                       return (

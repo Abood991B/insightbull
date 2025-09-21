@@ -510,7 +510,7 @@ async def get_system_logs(
         admin_service = AdminService(db)
         filters = LogFilters(
             level=level,
-            logger=component,  # Map component to logger
+            module=component,  # Map component to module (which filters by component column)
             limit=limit,
             offset=offset
         )
@@ -524,6 +524,7 @@ async def get_system_logs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve system logs"
         )
+
 
 
 @router.get("/logs/download")

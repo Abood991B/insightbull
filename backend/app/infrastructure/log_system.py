@@ -225,38 +225,56 @@ class LogSystem:
             
             logger_name = kwargs.get('logger', 'app.infrastructure.log_system')
             
-            # Smart component detection
-            component = kwargs.get('component')
-            if not component or component == 'unknown':
-                # Try to extract component from caller's module path
-                if caller_frame:
-                    module_name = caller_frame.f_globals.get('__name__', '')
-                    
-                    if 'admin_service' in module_name:
+            # Smart component detection - ALWAYS detect component from caller
+            provided_component = kwargs.get('component')
+            component = None  # Force detection
+            
+            # Try to extract component from caller's module path
+            if caller_frame:
+                module_name = caller_frame.f_globals.get('__name__', '')
+                
+                # More comprehensive component detection
+                if 'admin' in module_name:
+                    if 'service' in module_name:
                         component = 'admin_service'
-                    elif 'system_service' in module_name:
-                        component = 'system_service'
-                    elif 'data_collector' in module_name:
-                        component = 'data_collector'
-                    elif 'pipeline' in module_name:
-                        component = 'pipeline'
-                    elif 'sentiment' in module_name:
-                        component = 'sentiment_engine'
-                    elif 'auth' in module_name:
-                        component = 'auth_service'
-                    elif 'watchlist' in module_name:
-                        component = 'watchlist_service'
                     elif 'routes' in module_name or 'admin.py' in module_name:
                         component = 'api_routes'
                     else:
-                        # Extract the last meaningful part of the module name
-                        parts = module_name.split('.')
-                        if len(parts) > 1:
-                            component = parts[-1]  # Use the last part
-                        else:
-                            component = 'system'
+                        component = 'admin_service'
+                elif 'system_service' in module_name:
+                    component = 'system_service'
+                elif 'data_collector' in module_name:
+                    component = 'data_collector'
+                elif 'pipeline' in module_name:
+                    component = 'pipeline'
+                elif 'sentiment' in module_name:
+                    component = 'sentiment_engine'
+                elif 'auth' in module_name:
+                    component = 'auth_service'
+                elif 'watchlist' in module_name:
+                    component = 'watchlist_service'
+                elif 'storage' in module_name:
+                    component = 'storage_service'
+                elif 'routes' in module_name:
+                    component = 'api_routes'
+                elif 'log_system' in module_name:
+                    component = 'system_core'
                 else:
-                    component = 'system'
+                    # Extract the last meaningful part of the module name
+                    parts = module_name.split('.')
+                    if len(parts) > 1:
+                        last_part = parts[-1]
+                        # Map common module names to components
+                        if last_part in ['admin', 'routes']:
+                            component = 'api_routes'
+                        elif last_part in ['service', 'services']:
+                            component = 'system_service'
+                        else:
+                            component = last_part
+                    else:
+                        component = 'system_core'
+            else:
+                component = 'system_core'
             
             function_name = caller_frame.f_code.co_name if caller_frame else 'unknown'
             line_number = caller_frame.f_lineno if caller_frame else None

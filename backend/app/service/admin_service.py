@@ -661,7 +661,7 @@ class AdminService(WatchlistSubject):
                     level=LogLevel(log.level),
                     logger=log.logger,
                     message=log.message,
-                    module=log.component,
+                    component=log.component,
                     function=log.function,
                     line_number=log.line_number,
                     extra_data=log.extra_data
