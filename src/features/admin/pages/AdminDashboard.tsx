@@ -6,7 +6,7 @@ import { Button } from '../../../shared/components/ui/button';
 import { Badge } from '../../../shared/components/ui/badge';
 import { Alert, AlertDescription } from '../../../shared/components/ui/alert';
 import { useToast } from '../../../shared/hooks/use-toast';
-import { adminAPI, SystemStatus, ModelAccuracy } from '../../../api/services/admin.service';
+import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus } from '../../../api/services/admin.service';
 import { 
   Activity, 
   Database, 
@@ -31,23 +31,27 @@ const AdminDashboard: React.FC = () => {
   // State management
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [modelAccuracy, setModelAccuracy] = useState<ModelAccuracy | null>(null);
+  const [priceServiceStatus, setPriceServiceStatus] = useState<RealTimePriceServiceStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);  
   const [collectingData, setCollectingData] = useState(false);
+  const [priceServiceLoading, setPriceServiceLoading] = useState(false);
 
   // Load dashboard data
   const loadDashboardData = async (showRefreshToast = false) => {
     try {
       setRefreshing(true);
       
-      // Load system status and model accuracy in parallel
-      const [statusResponse, accuracyResponse] = await Promise.all([
+      // Load system status, model accuracy, and price service status in parallel
+      const [statusResponse, accuracyResponse, priceServiceResponse] = await Promise.all([
         adminAPI.getSystemStatus(),
-        adminAPI.getModelAccuracy()
+        adminAPI.getModelAccuracy(),
+        adminAPI.getRealTimePriceServiceStatus()
       ]);
       
       setSystemStatus(statusResponse);
       setModelAccuracy(accuracyResponse);
+      setPriceServiceStatus(priceServiceResponse);
       
       if (showRefreshToast) {
         toast({
@@ -95,6 +99,78 @@ const AdminDashboard: React.FC = () => {
       });
     } finally {
       setCollectingData(false);
+    }
+  };
+
+  // Real-time price service controls
+  const handlePriceServiceControl = async (action: 'start' | 'stop') => {
+    try {
+      setPriceServiceLoading(true);
+      
+      if (action === 'start') {
+        await adminAPI.startRealTimePriceService();
+        toast({
+          title: "Price Service Started",
+          description: "Real-time price service has been started successfully.",
+        });
+      } else {
+        await adminAPI.stopRealTimePriceService();
+        toast({
+          title: "Price Service Stopped", 
+          description: "Real-time price service has been stopped successfully.",
+        });
+      }
+      
+      // Refresh price service status
+      setTimeout(async () => {
+        try {
+          const response = await adminAPI.getRealTimePriceServiceStatus();
+          setPriceServiceStatus(response);
+        } catch (error) {
+          console.error('Failed to refresh price service status:', error);
+        }
+      }, 1000);
+      
+    } catch (error) {
+      console.error(`Failed to ${action} price service:`, error);
+      toast({
+        title: "Error",
+        description: `Failed to ${action} real-time price service. Please try again.`,
+        variant: "destructive",
+      });
+    } finally {
+      setPriceServiceLoading(false);
+    }
+  };
+
+  const testPriceFetch = async () => {
+    try {
+      setPriceServiceLoading(true);
+      
+      const response = await adminAPI.testPriceFetch();
+      
+      if (response.success) {
+        toast({
+          title: "Price Fetch Test Successful",
+          description: response.message,
+        });
+      } else {
+        toast({
+          title: "Price Fetch Test Failed",
+          description: response.message,
+          variant: "destructive",
+        });
+      }
+      
+    } catch (error) {
+      console.error('Failed to test price fetch:', error);
+      toast({
+        title: "Error",
+        description: "Failed to test price fetch. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setPriceServiceLoading(false);
     }
   };
 
@@ -211,7 +287,7 @@ const AdminDashboard: React.FC = () => {
         )}
 
         {/* System Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">System Status</CardTitle>
@@ -239,6 +315,21 @@ const AdminDashboard: React.FC = () => {
               </div>
               <p className="text-xs text-muted-foreground">
                 Stocks being monitored
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Real-Time Prices</CardTitle>
+              <Zap className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {systemStatus?.metrics.price_updates || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Live price updates
               </p>
             </CardContent>
           </Card>
@@ -281,16 +372,19 @@ const AdminDashboard: React.FC = () => {
             <CardDescription>Current status of system components</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {systemStatus?.services && Object.entries(systemStatus.services).map(([service, status]) => (
                 <div key={service} className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex items-center gap-2">
                     {service === 'database' && <Database className="h-4 w-4" />}
                     {service === 'sentiment_engine' && <BarChart3 className="h-4 w-4" />}
                     {service === 'data_collection' && <Zap className="h-4 w-4" />}
+                    {service === 'real_time_prices' && <TrendingUp className="h-4 w-4" />}
+                    {service === 'scheduler' && <Activity className="h-4 w-4" />}
                     <span className="capitalize font-medium">
                       {service === 'sentiment_engine' ? 'Sentiment Engine' :
                        service === 'data_collection' ? 'Data Collection' :
+                       service === 'real_time_prices' ? 'Real-Time Prices' :
                        service}
                     </span>
                   </div>
@@ -303,6 +397,131 @@ const AdminDashboard: React.FC = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Real-time Price Service Control */}
+        {priceServiceStatus && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Real-time Price Service Control
+              </CardTitle>
+              <CardDescription>Manage the background stock price fetching service</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-medium mb-3">Service Status</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>Status:</span>
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(priceServiceStatus.service_status.is_running ? 'running' : 'stopped')}
+                        <span className={`font-medium ${priceServiceStatus.service_status.is_running ? 'text-green-600' : 'text-red-600'}`}>
+                          {priceServiceStatus.service_status.is_running ? 'Running' : 'Stopped'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Update Interval:</span>
+                      <span className="font-medium">{priceServiceStatus.service_status.update_interval}s</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Market Status:</span>
+                      <span className={`font-medium capitalize ${priceServiceStatus.service_status.current_market_status === 'open' ? 'text-green-600' : 'text-red-600'}`}>
+                        {priceServiceStatus.service_status.current_market_status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Active Stocks:</span>
+                      <span className="font-medium">{priceServiceStatus.service_status.active_stocks_count}</span>
+                    </div>
+                    {priceServiceStatus.service_status.next_market_open && (
+                      <div className="flex justify-between">
+                        <span>Next Market Open:</span>
+                        <span className="font-medium text-sm">
+                          {new Date(priceServiceStatus.service_status.next_market_open).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium mb-3">Rate Limiting</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>Requests/Hour Limit:</span>
+                      <span className="font-medium">{priceServiceStatus.service_status.rate_limiting.requests_per_hour}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Current Hour Count:</span>
+                      <span className="font-medium">{priceServiceStatus.service_status.rate_limiting.current_hour_count}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Usage:</span>
+                      <span className="font-medium">
+                        {Math.round((priceServiceStatus.service_status.rate_limiting.current_hour_count / priceServiceStatus.service_status.rate_limiting.requests_per_hour) * 100)}%
+                      </span>
+                    </div>
+                    {priceServiceStatus.service_status.last_request_time && (
+                      <div className="flex justify-between">
+                        <span>Last Request:</span>
+                        <span className="font-medium text-sm">
+                          {new Date(priceServiceStatus.service_status.last_request_time).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6 pt-4 border-t">
+                <div className="flex gap-3 flex-wrap">
+                  {priceServiceStatus.service_status.is_running ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => handlePriceServiceControl('stop')}
+                      disabled={priceServiceLoading}
+                      className="flex items-center gap-2"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      {priceServiceLoading ? 'Stopping...' : 'Stop Service'}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => handlePriceServiceControl('start')}
+                      disabled={priceServiceLoading}
+                      className="flex items-center gap-2"
+                    >
+                      <Play className="h-4 w-4" />
+                      {priceServiceLoading ? 'Starting...' : 'Start Service'}
+                    </Button>
+                  )}
+                  
+                  <Button
+                    variant="outline"
+                    onClick={testPriceFetch}
+                    disabled={priceServiceLoading}
+                    className="flex items-center gap-2"
+                  >
+                    <Zap className="h-4 w-4" />
+                    {priceServiceLoading ? 'Testing...' : 'Test Price Fetch'}
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate('/admin/scheduler')}
+                    className="flex items-center gap-2"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Scheduler Manager
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Model Performance */}
         {modelAccuracy && (
@@ -368,6 +587,86 @@ const AdminDashboard: React.FC = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Sentiment Analysis Overview */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Sentiment Analysis Overview</CardTitle>
+            <CardDescription>Latest sentiment distribution and data storage metrics</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <h4 className="font-medium mb-3">Sentiment Distribution</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                      Positive:
+                    </span>
+                    <span className="font-medium">{systemStatus?.metrics.sentiment_breakdown?.positive || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+                      Neutral:
+                    </span>
+                    <span className="font-medium">{systemStatus?.metrics.sentiment_breakdown?.neutral || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                      Negative:
+                    </span>
+                    <span className="font-medium">{systemStatus?.metrics.sentiment_breakdown?.negative || 0}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="font-medium mb-3">Data Storage</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span>News Articles:</span>
+                    <span className="font-medium">{systemStatus?.metrics.news_articles || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Reddit Posts:</span>
+                    <span className="font-medium">{systemStatus?.metrics.reddit_posts || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Price Records:</span>
+                    <span className="font-medium">{systemStatus?.metrics.price_records || 0}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="font-medium mb-3">Recent Activity</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span>Last Collection:</span>
+                    <span className="font-medium text-sm">
+                      {systemStatus?.metrics.last_collection ? 
+                        new Date(systemStatus.metrics.last_collection).toLocaleString() : 
+                        'N/A'
+                      }
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Last Price Update:</span>
+                    <span className="font-medium text-sm">
+                      {systemStatus?.metrics.last_price_update ? 
+                        new Date(systemStatus.metrics.last_price_update).toLocaleString() : 
+                        'N/A'
+                      }
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Quick Actions */}
         <Card>

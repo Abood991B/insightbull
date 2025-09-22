@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, text, select
 import asyncio
 import structlog
 
-from app.data_access.models import Stock, SentimentData, StockPrice, SystemLog, NewsArticle, RedditPost
+from app.data_access.models import StocksWatchlist, SentimentData, StockPrice, SystemLog, NewsArticle, RedditPost
 from app.infrastructure.log_system import get_logger
 from app.presentation.schemas.admin_schemas import StorageMetrics, RetentionPolicy
 
@@ -107,29 +107,39 @@ class StorageManager:
             self.logger.error("Error calculating storage metrics", error=str(e))
             raise
     
-    async def apply_retention_policy(self, policy: RetentionPolicy) -> Dict[str, int]:
+    async def apply_retention_policy(self, policy: RetentionPolicy, force_cleanup: bool = False) -> Dict[str, int]:
         """
         Apply data retention policy and clean up old records.
         
+        Args:
+            policy: Retention policy configuration
+            force_cleanup: Force cleanup even if auto_cleanup is disabled
+            
         Returns:
             Dictionary with cleanup statistics
         """
         try:
-            self.logger.info("Applying retention policy", policy=policy.dict())
+            self.logger.info("Applying retention policy", policy=policy.dict(), force_cleanup=force_cleanup)
             
             cleanup_stats = {
                 "sentiment_records_deleted": 0,
                 "price_records_deleted": 0,
-                "log_records_deleted": 0
+                "log_records_deleted": 0,
+                "news_records_deleted": 0,
+                "reddit_records_deleted": 0
             }
             
-            if policy.auto_cleanup_enabled:
+            # Always run cleanup when explicitly requested via admin panel
+            if policy.auto_cleanup_enabled or force_cleanup:
+                self.logger.info("Running data cleanup", policy=policy.dict())
+                
                 # Clean up old sentiment data
                 sentiment_cutoff = datetime.utcnow() - timedelta(days=policy.sentiment_data_days)
                 sentiment_delete_result = await self.db.execute(
                     delete(SentimentData).where(SentimentData.created_at < sentiment_cutoff)
                 )
                 cleanup_stats["sentiment_records_deleted"] = sentiment_delete_result.rowcount
+                self.logger.info(f"Deleted {sentiment_delete_result.rowcount} sentiment records older than {sentiment_cutoff}")
                 
                 # Clean up old price data
                 price_cutoff = datetime.utcnow() - timedelta(days=policy.price_data_days)
@@ -137,6 +147,7 @@ class StorageManager:
                     delete(StockPrice).where(StockPrice.created_at < price_cutoff)
                 )
                 cleanup_stats["price_records_deleted"] = price_delete_result.rowcount
+                self.logger.info(f"Deleted {price_delete_result.rowcount} price records older than {price_cutoff}")
                 
                 # Clean up old log data
                 log_cutoff = datetime.utcnow() - timedelta(days=policy.log_data_days)
@@ -144,6 +155,7 @@ class StorageManager:
                     delete(SystemLog).where(SystemLog.timestamp < log_cutoff)
                 )
                 cleanup_stats["log_records_deleted"] = log_delete_result.rowcount
+                self.logger.info(f"Deleted {log_delete_result.rowcount} log records older than {log_cutoff}")
                 
                 # Clean up old news articles (optional - same retention as sentiment)
                 news_delete_result = await self.db.execute(
@@ -159,7 +171,9 @@ class StorageManager:
                 
                 await self.db.commit()
                 
-                self.logger.info("Retention policy applied", stats=cleanup_stats)
+                self.logger.info("Retention policy applied successfully", stats=cleanup_stats)
+            else:
+                self.logger.info("Auto cleanup disabled, skipping data cleanup")
             
             return cleanup_stats
             
@@ -179,7 +193,9 @@ class StorageManager:
             self.logger.info("Creating data backup")
             
             backup_timestamp = datetime.utcnow()
-            backup_id = f"backup_{int(backup_timestamp.timestamp())}"
+            # Format backup ID with date for better readability
+            date_str = backup_timestamp.strftime("%Y%m%d_%H%M%S")
+            backup_id = f"Insight_stock_backup_{date_str}"
             
             # Get current data counts for backup metadata
             metrics = await self.calculate_storage_metrics()
@@ -240,7 +256,7 @@ class StorageManager:
             
             # Check for missing stock names
             unnamed_stocks_result = await self.db.execute(
-                select(func.count(Stock.id)).where(Stock.name.is_(None))
+                select(func.count(StocksWatchlist.id)).where(StocksWatchlist.name.is_(None))
             )
             unnamed_count = unnamed_stocks_result.scalar() or 0
             
@@ -263,7 +279,6 @@ class StorageManager:
                 "data_quality_issues": data_quality_issues,
                 "health_score": 85 if not data_quality_issues else 70,  # Simple scoring
                 "recommendations": [
-                    "Consider implementing data compression",
                     "Set up automated cleanup for old data",
                     "Monitor growth rate trends"
                 ]
@@ -434,7 +449,7 @@ class StorageManager:
             # Remove orphaned sentiment data without corresponding stocks
             result = await self.db.execute(text("""
                 DELETE FROM sentiment_data 
-                WHERE stock_id NOT IN (SELECT id FROM stocks)
+                WHERE stock_id NOT IN (SELECT id FROM stocks_watchlist)
             """))
             
             orphaned_count = result.rowcount

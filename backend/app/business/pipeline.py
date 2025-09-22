@@ -36,7 +36,7 @@ from ..infrastructure.log_system import get_logger
 from ..service.sentiment_processing import get_sentiment_engine, EngineConfig
 from ..service.sentiment_processing import TextInput, DataSource, SentimentResult
 # Database Models for Storage
-from ..data_access.models import SentimentData, Stock
+from ..data_access.models import SentimentData, Stock, NewsArticle, RedditPost
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ..data_access.database.connection import get_db
@@ -504,7 +504,23 @@ class DataPipeline:
                 )
                 result.status = PipelineStatus.CANCELLED
                 return result
+
+            # Step 1.5: Store Raw Data (News Articles and Reddit Posts)
+            self.logger.log_pipeline_operation(
+                "raw_data_storage_phase_start",
+                {"pipeline_id": pipeline_id}
+            )
             
+            raw_data_stored_count = await self._store_raw_data(collection_results, pipeline_id)
+            
+            self.logger.log_pipeline_operation(
+                "raw_data_storage_phase_complete",
+                {
+                    "pipeline_id": pipeline_id,
+                    "raw_items_stored": raw_data_stored_count
+                }
+            )
+
             # Step 2: Data Processing with tracking
             self.logger.log_pipeline_operation(
                 "processing_phase_start",
@@ -924,12 +940,22 @@ class DataPipeline:
                             }
                             stock = await stock_repository.create(stock_data)
                         
+                        # Determine sentiment label based on score
+                        def get_sentiment_label(score: float) -> str:
+                            if score >= 0.1:
+                                return "Positive"
+                            elif score <= -0.1:
+                                return "Negative"
+                            else:
+                                return "Neutral"
+                        
                         # Create sentiment record using repository
                         sentiment_data = {
                             "stock_id": stock.id,
                             "source": result.source.lower(),
                             "sentiment_score": result.sentiment_score,
                             "confidence": result.confidence,
+                            "sentiment_label": get_sentiment_label(result.sentiment_score),
                             "model_used": getattr(result, 'model_used', 'unknown'),
                             "raw_text": result.raw_text[:5000] if result.raw_text else None,  # Limit text size
                             "extra_data": {
@@ -971,6 +997,132 @@ class DataPipeline:
                 {
                     "error": str(e),
                     "total_results": len(processing_results),
+                    "stored_count": stored_count
+                }
+            )
+        
+        return stored_count
+
+    async def _store_raw_data(self, collection_results: Dict[str, CollectionResult], correlation_id: str) -> int:
+        """
+        Store raw news articles and Reddit posts in their respective tables.
+        
+        Args:
+            collection_results: Results from data collection
+            correlation_id: Pipeline execution ID for tracking
+            
+        Returns:
+            Number of raw data items stored
+        """
+        stored_count = 0
+        
+        try:
+            # Process each collection result
+            for source_name, collection_result in collection_results.items():
+                if not collection_result.success or not collection_result.data:
+                    continue
+                
+                for raw_data in collection_result.data:
+                    try:
+                        async with get_db() as session:
+                            # Determine stock from raw data
+                            stock_symbol = getattr(raw_data, 'stock_symbol', None)
+                            if not stock_symbol:
+                                continue
+                            
+                            # Get or create stock record
+                            from ..data_access.repositories.stock_repository import StockRepository
+                            stock_repository = StockRepository(session)
+                            stock = await stock_repository.get_by_symbol(stock_symbol)
+                            
+                            if not stock:
+                                stock_data = {
+                                    "symbol": stock_symbol,
+                                    "name": f"{stock_symbol} Corp"  # Default name
+                                }
+                                stock = await stock_repository.create(stock_data)
+                            
+                            # Store based on source type
+                            if source_name.lower() in ['newsapi', 'marketaux', 'finnhub']:
+                                # Store as news article
+                                news_article = NewsArticle(
+                                    stock_id=stock.id,
+                                    title=getattr(raw_data, 'title', '')[:500],  # Limit title length
+                                    content=getattr(raw_data, 'content', '')[:10000],  # Limit content length
+                                    url=getattr(raw_data, 'url', ''),
+                                    source=source_name.lower(),
+                                    published_at=getattr(raw_data, 'published_at', None),
+                                    author=getattr(raw_data, 'author', ''),
+                                    content_hash=getattr(raw_data, 'content_hash', ''),
+                                    extra_data={
+                                        "pipeline_id": correlation_id,
+                                        "collected_at": datetime.utcnow().isoformat(),
+                                        "original_data": {
+                                            "description": getattr(raw_data, 'description', ''),
+                                            "category": getattr(raw_data, 'category', ''),
+                                            "language": getattr(raw_data, 'language', '')
+                                        }
+                                    }
+                                )
+                                session.add(news_article)
+                                
+                            elif source_name.lower() == 'reddit':
+                                # Store as Reddit post
+                                reddit_post = RedditPost(
+                                    stock_id=stock.id,
+                                    post_id=getattr(raw_data, 'post_id', ''),
+                                    title=getattr(raw_data, 'title', '')[:500],  # Limit title length
+                                    content=getattr(raw_data, 'content', '')[:10000],  # Limit content length
+                                    url=getattr(raw_data, 'url', ''),
+                                    subreddit=getattr(raw_data, 'subreddit', ''),
+                                    author=getattr(raw_data, 'author', ''),
+                                    score=getattr(raw_data, 'score', 0),
+                                    num_comments=getattr(raw_data, 'num_comments', 0),
+                                    created_utc=getattr(raw_data, 'created_utc', None),
+                                    content_hash=getattr(raw_data, 'content_hash', ''),
+                                    extra_data={
+                                        "pipeline_id": correlation_id,
+                                        "collected_at": datetime.utcnow().isoformat(),
+                                        "original_data": {
+                                            "upvote_ratio": getattr(raw_data, 'upvote_ratio', 0.0),
+                                            "distinguished": getattr(raw_data, 'distinguished', None),
+                                            "stickied": getattr(raw_data, 'stickied', False),
+                                            "is_self": getattr(raw_data, 'is_self', False)
+                                        }
+                                    }
+                                )
+                                session.add(reddit_post)
+                            
+                            await session.commit()
+                            stored_count += 1
+                            
+                    except Exception as e:
+                        self.logger.error(
+                            f"Error storing raw data item from {source_name}: {e}",
+                            extra={
+                                "source": source_name,
+                                "correlation_id": correlation_id,
+                                "error": str(e)
+                            }
+                        )
+                        continue
+            
+            # Log success metrics
+            self.logger.log_pipeline_operation(
+                "raw_data_storage_complete",
+                {
+                    "total_stored": stored_count,
+                    "correlation_id": correlation_id,
+                    "sources_processed": list(collection_results.keys())
+                }
+            )
+                
+        except Exception as e:
+            self.logger.log_error(
+                "raw_data_storage_operation_failed",
+                {
+                    "error": str(e),
+                    "correlation_id": correlation_id,
                     "stored_count": stored_count
                 }
             )
@@ -1227,12 +1379,22 @@ class DataPipeline:
                         if await sentiment_repository.exists_by_content_hash(stock.id, source_str, content_hash):
                             continue  # Skip duplicate content
                         
+                        # Determine sentiment label based on score
+                        def get_sentiment_label(score: float) -> str:
+                            if score >= 0.1:
+                                return "Positive"
+                            elif score <= -0.1:
+                                return "Negative"
+                            else:
+                                return "Neutral"
+                        
                         # Convert to database model format (now with proper model_used column)
                         sentiment_data = {
                             'stock_id': stock.id,
                             'source': source_str,
                             'sentiment_score': sentiment_result.sentiment_result.score,
                             'confidence': sentiment_result.sentiment_result.confidence,
+                            'sentiment_label': get_sentiment_label(sentiment_result.sentiment_result.score),
                             'model_used': sentiment_result.sentiment_result.model_name,  # Use actual model name from result
                             'raw_text': sentiment_result.processing_result.processed_text[:1000],  # First 1000 chars
                             'content_hash': content_hash,  # Add content hash for duplicate prevention

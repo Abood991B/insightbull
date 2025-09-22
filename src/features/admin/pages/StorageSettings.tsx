@@ -270,7 +270,7 @@ const StorageSettings = () => {
         {storageSettings && (
           <>
             {/* Storage Overview Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Storage Usage</CardTitle>
@@ -307,22 +307,6 @@ const StorageSettings = () => {
                   </div>
                   <p className="text-sm text-gray-600 mt-2">
                     {storageSettings.auto_cleanup ? 'Enabled' : 'Disabled'}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Compression</CardTitle>
-                  <Archive className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(storageSettings.compression_enabled ? 'healthy' : 'warning')}
-                    {getStatusBadge(storageSettings.compression_enabled ? 'healthy' : 'warning')}
-                  </div>
-                  <p className="text-sm text-gray-600 mt-2">
-                    {storageSettings.compression_enabled ? 'Enabled' : 'Disabled'}
                   </p>
                 </CardContent>
               </Card>
@@ -428,23 +412,6 @@ const StorageSettings = () => {
                         disabled={updating}
                       >
                         {storageSettings.auto_cleanup ? 'Enabled' : 'Disabled'}
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="text-sm font-medium">Data Compression</label>
-                        <p className="text-xs text-gray-500">Compress stored data to save space</p>
-                      </div>
-                      <Button
-                        variant={storageSettings.compression_enabled ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => updateStorageConfiguration({ 
-                          compression_enabled: !storageSettings.compression_enabled 
-                        })}
-                        disabled={updating}
-                      >
-                        {storageSettings.compression_enabled ? 'Enabled' : 'Disabled'}
                       </Button>
                     </div>
                   </div>

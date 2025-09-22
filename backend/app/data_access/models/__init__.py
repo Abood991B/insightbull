@@ -6,7 +6,7 @@ SQLAlchemy models for data persistence.
 Maps business entities to database tables.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Float, Text, Boolean, ForeignKey, JSON, Index
+from sqlalchemy import Column, Integer, String, DateTime, Float, Text, Boolean, ForeignKey, JSON, Index, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -33,6 +33,7 @@ class StocksWatchlist(Base):
     # Stock metadata
     market_cap = Column(String(50))  # Large Cap, Mid Cap, Small Cap
     exchange = Column(String(20), default="NASDAQ")  # NASDAQ, NYSE, etc.
+    current_price = Column(Numeric(precision=10, scale=2), nullable=True)  # Latest stock price for quick access
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -57,8 +58,9 @@ class SentimentData(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks_watchlist.id"), nullable=False)
     source = Column(String(50), nullable=False)  # reddit, news, financial_reports
-    sentiment_score = Column(Float, nullable=False)
-    confidence = Column(Float, nullable=False)
+    sentiment_score = Column(Numeric(precision=5, scale=4), nullable=False)  # Range -1.0000 to 1.0000
+    confidence = Column(Numeric(precision=5, scale=4), nullable=False)  # Range 0.0000 to 1.0000
+    sentiment_label = Column(String(20), nullable=False, index=True, default="Neutral")  # Positive, Negative, Neutral
     model_used = Column(String(50), nullable=True)  # VADER, FinBERT (nullable for migration compatibility)
     raw_text = Column(Text)
     extra_data = Column(JSON)  # Additional source-specific data
@@ -86,18 +88,20 @@ class StockPrice(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks_watchlist.id"), nullable=False)
-    price = Column(Float, nullable=False)
+    symbol = Column(String(20), nullable=True, index=True)  # Stock symbol for easier querying (nullable due to SQLite limitations)
+    name = Column(String(200))  # Company name for better readability
+    price = Column(Numeric(precision=10, scale=2), nullable=False)  # Max 99999999.99
     volume = Column(Integer)
-    change = Column(Float)
-    change_percent = Column(Float)
+    change = Column(Numeric(precision=8, scale=2))  # Max 999999.99 (positive or negative)
+    change_percent = Column(Numeric(precision=6, scale=2))  # Max 9999.99% 
     timestamp = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Additional price fields for better tracking
-    open_price = Column(Float)
-    close_price = Column(Float) 
-    high_price = Column(Float)
-    low_price = Column(Float)
+    # Additional price fields for better tracking (2 decimal places)
+    open_price = Column(Numeric(precision=10, scale=2))
+    close_price = Column(Numeric(precision=10, scale=2)) 
+    high_price = Column(Numeric(precision=10, scale=2))
+    low_price = Column(Numeric(precision=10, scale=2))
     
     # Relationships
     stock = relationship("StocksWatchlist", back_populates="price_data")
@@ -114,8 +118,8 @@ class NewsArticle(Base):
     source = Column(String(100), nullable=False)
     author = Column(String(255))
     published_at = Column(DateTime(timezone=True), nullable=False)
-    sentiment_score = Column(Float)
-    confidence = Column(Float)
+    sentiment_score = Column(Numeric(precision=5, scale=4))  # Range -1.0000 to 1.0000
+    confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
     stock_mentions = Column(JSON)  # Array of stock symbols mentioned
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -134,8 +138,8 @@ class RedditPost(Base):
     num_comments = Column(Integer, default=0)
     url = Column(String(1000))
     created_utc = Column(DateTime(timezone=True), nullable=False)
-    sentiment_score = Column(Float)
-    confidence = Column(Float)
+    sentiment_score = Column(Numeric(precision=5, scale=4))  # Range -1.0000 to 1.0000
+    confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
     stock_mentions = Column(JSON)  # Array of stock symbols mentioned
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

@@ -29,6 +29,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.infrastructure.log_system import get_logger
 from app.business.pipeline import DataPipeline
 from app.service.watchlist_service import get_current_stock_symbols
+from app.service.price_service import price_service
 from app.data_access.database.connection import get_db_session
 
 
@@ -105,6 +106,10 @@ class Scheduler:
             self._is_running = True
             self.logger.info("Scheduler started successfully - automated job scheduling is now active")
             
+            # Start real-time price service
+            await price_service.start()
+            self.logger.info("Real-time stock price service started")
+            
             # Setup default scheduled jobs
             await self._setup_default_jobs()
             self.logger.info(f"Default scheduled jobs created: {len(self.jobs)} jobs configured")
@@ -112,6 +117,10 @@ class Scheduler:
     async def stop(self):
         """Stop the scheduler"""
         if self._is_running:
+            # Stop real-time price service
+            await price_service.stop()
+            self.logger.info("Real-time stock price service stopped")
+            
             self.scheduler.shutdown()
             self._is_running = False
             self.logger.info("Scheduler stopped")

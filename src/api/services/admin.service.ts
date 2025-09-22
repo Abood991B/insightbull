@@ -19,12 +19,24 @@ export interface SystemStatus {
     database: 'healthy' | 'unhealthy' | 'error';
     sentiment_engine: 'healthy' | 'unhealthy' | 'error';
     data_collection: 'healthy' | 'unhealthy' | 'error';
+    real_time_prices?: 'healthy' | 'unhealthy' | 'error';
+    scheduler?: 'healthy' | 'unhealthy' | 'error';
   };
   metrics: {
     uptime: string;
     last_collection?: string;
     active_stocks: number;
     total_records: number;
+    price_updates?: number;
+    sentiment_breakdown?: {
+      positive: number;
+      neutral: number;
+      negative: number;
+    };
+    news_articles?: number;
+    reddit_posts?: number;
+    price_records?: number;
+    last_price_update?: string;
   };
   timestamp: string;
 }
@@ -101,7 +113,6 @@ export interface StorageSettings {
     backup_retention_days: number;
   };
   auto_cleanup: boolean;
-  compression_enabled: boolean;
 }
 
 export interface SystemLog {
@@ -242,6 +253,48 @@ export interface DatabaseStats {
     log_entries_24h: number;
   };
   database_file: string;
+}
+
+// Real-time Price Service Types
+export interface RealTimePriceServiceStatus {
+  success: boolean;
+  service_status: {
+    service_name: string;
+    is_running: boolean;
+    update_interval: number;
+    market_hours_only: boolean;
+    current_market_status: 'open' | 'closed';
+    next_market_open?: string;
+    active_stocks_count: number;
+    rate_limiting: {
+      requests_per_minute: number;
+      requests_per_hour: number;
+      current_hour_count: number;
+    };
+    last_request_time?: string;
+  };
+}
+
+export interface ServiceOperationResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface RealTimePriceServiceConfig {
+  update_interval?: number;
+}
+
+export interface TestPriceFetchResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    current_price: number;
+    previous_close: number;
+    open_price: number;
+    high_price: number;
+    low_price: number;
+    volume: number;
+  };
 }
 
 // Utility Functions
@@ -636,6 +689,51 @@ class AdminAPIService {
 
   async refreshScheduledJobs(): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/api/admin/scheduler/refresh`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  // ============================================================================
+  // REAL-TIME PRICE SERVICE MANAGEMENT
+  // ============================================================================
+
+  async getRealTimePriceServiceStatus(): Promise<RealTimePriceServiceStatus> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/realtime-price-service/status`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async startRealTimePriceService(): Promise<ServiceOperationResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/realtime-price-service/start`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async stopRealTimePriceService(): Promise<ServiceOperationResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/realtime-price-service/stop`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async updateRealTimePriceServiceConfig(config: RealTimePriceServiceConfig): Promise<ServiceOperationResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/realtime-price-service/config`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(config),
+    });
+    return handleApiResponse(response);
+  }
+
+  async testPriceFetch(symbol?: string): Promise<TestPriceFetchResponse> {
+    const params = symbol ? `?symbol=${symbol}` : '';
+    const response = await fetch(`${API_BASE_URL}/api/admin/realtime-price-service/test-fetch${params}`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });

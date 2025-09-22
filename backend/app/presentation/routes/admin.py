@@ -383,7 +383,6 @@ async def get_storage_metrics(
                 "backup_retention_days": 30
             },
             "auto_cleanup": default_retention.auto_cleanup_enabled,
-            "compression_enabled": False,
             "total_records": metrics.total_records,
             "storage_health": "healthy" if usage_percentage < 80 else "warning" if usage_percentage < 95 else "critical"
         }
@@ -413,15 +412,41 @@ async def update_retention_policy(
                    admin_user=current_admin.email,
                    policy=retention_policy.dict())
         
-        storage_manager = StorageManager(db)
-        cleanup_stats = await storage_manager.apply_retention_policy(retention_policy)
-        
-        return RetentionPolicyResponse(
-            success=True,
-            applied_policy=retention_policy,
-            cleanup_statistics=cleanup_stats,
-            timestamp=datetime.utcnow()
+        # Convert StorageSettingsUpdateRequest to RetentionPolicy
+        from app.presentation.schemas.admin_schemas import RetentionPolicy
+        retention_policy_obj = RetentionPolicy(
+            sentiment_data_days=retention_policy.sentiment_data_days or 30,
+            price_data_days=retention_policy.price_data_days or 90,
+            log_data_days=retention_policy.log_data_days or 30,
+            auto_cleanup_enabled=retention_policy.auto_cleanup_enabled or True
         )
+        
+        logger.info("Converted retention policy", policy=retention_policy_obj.dict())
+        
+        storage_manager = StorageManager(db)
+        cleanup_stats = await storage_manager.apply_retention_policy(retention_policy_obj, force_cleanup=True)
+        
+        logger.info("Retention policy applied", cleanup_stats=cleanup_stats)
+        
+        return {
+            "success": True,
+            "message": "Retention policy applied successfully",
+            "cleanup_statistics": cleanup_stats,
+            "updated_settings": {
+                "metrics": {
+                    "total_records": cleanup_stats.get("total_records_remaining", 0),
+                    "storage_size_mb": 0.0,
+                    "sentiment_records": cleanup_stats.get("sentiment_records_remaining", 0),
+                    "stock_price_records": cleanup_stats.get("price_records_remaining", 0),
+                    "oldest_record": None,
+                    "newest_record": None
+                },
+                "retention_policy": retention_policy_obj.dict(),
+                "backup_enabled": False,
+                "last_cleanup": datetime.utcnow(),
+                "next_cleanup": None
+            }
+        }
         
     except Exception as e:
         logger.error("Error updating retention policy", error=str(e))
@@ -491,6 +516,7 @@ async def create_backup(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create backup"
         )
+
 
 
 # U-FR10: System Logs Viewing
@@ -1016,7 +1042,196 @@ async def refresh_scheduled_jobs(
         logger.error("Error refreshing scheduled jobs", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to refresh scheduled jobs"
+            detail="Failed to retrieve real-time price service status"
+        )
+
+
+@router.post("/realtime-price-service/start")
+async def start_realtime_price_service(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Start the real-time price service.
+    """
+    try:
+        logger.info("Admin starting real-time price service", admin_user=current_admin.email)
+        
+        from app.service.price_service import price_service
+        
+        if price_service.is_running:
+            return {
+                "success": False,
+                "message": "Real-time price service is already running"
+            }
+        
+        await price_service.start()
+        
+        logger.info(f"Real-time price service started by admin {current_admin.email}")
+        
+        return {
+            "success": True,
+            "message": "Real-time price service started successfully"
+        }
+        
+    except Exception as e:
+        logger.error("Error starting real-time price service", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start real-time price service"
+        )
+
+
+# ============================================================================
+# REAL-TIME PRICE SERVICE MANAGEMENT  
+# ============================================================================
+
+@router.get("/realtime-price-service/status")
+async def get_realtime_price_service_status(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get real-time price service status and configuration.
+    
+    Returns comprehensive information about the background price fetching service.
+    """
+    try:
+        logger.info("Admin requesting real-time price service status", admin_user=current_admin.email)
+        
+        from app.service.price_service import price_service
+        
+        status_data = price_service.get_service_status()
+        
+        return {
+            "success": True,
+            "service_status": status_data
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving real-time price service status", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve real-time price service status"
+        )
+
+
+@router.post("/realtime-price-service/stop")
+async def stop_realtime_price_service(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Stop the real-time price service.
+    """
+    try:
+        logger.info("Admin stopping real-time price service", admin_user=current_admin.email)
+        
+        from app.service.price_service import price_service
+        
+        if not price_service.is_running:
+            return {
+                "success": False,
+                "message": "Real-time price service is not running"
+            }
+        
+        await price_service.stop()
+        
+        logger.info(f"Real-time price service stopped by admin {current_admin.email}")
+        
+        return {
+            "success": True,
+            "message": "Real-time price service stopped successfully"
+        }
+        
+    except Exception as e:
+        logger.error("Error stopping real-time price service", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to stop real-time price service"
+        )
+
+
+@router.put("/realtime-price-service/config")
+async def update_realtime_price_service_config(
+    config_update: Dict[str, Any],
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Update real-time price service configuration.
+    
+    Args:
+        config_update: Configuration updates (e.g., {"update_interval": 60})
+    """
+    try:
+        logger.info("Admin updating real-time price service config", 
+                   admin_user=current_admin.email,
+                   config=config_update)
+        
+        from app.service.price_service import price_service
+        
+        success = await price_service.update_configuration(config_update)
+        
+        if success:
+            logger.info(f"Real-time price service config updated by admin {current_admin.email}", 
+                       config=config_update)
+            return {
+                "success": True,
+                "message": "Real-time price service configuration updated successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to update configuration - invalid settings"
+            }
+        
+    except Exception as e:
+        logger.error("Error updating real-time price service config", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update real-time price service configuration"
+        )
+
+
+@router.post("/realtime-price-service/test-fetch")
+async def test_price_fetch(
+    symbol: Optional[str] = Query(None, description="Test price fetch for specific symbol"),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Test price fetching for a specific symbol or all watchlist symbols.
+    """
+    try:
+        logger.info("Admin testing price fetch", 
+                   admin_user=current_admin.email,
+                   symbol=symbol)
+        
+        from app.service.price_service import price_service
+        
+        if symbol:
+            # Test single symbol
+            price_data = await price_service.fetch_single_stock_price(symbol)
+            if price_data:
+                return {
+                    "success": True,
+                    "message": f"Successfully fetched price for {symbol}",
+                    "data": price_data
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Failed to fetch price for {symbol}"
+                }
+        else:
+            # Test fetching all watchlist symbols
+            await price_service._fetch_and_update_prices()
+            return {
+                "success": True,
+                "message": "Successfully triggered price fetch for all watchlist symbols"
+            }
+        
+    except Exception as e:
+        logger.error("Error testing price fetch", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to test price fetch"
         )
 
 
