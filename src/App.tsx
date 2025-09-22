@@ -20,7 +20,8 @@ import {
   ApiConfig, 
   WatchlistManager, 
   StorageSettings, 
-  SystemLogs 
+  SystemLogs,
+  SchedulerManager
 } from "@/features/admin";
 import OAuth2AdminAuth from "@/features/admin/components/OAuth2AdminAuth";
 import AdminProtectedRoute from "@/features/admin/components/AdminProtectedRoute";
@@ -63,6 +64,11 @@ const App = () => (
           <Route path="/admin/watchlist" element={
             <AdminProtectedRoute>
               <WatchlistManager />
+            </AdminProtectedRoute>
+          } />
+          <Route path="/admin/scheduler" element={
+            <AdminProtectedRoute>
+              <SchedulerManager />
             </AdminProtectedRoute>
           } />
           <Route path="/admin/storage" element={

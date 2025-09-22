@@ -15,7 +15,7 @@ This module provides REST API endpoints for:
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, func, desc, and_, or_, delete
+from sqlalchemy import select, func, desc, and_, or_, delete, inspect
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from uuid import uuid4
@@ -127,6 +127,7 @@ async def trigger_manual_collection(
 # U-FR6: Model Accuracy Evaluation
 @router.get("/models/accuracy")
 async def get_model_accuracy(
+    view_type: str = "overall",  # "overall" or "latest"
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)
 ) -> Dict[str, Any]:
@@ -134,14 +135,22 @@ async def get_model_accuracy(
     Get sentiment model accuracy metrics.
     Implements U-FR6: View Model Accuracy
     
+    Args:
+        view_type: "overall" for all-time metrics, "latest" for latest pipeline run
+    
     Returns comprehensive accuracy metrics for all sentiment models
     including VADER and FinBERT performance statistics.
     """
     try:
-        logger.info("Admin requesting model accuracy metrics", admin_user=current_admin.email)
+        logger.info("Admin requesting model accuracy metrics", 
+                   admin_user=current_admin.email, 
+                   view_type=view_type)
         
         admin_service = AdminService(db)
-        accuracy_data = await admin_service.get_model_accuracy_metrics()
+        if view_type == "latest":
+            accuracy_data = await admin_service.get_latest_pipeline_accuracy_metrics()
+        else:
+            accuracy_data = await admin_service.get_model_accuracy_metrics()
         
         return accuracy_data
         
@@ -723,3 +732,598 @@ async def trigger_manual_collection(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to trigger data collection"
         )
+
+
+# ============================================================================
+# SCHEDULER MANAGEMENT
+# ============================================================================
+
+@router.get("/scheduler/jobs")
+async def get_scheduled_jobs(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get all scheduled jobs and their status.
+    
+    Returns comprehensive information about all scheduled jobs including
+    their configuration, status, and execution history.
+    """
+    try:
+        logger.info("Admin requesting scheduled jobs", admin_user=current_admin.email)
+        
+        from app.business.scheduler import Scheduler
+        scheduler = Scheduler()
+        
+        jobs = scheduler.list_jobs()
+        
+        # Convert jobs to serializable format
+        jobs_data = []
+        for job in jobs:
+            jobs_data.append({
+                "job_id": job.job_id,
+                "name": job.name,
+                "job_type": job.job_type,
+                "trigger_config": job.trigger_config,
+                "parameters": job.parameters,
+                "status": job.status.value,
+                "created_at": job.created_at.isoformat(),
+                "last_run": job.last_run.isoformat() if job.last_run else None,
+                "next_run": job.next_run.isoformat() if job.next_run else None,
+                "run_count": job.run_count,
+                "error_count": job.error_count,
+                "last_error": job.last_error,
+                "enabled": job.enabled
+            })
+        
+        return {
+            "jobs": jobs_data,
+            "total_jobs": len(jobs_data),
+            "scheduler_running": scheduler._is_running
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving scheduled jobs", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve scheduled jobs"
+        )
+
+
+@router.post("/scheduler/jobs")
+async def create_scheduled_job(
+    job_config: Dict[str, Any],
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Create a new scheduled job.
+    
+    Args:
+        job_config: Job configuration including type, schedule, and parameters
+    """
+    try:
+        logger.info("Admin creating scheduled job", 
+                   admin_user=current_admin.email,
+                   job_type=job_config.get("job_type"))
+        
+        from app.business.scheduler import Scheduler
+        scheduler = Scheduler()
+        
+        job_type = job_config.get("job_type")
+        name = job_config.get("name")
+        cron_expression = job_config.get("cron_expression")
+        symbols = job_config.get("symbols", [])
+        
+        # Log the job creation attempt
+        logger.info(f"Admin {current_admin.email} creating scheduled job", 
+                   job_type=job_type, name=name, cron=cron_expression)
+        
+        if not all([job_type, name, cron_expression]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required fields: job_type, name, cron_expression"
+            )
+        
+        # Create job based on type
+        if job_type == "data_collection":
+            lookback_days = job_config.get("lookback_days", 1)
+            job_id = await scheduler.schedule_data_collection(
+                name=name,
+                cron_expression=cron_expression,
+                symbols=symbols,
+                lookback_days=lookback_days
+            )
+        elif job_type == "sentiment_analysis":
+            job_id = await scheduler.schedule_sentiment_analysis(
+                name=name,
+                cron_expression=cron_expression,
+                symbols=symbols
+            )
+        elif job_type == "full_pipeline":
+            lookback_days = job_config.get("lookback_days", 7)
+            job_id = await scheduler.schedule_full_pipeline(
+                name=name,
+                cron_expression=cron_expression,
+                symbols=symbols,
+                lookback_days=lookback_days
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown job type: {job_type}"
+            )
+        
+        # Log successful job creation to system logs
+        logger.info(f"Scheduled job '{name}' created successfully by admin {current_admin.email}", 
+                   job_id=job_id, job_type=job_type, symbols=symbols)
+        
+        return {
+            "success": True,
+            "job_id": job_id,
+            "message": f"Scheduled job '{name}' created successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error creating scheduled job", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create scheduled job"
+        )
+
+
+@router.put("/scheduler/jobs/{job_id}")
+async def update_scheduled_job(
+    job_id: str,
+    action: str = Query(..., description="Action to perform: enable, disable, or cancel"),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Update a scheduled job (enable, disable, cancel).
+    
+    Args:
+        job_id: ID of the job to update
+        action: Action to perform (enable, disable, cancel)
+    """
+    try:
+        logger.info("Admin updating scheduled job", 
+                   admin_user=current_admin.email,
+                   job_id=job_id,
+                   action=action)
+        
+        from app.business.scheduler import Scheduler
+        scheduler = Scheduler()
+        
+        if action == "enable":
+            success = scheduler.enable_job(job_id)
+            message = "Job enabled successfully"
+        elif action == "disable":
+            success = scheduler.disable_job(job_id)
+            message = "Job disabled successfully"
+        elif action == "cancel":
+            success = scheduler.cancel_job(job_id)
+            message = "Job cancelled successfully"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown action: {action}"
+            )
+        
+        if not success:
+            logger.warning(f"Failed to {action} job {job_id} - job not found", 
+                          admin_user=current_admin.email)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job {job_id} not found"
+            )
+        
+        # Log successful job operation
+        logger.info(f"Job {job_id} {action}d successfully by admin {current_admin.email}", 
+                   job_id=job_id, action=action)
+        
+        return {
+            "success": True,
+            "message": message
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error updating scheduled job", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update scheduled job"
+        )
+
+
+@router.get("/scheduler/jobs/{job_id}")
+async def get_job_status(
+    job_id: str,
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get detailed status of a specific scheduled job.
+    
+    Args:
+        job_id: ID of the job to query
+    """
+    try:
+        logger.info("Admin requesting job status", 
+                   admin_user=current_admin.email,
+                   job_id=job_id)
+        
+        from app.business.scheduler import Scheduler
+        scheduler = Scheduler()
+        
+        job = scheduler.get_job_status(job_id)
+        
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job {job_id} not found"
+            )
+        
+        return {
+            "job_id": job.job_id,
+            "name": job.name,
+            "job_type": job.job_type,
+            "trigger_config": job.trigger_config,
+            "parameters": job.parameters,
+            "status": job.status.value,
+            "created_at": job.created_at.isoformat(),
+            "last_run": job.last_run.isoformat() if job.last_run else None,
+            "next_run": job.next_run.isoformat() if job.next_run else None,
+            "run_count": job.run_count,
+            "error_count": job.error_count,
+            "last_error": job.last_error,
+            "enabled": job.enabled
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error retrieving job status", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve job status"
+        )
+
+
+@router.post("/scheduler/refresh")
+async def refresh_scheduled_jobs(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Refresh all scheduled jobs with updated watchlist.
+    
+    This is useful when the watchlist is updated and scheduled jobs
+    need to be refreshed to use the new stock symbols.
+    """
+    try:
+        logger.info("Admin refreshing scheduled jobs", admin_user=current_admin.email)
+        
+        from app.business.scheduler import Scheduler
+        scheduler = Scheduler()
+        
+        await scheduler.refresh_scheduled_jobs()
+        
+        return {
+            "success": True,
+            "message": "Scheduled jobs refreshed successfully"
+        }
+        
+    except Exception as e:
+        logger.error("Error refreshing scheduled jobs", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refresh scheduled jobs"
+        )
+
+
+# ============================================================================
+# DATABASE INSPECTION
+# ============================================================================
+
+@router.get("/database/schema")
+async def get_database_schema(
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get database schema information including tables, columns, and relationships.
+    
+    Returns comprehensive information about the database structure.
+    """
+    try:
+        logger.info("Admin requesting database schema", admin_user=current_admin.email)
+        
+        from app.data_access.models import (
+            StocksWatchlist, SentimentData, StockPrice, NewsArticle,
+            RedditPost, SystemLog
+        )
+        
+        # Get database inspector
+        def get_table_info(sync_session):
+            inspector = inspect(sync_session.bind)
+            return inspector.get_table_names()
+        
+        # Get all table names
+        table_names = await db.run_sync(get_table_info)
+        
+        tables_info = {}
+        
+        # Define model mapping
+        model_mapping = {
+            'stocks_watchlist': StocksWatchlist,
+            'sentiment_data': SentimentData,
+            'stock_prices': StockPrice,
+            'news_articles': NewsArticle,
+            'reddit_posts': RedditPost,
+            'system_logs': SystemLog
+        }
+        
+        for table_name in table_names:
+            if table_name in model_mapping:
+                model = model_mapping[table_name]
+                
+                # Get columns info
+                def get_columns(sync_session):
+                    inspector = inspect(sync_session.bind)
+                    return inspector.get_columns(table_name)
+                
+                def get_foreign_keys(sync_session):
+                    inspector = inspect(sync_session.bind)
+                    return inspector.get_foreign_keys(table_name)
+                
+                def get_indexes(sync_session):
+                    inspector = inspect(sync_session.bind)
+                    return inspector.get_indexes(table_name)
+                
+                columns = await db.run_sync(get_columns)
+                foreign_keys = await db.run_sync(get_foreign_keys)
+                indexes = await db.run_sync(get_indexes)
+                
+                # Get record count
+                from sqlalchemy import select, func
+                count_result = await db.execute(select(func.count()).select_from(model))
+                record_count = count_result.scalar()
+                
+                tables_info[table_name] = {
+                    'model_name': model.__name__,
+                    'record_count': record_count,
+                    'columns': [
+                        {
+                            'name': col['name'],
+                            'type': str(col['type']),
+                            'nullable': col['nullable'],
+                            'primary_key': col.get('primary_key', False),
+                            'default': str(col.get('default')) if col.get('default') else None
+                        }
+                        for col in columns
+                    ],
+                    'foreign_keys': [
+                        {
+                            'constrained_columns': fk['constrained_columns'],
+                            'referred_table': fk['referred_table'],
+                            'referred_columns': fk['referred_columns']
+                        }
+                        for fk in foreign_keys
+                    ],
+                    'indexes': [
+                        {
+                            'name': idx['name'],
+                            'column_names': idx['column_names'],
+                            'unique': idx['unique']
+                        }
+                        for idx in indexes
+                    ]
+                }
+        
+        return {
+            'database_name': 'insight_stock.db',
+            'total_tables': len(tables_info),
+            'tables': tables_info
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving database schema", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve database schema: {str(e)}"
+        )
+
+
+@router.get("/database/tables/{table_name}/data")
+async def get_table_data(
+    table_name: str,
+    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get data from a specific table with pagination.
+    
+    Args:
+        table_name: Name of the table to query
+        limit: Maximum number of records to return
+        offset: Number of records to skip
+    """
+    try:
+        logger.info("Admin requesting table data", 
+                   admin_user=current_admin.email,
+                   table_name=table_name,
+                   limit=limit,
+                   offset=offset)
+        
+        from app.data_access.models import (
+            StocksWatchlist, SentimentData, StockPrice, NewsArticle,
+            RedditPost, SystemLog
+        )
+        from sqlalchemy import select, func, text
+        
+        # Define model mapping
+        model_mapping = {
+            'stocks_watchlist': StocksWatchlist,
+            'sentiment_data': SentimentData,
+            'stock_prices': StockPrice,
+            'news_articles': NewsArticle,
+            'reddit_posts': RedditPost,
+            'system_logs': SystemLog
+        }
+        
+        if table_name not in model_mapping:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Table {table_name} not found"
+            )
+        
+        model = model_mapping[table_name]
+        
+        # Get total count
+        count_result = await db.execute(select(func.count()).select_from(model))
+        total_count = count_result.scalar()
+        
+        # Get data with pagination
+        query = select(model).offset(offset).limit(limit)
+        
+        # Add ordering by id or created_at if available
+        if hasattr(model, 'created_at'):
+            query = query.order_by(model.created_at.desc())
+        elif hasattr(model, 'id'):
+            query = query.order_by(model.id.desc())
+        
+        result = await db.execute(query)
+        records = result.scalars().all()
+        
+        # Convert records to dictionaries
+        data = []
+        for record in records:
+            record_dict = {}
+            for column in model.__table__.columns:
+                value = getattr(record, column.name)
+                # Convert datetime objects to ISO strings
+                if hasattr(value, 'isoformat'):
+                    value = value.isoformat()
+                # Convert UUID objects to strings
+                elif hasattr(value, 'hex'):
+                    value = str(value)
+                record_dict[column.name] = value
+            data.append(record_dict)
+        
+        return {
+            'table_name': table_name,
+            'total_records': total_count,
+            'returned_records': len(data),
+            'offset': offset,
+            'limit': limit,
+            'data': data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error retrieving table data", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve table data"
+        )
+
+
+@router.get("/database/stats")
+async def get_database_statistics(
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get comprehensive database statistics.
+    
+    Returns record counts, storage usage, and other database metrics.
+    """
+    try:
+        logger.info("Admin requesting database statistics", admin_user=current_admin.email)
+        
+        from app.data_access.models import (
+            StocksWatchlist, SentimentData, StockPrice, NewsArticle,
+            RedditPost, SystemLog
+        )
+        from sqlalchemy import select, func
+        import os
+        
+        # Get record counts for each table
+        stats = {}
+        
+        models = {
+            'stocks_watchlist': StocksWatchlist,
+            'sentiment_data': SentimentData,
+            'stock_prices': StockPrice,
+            'news_articles': NewsArticle,
+            'reddit_posts': RedditPost,
+            'system_logs': SystemLog
+        }
+        
+        total_records = 0
+        for table_name, model in models.items():
+            count_result = await db.execute(select(func.count()).select_from(model))
+            count = count_result.scalar()
+            stats[table_name] = count
+            total_records += count
+        
+        # Get database file size
+        import os
+        db_file_path = "./data/insight_stock.db"
+        file_size_bytes = 0
+        if os.path.exists(db_file_path):
+            file_size_bytes = os.path.getsize(db_file_path)
+        else:
+            # Try alternative paths
+            alternative_paths = ["../data/insight_stock.db", "data/insight_stock.db", "insight_stock.db"]
+            for alt_path in alternative_paths:
+                if os.path.exists(alt_path):
+                    db_file_path = alt_path
+                    file_size_bytes = os.path.getsize(alt_path)
+                    break
+        
+        file_size_mb = file_size_bytes / (1024 * 1024)
+        file_size_gb = file_size_bytes / (1024 * 1024 * 1024)
+        
+        # Get recent activity (last 24 hours)
+        from datetime import datetime, timedelta
+        yesterday = datetime.utcnow() - timedelta(days=1)
+        
+        recent_sentiment = await db.execute(
+            select(func.count()).select_from(SentimentData)
+            .where(SentimentData.created_at >= yesterday)
+        )
+        recent_sentiment_count = recent_sentiment.scalar()
+        
+        recent_logs = await db.execute(
+            select(func.count()).select_from(SystemLog)
+            .where(SystemLog.timestamp >= yesterday)
+        )
+        recent_logs_count = recent_logs.scalar()
+        
+        return {
+            'total_records': total_records,
+            'table_counts': stats,
+            'file_size': {
+                'bytes': file_size_bytes,
+                'mb': round(file_size_mb, 2),
+                'gb': round(file_size_gb, 4)
+            },
+            'recent_activity': {
+                'sentiment_records_24h': recent_sentiment_count,
+                'log_entries_24h': recent_logs_count
+            },
+            'database_file': db_file_path
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving database statistics", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve database statistics"
+        )
+
+
+# Database cleanup utilities removed - using unified Stock table structure

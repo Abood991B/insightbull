@@ -406,7 +406,7 @@ async def get_stock_watchlist(
         from app.data_access.models import Stock
         
         stocks_result = await db.execute(
-            select(Stock).order_by(Stock.symbol)
+            select(StocksWatchlist).order_by(StocksWatchlist.symbol)
         )
         stocks_data = stocks_result.scalars().all()
         
@@ -699,7 +699,7 @@ async def trigger_manual_data_collection(
         else:
             # Get all symbols from database
             from app.data_access.models import Stock
-            stocks_result = await db.execute(select(Stock.symbol))
+            stocks_result = await db.execute(select(StocksWatchlist.symbol))
             stocks_data = stocks_result.scalars().all()
             if stocks_data:
                 symbols = list(stocks_data)

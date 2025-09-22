@@ -7,19 +7,20 @@ import { Progress } from "@/shared/components/ui/progress";
 import { Button } from "@/shared/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
 import { adminAPI, ModelAccuracy as ModelAccuracyType } from "../../../api/services/admin.service";
-import { RefreshCw, TrendingUp, AlertCircle } from "lucide-react";
+import { RefreshCw, TrendingUp, AlertCircle, Clock, Database } from "lucide-react";
 
 const ModelAccuracy = () => {
   const { toast } = useToast();
   const [modelData, setModelData] = useState<ModelAccuracyType | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewType, setViewType] = useState<'overall' | 'latest'>('overall');
 
   // Load model accuracy data
   const loadModelAccuracy = async (showRefreshToast = false) => {
     try {
       setRefreshing(true);
-      const data = await adminAPI.getModelAccuracy();
+      const data = await adminAPI.getModelAccuracy(viewType);
       setModelData(data);
       
       if (showRefreshToast) {
@@ -44,6 +45,13 @@ const ModelAccuracy = () => {
   useEffect(() => {
     loadModelAccuracy();
   }, []);
+
+  // Reload data when view type changes
+  useEffect(() => {
+    if (!loading) {
+      loadModelAccuracy();
+    }
+  }, [viewType]);
 
   // Helper function to get performance badge
   const getPerformanceBadge = (accuracy: number) => {
@@ -77,6 +85,28 @@ const ModelAccuracy = () => {
           </div>
           
           <div className="flex gap-3">
+            {/* View Type Toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <Button
+                variant={viewType === 'overall' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewType('overall')}
+                className="flex items-center gap-2"
+              >
+                <Database className="h-4 w-4" />
+                Overall
+              </Button>
+              <Button
+                variant={viewType === 'latest' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewType('latest')}
+                className="flex items-center gap-2"
+              >
+                <Clock className="h-4 w-4" />
+                Latest Run
+              </Button>
+            </div>
+            
             <Button 
               variant="outline" 
               onClick={() => loadModelAccuracy(true)}
@@ -89,16 +119,45 @@ const ModelAccuracy = () => {
           </div>
         </div>
 
+        {/* View Type Information */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            {viewType === 'latest' ? (
+              <>
+                <Clock className="h-5 w-5 text-blue-600" />
+                <div>
+                  <h3 className="font-medium text-blue-900">Latest Pipeline Run View</h3>
+                  <p className="text-sm text-blue-700">
+                    Showing performance metrics from the most recent pipeline execution (last 24 hours). 
+                    This reflects how well your Enhanced VADER model is performing on newly collected data.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <Database className="h-5 w-5 text-blue-600" />
+                <div>
+                  <h3 className="font-medium text-blue-900">Overall Database View</h3>
+                  <p className="text-sm text-blue-700">
+                    Showing comprehensive performance metrics from all data in the database (last 30 days). 
+                    This provides a broader view of model performance over time.
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
         {/* Overall Performance Summary */}
         {modelData && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5" />
-                Overall Performance
+                {viewType === 'latest' ? 'Latest Pipeline Performance' : 'Overall Performance'}
               </CardTitle>
               <CardDescription>
-                Last evaluation: {new Date(modelData.last_evaluation).toLocaleString()}
+                {modelData.evaluation_period} • Last evaluation: {new Date(modelData.last_evaluation).toLocaleString()}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -270,7 +329,13 @@ const ModelAccuracy = () => {
               
               <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                 <h4 className="font-medium mb-2">Evaluation Details</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Evaluation Period:</span>
+                    <span className="ml-2 font-medium">
+                      {modelData.evaluation_period}
+                    </span>
+                  </div>
                   <div>
                     <span className="text-gray-600">Last Evaluation:</span>
                     <span className="ml-2 font-medium">
@@ -284,6 +349,13 @@ const ModelAccuracy = () => {
                     </span>
                   </div>
                 </div>
+                {viewType === 'latest' && modelData.evaluation_samples === 0 && (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p className="text-sm text-yellow-800">
+                      <strong>No recent data found.</strong> Run the pipeline to collect new data and see latest performance metrics.
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

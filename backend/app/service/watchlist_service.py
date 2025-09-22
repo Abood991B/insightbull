@@ -21,7 +21,7 @@ import structlog
 import aiohttp
 import asyncio
 
-from app.data_access.models import Stock, WatchlistEntry
+from app.data_access.models import StocksWatchlist
 from app.infrastructure.log_system import get_logger
 
 logger = get_logger()
@@ -182,27 +182,20 @@ class WatchlistService:
             Falls back to DEFAULT_FALLBACK_STOCKS if no watchlist exists.
         """
         try:
-            # Check if watchlist table exists and has entries
-            watchlist_count = await self.db.scalar(
-                select(func.count()).select_from(WatchlistEntry)
+            # Get active stocks from unified table
+            result = await self.db.execute(
+                select(StocksWatchlist.symbol)
+                .where(StocksWatchlist.is_active == True)
+                .order_by(StocksWatchlist.added_to_watchlist)
             )
             
-            if watchlist_count and watchlist_count > 0:
-                # Get active watchlist from database
-                result = await self.db.execute(
-                    select(Stock.symbol)
-                    .join(WatchlistEntry, Stock.id == WatchlistEntry.stock_id)
-                    .where(WatchlistEntry.is_active == True)
-                    .order_by(WatchlistEntry.added_date)
-                )
-                
-                watchlist_symbols = list(result.scalars())
-                
-                if watchlist_symbols:
-                    self.logger.info("Retrieved dynamic watchlist", 
-                                   symbol_count=len(watchlist_symbols),
-                                   symbols=watchlist_symbols[:5])  # Log first 5 only
-                    return watchlist_symbols
+            watchlist_symbols = list(result.scalars())
+            
+            if watchlist_symbols:
+                self.logger.info("Retrieved dynamic watchlist", 
+                               symbol_count=len(watchlist_symbols),
+                               symbols=watchlist_symbols[:5])  # Log first 5 only
+                return watchlist_symbols
             
             # Fallback to default stocks if no watchlist configured
             self.logger.info("Using fallback watchlist", 
@@ -224,14 +217,14 @@ class WatchlistService:
         try:
             result = await self.db.execute(
                 select(
-                    Stock.symbol,
-                    Stock.name,
-                    WatchlistEntry.added_date,
-                    WatchlistEntry.is_active
+                    StocksWatchlist.symbol,
+                    StocksWatchlist.name,
+                    StocksWatchlist.added_to_watchlist,
+                    StocksWatchlist.is_active,
+                    StocksWatchlist.priority
                 )
-                .join(WatchlistEntry, Stock.id == WatchlistEntry.stock_id)
-                .where(WatchlistEntry.is_active == True)
-                .order_by(WatchlistEntry.added_date)
+                .where(StocksWatchlist.is_active == True)
+                .order_by(StocksWatchlist.added_to_watchlist)
             )
             
             watchlist_data = []
@@ -239,8 +232,9 @@ class WatchlistService:
                 watchlist_data.append({
                     "symbol": row.symbol,
                     "name": row.name or f"{row.symbol} Corporation",
-                    "added_date": row.added_date,
-                    "is_active": row.is_active
+                    "added_date": row.added_to_watchlist,
+                    "is_active": row.is_active,
+                    "priority": row.priority
                 })
             
             return watchlist_data
@@ -253,7 +247,8 @@ class WatchlistService:
                     "symbol": symbol,
                     "name": f"{symbol} Corporation",
                     "added_date": datetime.utcnow(),
-                    "is_active": True
+                    "is_active": True,
+                    "priority": 0
                 }
                 for symbol in DEFAULT_FALLBACK_STOCKS
             ]
@@ -273,30 +268,43 @@ class WatchlistService:
             skipped_stocks = []
             
             for symbol in stock_symbols:
-                # Ensure stock exists in stocks table
-                stock = await self._ensure_stock_exists(symbol.upper())
+                symbol = symbol.upper()
                 
-                # Check if already in watchlist
-                existing_entry = await self.db.scalar(
-                    select(WatchlistEntry)
-                    .where(and_(
-                        WatchlistEntry.stock_id == stock.id,
-                        WatchlistEntry.is_active == True
-                    ))
+                # Check if stock already exists and is active
+                existing_stock = await self.db.scalar(
+                    select(StocksWatchlist).where(
+                        and_(StocksWatchlist.symbol == symbol, StocksWatchlist.is_active == True)
+                    )
                 )
                 
-                if existing_entry:
+                if existing_stock:
                     skipped_stocks.append(symbol)
                     continue
                 
-                # Add to watchlist
-                watchlist_entry = WatchlistEntry(
-                    stock_id=stock.id,
-                    added_date=datetime.utcnow(),
-                    is_active=True
+                # Check if stock exists but is inactive
+                inactive_stock = await self.db.scalar(
+                    select(StocksWatchlist).where(
+                        and_(StocksWatchlist.symbol == symbol, StocksWatchlist.is_active == False)
+                    )
                 )
-                self.db.add(watchlist_entry)
-                added_stocks.append(symbol)
+                
+                if inactive_stock:
+                    # Reactivate the stock
+                    inactive_stock.is_active = True
+                    inactive_stock.added_to_watchlist = datetime.utcnow()
+                    added_stocks.append(symbol)
+                else:
+                    # Create new stock entry
+                    new_stock = StocksWatchlist(
+                        symbol=symbol,
+                        name=self.get_company_name(symbol),
+                        sector=self.get_sector(symbol),
+                        is_active=True,
+                        added_to_watchlist=datetime.utcnow(),
+                        priority=0
+                    )
+                    self.db.add(new_stock)
+                    added_stocks.append(symbol)
             
             await self.db.commit()
             
@@ -330,27 +338,22 @@ class WatchlistService:
             not_found_stocks = []
             
             for symbol in stock_symbols:
-                # Find stock
+                symbol = symbol.upper()
+                
+                # Find active stock
                 stock = await self.db.scalar(
-                    select(Stock).where(Stock.symbol == symbol.upper())
+                    select(StocksWatchlist).where(
+                        and_(StocksWatchlist.symbol == symbol, StocksWatchlist.is_active == True)
+                    )
                 )
                 
                 if not stock:
                     not_found_stocks.append(symbol)
                     continue
                 
-                # Remove from watchlist (soft delete by setting is_active = False)
-                result = await self.db.execute(
-                    delete(WatchlistEntry).where(and_(
-                        WatchlistEntry.stock_id == stock.id,
-                        WatchlistEntry.is_active == True
-                    ))
-                )
-                
-                if result.rowcount > 0:
-                    removed_stocks.append(symbol)
-                else:
-                    not_found_stocks.append(symbol)
+                # Deactivate stock (soft delete)
+                stock.is_active = False
+                removed_stocks.append(symbol)
             
             await self.db.commit()
             
@@ -377,15 +380,15 @@ class WatchlistService:
             Dictionary with operation results
         """
         try:
-            # Count current entries
+            # Count current active entries
             current_count = await self.db.scalar(
-                select(func.count()).select_from(WatchlistEntry)
-                .where(WatchlistEntry.is_active == True)
+                select(func.count()).select_from(StocksWatchlist)
+                .where(StocksWatchlist.is_active == True)
             )
             
-            # Remove all entries
+            # Deactivate all stocks
             await self.db.execute(
-                delete(WatchlistEntry).where(WatchlistEntry.is_active == True)
+                StocksWatchlist.__table__.update().where(StocksWatchlist.is_active == True).values(is_active=False)
             )
             
             await self.db.commit()
@@ -412,8 +415,8 @@ class WatchlistService:
         try:
             # Check if watchlist is empty
             current_count = await self.db.scalar(
-                select(func.count()).select_from(WatchlistEntry)
-                .where(WatchlistEntry.is_active == True)
+                select(func.count()).select_from(StocksWatchlist)
+                .where(StocksWatchlist.is_active == True)
             )
             
             if current_count and current_count > 0:
@@ -429,40 +432,14 @@ class WatchlistService:
             return {
                 "message": "Default watchlist initialized",
                 "initialized": True,
-                "stock_count": len(result["added_stocks"])
+                "stock_count": len(result["added_stocks"]),
+                "added_stocks": result["added_stocks"],
+                "skipped_stocks": result["skipped_stocks"]
             }
             
         except Exception as e:
             self.logger.error("Error initializing default watchlist", error=str(e))
             raise
-    
-    async def _ensure_stock_exists(self, symbol: str) -> Stock:
-        """
-        Ensure stock exists in database, create if necessary
-        
-        Args:
-            symbol: Stock symbol
-            
-        Returns:
-            Stock model instance
-        """
-        stock = await self.db.scalar(
-            select(Stock).where(Stock.symbol == symbol.upper())
-        )
-        
-        if not stock:
-            # Create new stock entry
-            stock = Stock(
-                symbol=symbol.upper(),
-                name=f"{symbol.upper()} Corporation",  # Basic name, can be updated later
-                created_at=datetime.utcnow()
-            )
-            self.db.add(stock)
-            await self.db.flush()  # Get ID without committing
-            
-            self.logger.info("Created new stock entry", symbol=symbol)
-        
-        return stock
     
     # Company Name Service Methods
     @staticmethod

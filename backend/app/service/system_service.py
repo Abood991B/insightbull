@@ -18,7 +18,7 @@ import time
 # System metrics will use basic Python capabilities without psutil dependency
 SYSTEM_START_TIME = time.time()
 
-from app.data_access.models import SystemLog, SentimentData, Stock, NewsArticle, RedditPost, WatchlistEntry
+from app.data_access.models import SystemLog, SentimentData, StocksWatchlist, NewsArticle, RedditPost
 from app.infrastructure.log_system import get_logger
 
 
@@ -197,8 +197,8 @@ class SystemService:
             
             # Calculate active stocks from watchlist
             active_stocks_count = await self.db.scalar(
-                select(func.count()).select_from(WatchlistEntry)
-                .where(WatchlistEntry.is_active == True)
+                select(func.count()).select_from(StocksWatchlist)
+                .where(StocksWatchlist.is_active == True)
             )
             
             # Calculate total records across all tables
@@ -229,7 +229,7 @@ class SystemService:
         """Get database-related metrics."""
         try:
             # Count records in main tables
-            stock_count = await self.db.scalar(select(func.count()).select_from(Stock))
+            stock_count = await self.db.scalar(select(func.count()).select_from(StocksWatchlist))
             sentiment_count = await self.db.scalar(select(func.count()).select_from(SentimentData))
             news_count = await self.db.scalar(select(func.count()).select_from(NewsArticle))
             reddit_count = await self.db.scalar(select(func.count()).select_from(RedditPost))

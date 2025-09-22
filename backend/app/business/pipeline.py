@@ -447,9 +447,20 @@ class DataPipeline:
             collection_results = await self._collect_data(config)
             result.collector_stats = self._build_collector_stats(collection_results)
             
-            # Log collection metrics
+            # Log collection metrics with detailed breakdown
             total_collected = sum(stat.items_collected for stat in result.collector_stats)
             successful_collectors = len([stat for stat in result.collector_stats if stat.success])
+            
+            # Create detailed collection summary
+            collection_summary = {}
+            for stat in result.collector_stats:
+                source_name = stat.name.upper()
+                collection_summary[source_name] = {
+                    "items_collected": stat.items_collected,
+                    "success": stat.success,
+                    "processing_time_ms": round(stat.execution_time * 1000, 2),
+                    "error": stat.error_message if not stat.success else None
+                }
             
             self.logger.log_pipeline_operation(
                 "collection_phase_complete",
@@ -458,6 +469,7 @@ class DataPipeline:
                     "total_collected": total_collected,
                     "successful_collectors": successful_collectors,
                     "total_collectors": len(result.collector_stats),
+                    "collection_breakdown": collection_summary,
                     "collection_stats": [
                         {
                             "collector": stat.name,
@@ -467,6 +479,21 @@ class DataPipeline:
                         }
                         for stat in result.collector_stats
                     ]
+                }
+            )
+            
+            # Log human-readable summary
+            self.logger.info(
+                f"📊 Data Collection Summary for Pipeline {pipeline_id}:",
+                extra={
+                    "pipeline_id": pipeline_id,
+                    "total_items": total_collected,
+                    "reddit_items": collection_summary.get("REDDIT", {}).get("items_collected", 0),
+                    "finnhub_items": collection_summary.get("FINNHUB", {}).get("items_collected", 0),
+                    "newsapi_items": collection_summary.get("NEWSAPI", {}).get("items_collected", 0),
+                    "marketaux_items": collection_summary.get("MARKETAUX", {}).get("items_collected", 0),
+                    "successful_sources": successful_collectors,
+                    "total_sources": len(result.collector_stats)
                 }
             )
             

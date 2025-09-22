@@ -103,10 +103,11 @@ class Scheduler:
         if not self._is_running:
             self.scheduler.start()
             self._is_running = True
-            self.logger.info("Scheduler started successfully")
+            self.logger.info("Scheduler started successfully - automated job scheduling is now active")
             
             # Setup default scheduled jobs
             await self._setup_default_jobs()
+            self.logger.info(f"Default scheduled jobs created: {len(self.jobs)} jobs configured")
     
     async def stop(self):
         """Stop the scheduler"""
@@ -342,7 +343,11 @@ class Scheduler:
         job.last_run = datetime.utcnow()
         
         try:
-            self.logger.info(f"Starting scheduled data collection job {job_id}")
+            self.logger.info(f"🚀 EXECUTING SCHEDULED JOB: Data Collection", 
+                           job_id=job_id, 
+                           job_name=job.name,
+                           symbols=job.parameters["symbols"][:5],  # Show first 5 symbols
+                           lookback_days=job.parameters["lookback_days"])
             
             # Calculate date range
             end_date = datetime.utcnow()

@@ -195,7 +195,7 @@ const AdminDashboard: React.FC = () => {
               className="flex items-center gap-2"
             >
               <Play className="h-4 w-4" />
-              {collectingData ? 'Collecting...' : 'Collect Data'}
+              {collectingData ? 'Running Pipeline...' : 'Run Pipeline'}
             </Button>
           </div>
         </div>
@@ -429,7 +429,7 @@ const AdminDashboard: React.FC = () => {
                 disabled={collectingData}
               >
                 <Play className="h-6 w-6" />
-                <span>{collectingData ? 'Collecting...' : 'Collect Data'}</span>
+                <span>{collectingData ? 'Running Pipeline...' : 'Run Pipeline'}</span>
               </Button>
             </div>
           </CardContent>

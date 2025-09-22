@@ -28,7 +28,7 @@ from .models.sentiment_model import (
     SentimentModelError
 )
 from ...infrastructure.collectors.base_collector import DataSource
-from .models.vader_model import VADERModel
+from .models.vader_model import VADERModel, EnhancementConfig
 from .models.finbert_model import FinBERTModel
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,7 @@ class EngineConfig:
     """Configuration for the sentiment analysis engine."""
     enable_vader: bool = True
     enable_finbert: bool = True
+    use_enhanced_vader: bool = True  # Use enhanced VADER by default
     finbert_use_gpu: bool = True
     max_concurrent_batches: int = 3
     default_batch_size: int = 32
@@ -122,10 +123,32 @@ class SentimentEngine:
         
         logger.info("Initializing Sentiment Analysis Engine...")
         
-        # Initialize VADER model
+        # Initialize VADER model (enhanced or standard)
         if self.config.enable_vader:
             try:
-                self.models["VADER"] = VADERModel()
+                if self.config.use_enhanced_vader:
+                    # Use enhanced VADER with financial domain expertise
+                    enhancement_config = EnhancementConfig(
+                        use_financial_lexicon=True,
+                        use_reddit_slang=True,
+                        use_emoji_boost=True,
+                        use_dynamic_thresholds=True,
+                        use_context_awareness=True
+                    )
+                    self.models["VADER"] = VADERModel(enhancement_config)
+                    logger.info("Using Enhanced VADER model with financial optimizations")
+                else:
+                    # Use standard VADER (with basic config)
+                    basic_config = EnhancementConfig(
+                        use_financial_lexicon=False,
+                        use_reddit_slang=False,
+                        use_emoji_boost=False,
+                        use_dynamic_thresholds=False,
+                        use_context_awareness=False
+                    )
+                    self.models["VADER"] = VADERModel(basic_config)
+                    logger.info("Using standard VADER model")
+                
                 await self.models["VADER"].ensure_loaded()
                 logger.info("VADER model initialized successfully")
             except Exception as e:

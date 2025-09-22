@@ -47,6 +47,8 @@ export interface ModelAccuracy {
   };
   last_evaluation: string;
   evaluation_samples: number;
+  evaluation_period: string;
+  data_source: string;
 }
 
 export interface APIConfiguration {
@@ -153,6 +155,93 @@ export interface ManualCollectionResponse {
   estimated_completion: string;
   symbols_targeted: string[];
   message: string;
+}
+
+export interface ScheduledJob {
+  job_id: string;
+  name: string;
+  job_type: 'data_collection' | 'sentiment_analysis' | 'full_pipeline';
+  trigger_config: {
+    cron: string;
+  };
+  parameters: {
+    symbols: string[];
+    lookback_days?: number;
+  };
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  created_at: string;
+  last_run?: string;
+  next_run?: string;
+  run_count: number;
+  error_count: number;
+  last_error?: string;
+  enabled: boolean;
+}
+
+export interface SchedulerResponse {
+  jobs: ScheduledJob[];
+  total_jobs: number;
+  scheduler_running: boolean;
+}
+
+export interface JobConfig {
+  job_type: 'data_collection' | 'sentiment_analysis' | 'full_pipeline';
+  name: string;
+  cron_expression: string;
+  symbols: string[];
+  lookback_days?: number;
+}
+
+export interface DatabaseSchema {
+  database_name: string;
+  total_tables: number;
+  tables: {
+    [tableName: string]: {
+      model_name: string;
+      record_count: number;
+      columns: {
+        name: string;
+        type: string;
+        nullable: boolean;
+        primary_key: boolean;
+        default?: string;
+      }[];
+      foreign_keys: {
+        constrained_columns: string[];
+        referred_table: string;
+        referred_columns: string[];
+      }[];
+      indexes: {
+        name: string;
+        column_names: string[];
+        unique: boolean;
+      }[];
+    };
+  };
+}
+
+export interface TableData {
+  table_name: string;
+  total_records: number;
+  returned_records: number;
+  offset: number;
+  limit: number;
+  data: Record<string, any>[];
+}
+
+export interface DatabaseStats {
+  total_records: number;
+  table_counts: { [tableName: string]: number };
+  file_size: {
+    bytes: number;
+    mb: number;
+    gb: number;
+  };
+  recent_activity: {
+    sentiment_records_24h: number;
+    log_entries_24h: number;
+  };
+  database_file: string;
 }
 
 // Utility Functions
@@ -284,11 +373,16 @@ class AdminAPIService {
   // MODEL ACCURACY & PERFORMANCE
   // ============================================================================
   
-  async getModelAccuracy(): Promise<ModelAccuracy> {
-    const response = await fetch(`${API_BASE_URL}/api/admin/models/accuracy`, {
+  async getModelAccuracy(viewType: 'overall' | 'latest' = 'overall'): Promise<ModelAccuracy> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/models/accuracy?view_type=${viewType}`, {
       headers: getAuthHeaders(),
     });
-    return handleApiResponse(response);
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch model accuracy');
+    }
+
+    return response.json();
   }
 
   async triggerModelRetraining(): Promise<any> {
@@ -504,6 +598,85 @@ class AdminAPIService {
     });
     return handleApiResponse(response);
   }
+
+  // ============================================================================
+  // SCHEDULER MANAGEMENT
+  // ============================================================================
+  
+  async getScheduledJobs(): Promise<SchedulerResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/scheduler/jobs`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async createScheduledJob(jobConfig: JobConfig): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/scheduler/jobs`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(jobConfig),
+    });
+    return handleApiResponse(response);
+  }
+
+  async updateScheduledJob(jobId: string, action: 'enable' | 'disable' | 'cancel'): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/scheduler/jobs/${jobId}?action=${action}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async getJobStatus(jobId: string): Promise<ScheduledJob> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/scheduler/jobs/${jobId}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async refreshScheduledJobs(): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/scheduler/refresh`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  // ============================================================================
+  // DATABASE INSPECTION
+  // ============================================================================
+  
+  async getDatabaseSchema(): Promise<DatabaseSchema> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/database/schema`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async getTableData(
+    tableName: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<TableData> {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    
+    const response = await fetch(`${API_BASE_URL}/api/admin/database/tables/${tableName}/data?${params}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async getDatabaseStats(): Promise<DatabaseStats> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/database/stats`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  // Database cleanup utilities removed - using unified Stock table structure
 }
 
 // Export singleton instance

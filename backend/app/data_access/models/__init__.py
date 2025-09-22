@@ -16,20 +16,38 @@ import hashlib
 from app.data_access.database.base import Base
 
 
-class Stock(Base):
-    """Stock entity model."""
-    __tablename__ = "stocks"
+class StocksWatchlist(Base):
+    """Unified Stocks and Watchlist entity model."""
+    __tablename__ = "stocks_watchlist"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     symbol = Column(String(10), nullable=False, unique=True, index=True)
     name = Column(String(255), nullable=False)
     sector = Column(String(100))
+    
+    # Watchlist management fields
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    added_to_watchlist = Column(DateTime(timezone=True), server_default=func.now())
+    priority = Column(Integer, default=0, nullable=False)  # For ordering/prioritization
+    
+    # Stock metadata
+    market_cap = Column(String(50))  # Large Cap, Mid Cap, Small Cap
+    exchange = Column(String(20), default="NASDAQ")  # NASDAQ, NYSE, etc.
+    
+    # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Relationships
     sentiment_data = relationship("SentimentData", back_populates="stock")
     price_data = relationship("StockPrice", back_populates="stock")
+    
+    # Indexes for performance
+    __table_args__ = (
+        Index('idx_stocks_watchlist_active', 'is_active'),
+        Index('idx_stocks_watchlist_symbol_active', 'symbol', 'is_active'),
+        Index('idx_stocks_watchlist_priority', 'priority'),
+    )
 
 
 class SentimentData(Base):
@@ -37,7 +55,7 @@ class SentimentData(Base):
     __tablename__ = "sentiment_data"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks.id"), nullable=False)
+    stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks_watchlist.id"), nullable=False)
     source = Column(String(50), nullable=False)  # reddit, news, financial_reports
     sentiment_score = Column(Float, nullable=False)
     confidence = Column(Float, nullable=False)
@@ -48,7 +66,7 @@ class SentimentData(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    stock = relationship("Stock", back_populates="sentiment_data")
+    stock = relationship("StocksWatchlist", back_populates="sentiment_data")
     
     # Composite index for duplicate detection (stock + source + content_hash)
     __table_args__ = (
@@ -67,7 +85,7 @@ class StockPrice(Base):
     __tablename__ = "stock_prices"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks.id"), nullable=False)
+    stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks_watchlist.id"), nullable=False)
     price = Column(Float, nullable=False)
     volume = Column(Integer)
     change = Column(Float)
@@ -75,8 +93,14 @@ class StockPrice(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
+    # Additional price fields for better tracking
+    open_price = Column(Float)
+    close_price = Column(Float) 
+    high_price = Column(Float)
+    low_price = Column(Float)
+    
     # Relationships
-    stock = relationship("Stock", back_populates="price_data")
+    stock = relationship("StocksWatchlist", back_populates="price_data")
 
 
 class NewsArticle(Base):
@@ -131,33 +155,15 @@ class SystemLog(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
 
-class WatchlistEntry(Base):
-    """Watchlist entry model for dynamic stock tracking."""
-    __tablename__ = "watchlist_entries"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks.id"), nullable=False)
-    added_date = Column(DateTime(timezone=True), server_default=func.now())
-    is_active = Column(Boolean, default=True, nullable=False)
-    priority = Column(Integer, default=0)  # For ordering/prioritization
-    
-    # Relationships
-    stock = relationship("Stock", backref="watchlist_entries")
-    
-    # Indexes for performance
-    __table_args__ = (
-        Index('idx_watchlist_active', 'is_active'),
-        Index('idx_watchlist_stock_active', 'stock_id', 'is_active'),
-    )
-
-
 # Export all models for easy import
 __all__ = [
-    "Stock", 
+    "StocksWatchlist", 
     "SentimentData", 
     "StockPrice", 
     "NewsArticle", 
     "RedditPost", 
-    "SystemLog",
-    "WatchlistEntry"
+    "SystemLog"
 ]
+
+# Keep Stock as alias for backward compatibility during transition
+Stock = StocksWatchlist

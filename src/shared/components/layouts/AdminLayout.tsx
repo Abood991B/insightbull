@@ -90,6 +90,11 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       icon: Users
     },
     {
+      name: "Scheduler Manager",
+      href: "/admin/scheduler",
+      icon: Clock
+    },
+    {
       name: "Storage Settings",
       href: "/admin/storage",
       icon: Database
