@@ -1,30 +1,64 @@
-
 import UserLayout from "@/shared/components/layouts/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select";
 import { Badge } from "@/shared/components/ui/badge";
-import { useState } from "react";
+import { Alert, AlertDescription } from "@/shared/components/ui/alert";
+import { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
-
-const mockData = [
-  { date: '2024-01-01', sentiment: 0.6, price: 150, volume: 1200 },
-  { date: '2024-01-02', sentiment: 0.7, price: 155, volume: 1400 },
-  { date: '2024-01-03', sentiment: 0.5, price: 148, volume: 1100 },
-  { date: '2024-01-04', sentiment: 0.8, price: 162, volume: 1600 },
-  { date: '2024-01-05', sentiment: 0.4, price: 145, volume: 900 },
-  { date: '2024-01-06', sentiment: 0.9, price: 168, volume: 1800 },
-  { date: '2024-01-07', sentiment: 0.6, price: 158, volume: 1300 },
-];
-
-const stocks = ['MSFT', 'NVDA', 'AAPL', 'AVGO', 'ORCL', 'PLTR', 'IBM', 'CSCO', 'CRM', 'INTU', 'NOW', 'AMD', 'ACN', 'TXN', 'QCOM', 'ADBE', 'AMAT', 'PANW', 'MU', 'CRWD'];
+import { useStocks } from "@/features/analysis/hooks/useStocks";
+import { useSentimentHistory } from "@/features/analysis/hooks/useAnalysis";
+import { Activity, AlertCircle } from "lucide-react";
+import { format } from "date-fns";
 
 const SentimentVsPrice = () => {
-  const [selectedStock, setSelectedStock] = useState('MSFT');
-  const [timeRange, setTimeRange] = useState('7d');
+  const { data: stocksList, isLoading: isLoadingList } = useStocks({ active_only: true });
+  const [selectedStock, setSelectedStock] = useState('');
+  const [timeRange, setTimeRange] = useState<'1d' | '7d' | '14d'>('7d');
 
-  const correlation = 0.75;
+  // Set initial stock when list loads
+  useEffect(() => {
+    if (stocksList && stocksList.stocks.length > 0 && !selectedStock) {
+      setSelectedStock(stocksList.stocks[0].symbol);
+    }
+  }, [stocksList, selectedStock]);
+
+  const { data: sentimentHistory, isLoading, error } = useSentimentHistory(selectedStock, timeRange);
+
+  if (isLoadingList) {
+    return (
+      <UserLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-4">
+            <Activity className="h-12 w-12 animate-spin text-blue-600 mx-auto" />
+            <p className="text-lg text-gray-600">Loading stocks...</p>
+          </div>
+        </div>
+      </UserLayout>
+    );
+  }
+
+  if (!stocksList || stocksList.stocks.length === 0) {
+    return (
+      <UserLayout>
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>No stocks available for analysis.</AlertDescription>
+        </Alert>
+      </UserLayout>
+    );
+  }
+
+  const correlation = sentimentHistory?.price_correlation || 0;
   const trend = correlation > 0.5 ? 'Positive' : correlation < -0.5 ? 'Negative' : 'Neutral';
   const strength = Math.abs(correlation) > 0.7 ? 'Strong' : Math.abs(correlation) > 0.4 ? 'Moderate' : 'Weak';
+
+  // Format data for charts
+  const chartData = sentimentHistory?.data_points.map(point => ({
+    date: format(new Date(point.timestamp), 'MMM dd HH:mm'),
+    sentiment: ((point.sentiment_score + 1) / 2), // Convert from -1,1 to 0,1
+    price: point.price,
+    volume: point.volume,
+  })) || [];
 
   return (
     <UserLayout>
@@ -41,15 +75,15 @@ const SentimentVsPrice = () => {
                 <SelectValue placeholder="Select stock" />
               </SelectTrigger>
               <SelectContent>
-                {stocks.map((stock) => (
-                  <SelectItem key={stock} value={stock}>
-                    {stock}
+                {stocksList.stocks.map((stock) => (
+                  <SelectItem key={stock.symbol} value={stock.symbol}>
+                    {stock.symbol}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             
-            <Select value={timeRange} onValueChange={setTimeRange}>
+            <Select value={timeRange} onValueChange={(v) => setTimeRange(v as '1d' | '7d' | '14d')}>
               <SelectTrigger className="w-32">
                 <SelectValue placeholder="Time range" />
               </SelectTrigger>
@@ -62,6 +96,15 @@ const SentimentVsPrice = () => {
           </div>
         </div>
 
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Failed to load sentiment data: {error instanceof Error ? error.message : 'Unknown error'}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="border-l-4 border-l-blue-500">
@@ -70,7 +113,9 @@ const SentimentVsPrice = () => {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-blue-600">{strength}</div>
-              <p className="text-sm text-gray-600 mt-1">{(correlation * 100).toFixed(0)}% correlation coefficient</p>
+              <p className="text-sm text-gray-600 mt-1">
+                {sentimentHistory ? `${(Math.abs(correlation) * 100).toFixed(0)}% correlation coefficient` : 'Loading...'}
+              </p>
             </CardContent>
           </Card>
           
@@ -86,100 +131,131 @@ const SentimentVsPrice = () => {
           
           <Card className="border-l-4 border-l-purple-500">
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Analysis Period</CardTitle>
+              <CardTitle className="text-lg">Data Coverage</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-purple-600">{timeRange === '1d' ? '24h' : timeRange === '7d' ? '1 Week' : '2 Weeks'}</div>
-              <p className="text-sm text-gray-600 mt-1">Data collection window</p>
+              <div className="text-3xl font-bold text-purple-600">
+                {sentimentHistory ? `${(sentimentHistory.data_coverage * 100).toFixed(0)}%` : 'N/A'}
+              </div>
+              <p className="text-sm text-gray-600 mt-1">
+                {sentimentHistory ? `${sentimentHistory.total_records} data points` : 'Loading...'}
+              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-3">
-              Sentiment vs Stock Price - {selectedStock}
-              <Badge variant="outline" className="text-blue-600">
-                {strength} Correlation
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              Dual-axis comparison showing sentiment scores and stock price movements over time
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-96">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={mockData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" stroke="#666" />
-                  <YAxis yAxisId="left" stroke="#8884d8" />
-                  <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff', 
-                      border: '1px solid #ccc', 
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                    }}
-                  />
-                  <Legend />
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="sentiment" 
-                    stroke="#8884d8" 
-                    strokeWidth={3}
-                    name="Sentiment Score"
-                    dot={{ fill: '#8884d8', strokeWidth: 2, r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="price" 
-                    stroke="#82ca9d" 
-                    strokeWidth={3}
-                    name="Stock Price ($)"
-                    dot={{ fill: '#82ca9d', strokeWidth: 2, r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Activity className="h-8 w-8 animate-spin text-blue-600" />
+          </div>
+        )}
 
-        {/* Secondary Analysis */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Volume vs Sentiment Analysis</CardTitle>
-            <CardDescription>
-              Trading volume correlation with sentiment changes
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mockData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Area 
-                    type="monotone" 
-                    dataKey="volume" 
-                    stroke="#f59e0b" 
-                    fill="#fbbf24" 
-                    fillOpacity={0.6}
-                    name="Trading Volume"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        {sentimentHistory && chartData.length > 0 && (
+          <>
+            {/* Main Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3">
+                  Sentiment vs Stock Price - {selectedStock}
+                  <Badge variant="outline" className="text-blue-600">
+                    {strength} Correlation
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  Dual-axis comparison showing sentiment scores and stock price movements over time
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-96">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis 
+                        dataKey="date" 
+                        stroke="#666"
+                        tick={{ fontSize: 12 }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis yAxisId="left" stroke="#8884d8" domain={[0, 1]} />
+                      <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#fff', 
+                          border: '1px solid #ccc', 
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                      <Legend />
+                      <Line 
+                        yAxisId="left"
+                        type="monotone" 
+                        dataKey="sentiment" 
+                        stroke="#8884d8" 
+                        strokeWidth={3}
+                        name="Sentiment Score"
+                        dot={{ fill: '#8884d8', strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6 }}
+                      />
+                      <Line 
+                        yAxisId="right"
+                        type="monotone" 
+                        dataKey="price" 
+                        stroke="#82ca9d" 
+                        strokeWidth={3}
+                        name="Stock Price ($)"
+                        dot={{ fill: '#82ca9d', strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Secondary Analysis */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Volume vs Sentiment Analysis</CardTitle>
+                <CardDescription>
+                  Trading volume correlation with sentiment changes
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="date" 
+                        tick={{ fontSize: 12 }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis />
+                      <Tooltip />
+                      <Area 
+                        type="monotone" 
+                        dataKey="volume" 
+                        stroke="#f59e0b" 
+                        fill="#fbbf24" 
+                        fillOpacity={0.6}
+                        name="Trading Volume"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {sentimentHistory && chartData.length === 0 && (
+          <Card>
+            <CardContent className="py-12 text-center text-gray-500">
+              No data available for the selected time range
+            </CardContent>
+          </Card>
+        )}
       </div>
     </UserLayout>
   );

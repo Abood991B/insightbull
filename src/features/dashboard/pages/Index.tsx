@@ -2,195 +2,76 @@ import UserLayout from "@/shared/components/layouts/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, TrendingDown, DollarSign, Activity, BarChart3, Search, Clock } from "lucide-react";
-const topPositiveStocks = [{
-  symbol: 'NVDA',
-  sentiment: 0.85,
-  change: '+2.4%',
-  price: 875.28
-}, {
-  symbol: 'PLTR',
-  sentiment: 0.82,
-  change: '+1.8%',
-  price: 248.42
-}, {
-  symbol: 'AAPL',
-  sentiment: 0.78,
-  change: '+1.2%',
-  price: 192.53
-}, {
-  symbol: 'AVGO',
-  sentiment: 0.75,
-  change: '+0.9%',
-  price: 1650.34
-}, {
-  symbol: 'MSFT',
-  sentiment: 0.72,
-  change: '+0.7%',
-  price: 420.45
-}];
-const topNegativeStocks = [{
-  symbol: 'INTC',
-  sentiment: 0.25,
-  change: '-2.1%',
-  price: 23.45
-}, {
-  symbol: 'IBM',
-  sentiment: 0.32,
-  change: '-1.8%',
-  price: 182.76
-}, {
-  symbol: 'CSCO',
-  sentiment: 0.38,
-  change: '-1.2%',
-  price: 56.12
-}, {
-  symbol: 'ORCL',
-  sentiment: 0.42,
-  change: '-0.8%',
-  price: 175.34
-}, {
-  symbol: 'TXN',
-  sentiment: 0.45,
-  change: '-0.5%',
-  price: 196.87
-}];
-const watchlistStocks = [{
-  symbol: 'MSFT',
-  name: 'Microsoft Corp',
-  price: 420.45,
-  change: '+0.7%',
-  sentiment: 0.72
-}, {
-  symbol: 'NVDA',
-  name: 'NVIDIA Corp',
-  price: 875.28,
-  change: '+2.4%',
-  sentiment: 0.85
-}, {
-  symbol: 'AAPL',
-  name: 'Apple Inc.',
-  price: 192.53,
-  change: '+0.5%',
-  sentiment: 0.68
-}, {
-  symbol: 'AVGO',
-  name: 'Broadcom Inc.',
-  price: 1650.34,
-  change: '+1.5%',
-  sentiment: 0.73
-}, {
-  symbol: 'ORCL',
-  name: 'Oracle Corp.',
-  price: 175.34,
-  change: '-0.8%',
-  sentiment: 0.42
-}, {
-  symbol: 'PLTR',
-  name: 'Palantir Technologies Inc.',
-  price: 248.42,
-  change: '+1.8%',
-  sentiment: 0.82
-}, {
-  symbol: 'IBM',
-  name: 'International Business Machines',
-  price: 182.76,
-  change: '-1.8%',
-  sentiment: 0.32
-}, {
-  symbol: 'CSCO',
-  name: 'Cisco Systems Inc.',
-  price: 56.12,
-  change: '-1.2%',
-  sentiment: 0.38
-}, {
-  symbol: 'CRM',
-  name: 'Salesforce Inc.',
-  price: 267.89,
-  change: '+1.1%',
-  sentiment: 0.70
-}, {
-  symbol: 'INTU',
-  name: 'Intuit Inc.',
-  price: 556.78,
-  change: '+0.8%',
-  sentiment: 0.62
-}, {
-  symbol: 'NOW',
-  name: 'ServiceNow Inc.',
-  price: 789.45,
-  change: '+1.3%',
-  sentiment: 0.76
-}, {
-  symbol: 'AMD',
-  name: 'Advanced Micro Devices Inc.',
-  price: 140.67,
-  change: '+0.9%',
-  sentiment: 0.64
-}, {
-  symbol: 'ACN',
-  name: 'Accenture PLC',
-  price: 345.23,
-  change: '+0.6%',
-  sentiment: 0.59
-}, {
-  symbol: 'TXN',
-  name: 'Texas Instruments Inc.',
-  price: 196.87,
-  change: '-0.5%',
-  sentiment: 0.45
-}, {
-  symbol: 'QCOM',
-  name: 'Qualcomm Inc.',
-  price: 157.23,
-  change: '+0.4%',
-  sentiment: 0.58
-}, {
-  symbol: 'ADBE',
-  name: 'Adobe Inc.',
-  price: 556.78,
-  change: '+0.8%',
-  sentiment: 0.62
-}, {
-  symbol: 'AMAT',
-  name: 'Applied Materials Inc.',
-  price: 189.34,
-  change: '+0.2%',
-  sentiment: 0.55
-}, {
-  symbol: 'PANW',
-  name: 'Palo Alto Networks Inc.',
-  price: 345.67,
-  change: '+1.4%',
-  sentiment: 0.74
-}, {
-  symbol: 'MU',
-  name: 'Micron Technology Inc.',
-  price: 98.45,
-  change: '-0.3%',
-  sentiment: 0.48
-}, {
-  symbol: 'CRWD',
-  name: 'CrowdStrike Holdings Inc.',
-  price: 278.90,
-  change: '+1.6%',
-  sentiment: 0.79
-}];
+import { TrendingUp, TrendingDown, DollarSign, Activity, BarChart3, Search, Clock, AlertCircle } from "lucide-react";
+import { useDashboard } from "@/features/dashboard/hooks/useDashboard";
+import { Alert, AlertDescription } from "@/shared/components/ui/alert";
+
 const Index = () => {
   const navigate = useNavigate();
-  const getSentimentColor = (sentiment: number) => {
-    if (sentiment >= 0.7) return 'text-green-600';
-    if (sentiment >= 0.5) return 'text-yellow-600';
+  const { data: dashboard, isLoading, error } = useDashboard();
+
+  const getSentimentColor = (sentiment: number | null) => {
+    if (!sentiment) return 'text-gray-600';
+    if (sentiment >= 0.1) return 'text-green-600';
+    if (sentiment >= -0.1) return 'text-yellow-600';
     return 'text-red-600';
   };
-  const getSentimentBadgeColor = (sentiment: number) => {
-    if (sentiment >= 0.7) return 'bg-green-100 text-green-800';
-    if (sentiment >= 0.5) return 'bg-yellow-100 text-yellow-800';
+
+  const getSentimentBadgeColor = (sentiment: number | null) => {
+    if (!sentiment) return 'bg-gray-100 text-gray-800';
+    if (sentiment >= 0.1) return 'bg-green-100 text-green-800';
+    if (sentiment >= -0.1) return 'bg-yellow-100 text-yellow-800';
     return 'bg-red-100 text-red-800';
   };
-  return <UserLayout>
+
+  const formatSentiment = (score: number | null) => {
+    if (score === null) return 'N/A';
+    return ((score + 1) * 50).toFixed(0);
+  };
+
+  if (isLoading) {
+    return (
+      <UserLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-4">
+            <Activity className="h-12 w-12 animate-spin text-blue-600 mx-auto" />
+            <p className="text-lg text-gray-600">Loading dashboard data...</p>
+          </div>
+        </div>
+      </UserLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <UserLayout>
+        <Alert variant="destructive" className="max-w-2xl mx-auto mt-8">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Failed to load dashboard data: {error instanceof Error ? error.message : 'Unknown error'}
+            <Button 
+              onClick={() => window.location.reload()} 
+              variant="outline" 
+              size="sm" 
+              className="ml-4"
+            >
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </UserLayout>
+    );
+  }
+
+  if (!dashboard) {
+    return null;
+  }
+
+  const { market_overview, top_stocks, recent_movers, system_status } = dashboard;
+
+  return (
+    <UserLayout>
       <div className="space-y-8">
         {/* Enhanced Header */}
         <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-8 text-white shadow-2xl">
@@ -206,17 +87,25 @@ const Index = () => {
                 </p>
                 <div className="flex items-center gap-2 mt-4 text-blue-200">
                   <Clock className="h-4 w-4" />
-                  <span className="text-sm">Last updated: Live • Data refreshed 2 hours Ago</span>
+                  <span className="text-sm">
+                    Last updated: {system_status.last_collection 
+                      ? new Date(system_status.last_collection).toLocaleString() 
+                      : 'N/A'}
+                  </span>
                 </div>
               </div>
               <div className="flex flex-wrap gap-3">
                 <Badge className="bg-green-500/20 text-green-100 border-green-400/30 px-4 py-2">
                   <Activity className="h-4 w-4 mr-2" />
-                  20 Active Stocks
+                  {market_overview.total_stocks} Active Stocks
                 </Badge>
-                <Badge className="bg-blue-500/20 text-blue-100 border-blue-400/30 px-4 py-2">
+                <Badge className={`${
+                  system_status.pipeline_status === 'operational' 
+                    ? 'bg-green-500/20 text-green-100 border-green-400/30' 
+                    : 'bg-yellow-500/20 text-yellow-100 border-yellow-400/30'
+                } px-4 py-2`}>
                   <TrendingUp className="h-4 w-4 mr-2" />
-                  Near-real-time Analytics
+                  {system_status.pipeline_status === 'operational' ? 'Live' : 'Delayed'}
                 </Badge>
               </div>
             </div>
@@ -233,24 +122,30 @@ const Index = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-700 mb-1">0.62</div>
+              <div className="text-3xl font-bold text-green-700 mb-1">
+                {market_overview.average_sentiment.toFixed(2)}
+              </div>
               <p className="text-xs text-green-600 flex items-center">
                 <TrendingUp className="h-3 w-3 mr-1" />
-                +12% from yesterday
+                Market sentiment score
               </p>
             </CardContent>
           </Card>
           
           <Card className="bg-gradient-to-br from-blue-50 to-sky-100 border-blue-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-blue-800">Market Cap</CardTitle>
+              <CardTitle className="text-sm font-medium text-blue-800">Positive Stocks</CardTitle>
               <div className="p-2 bg-blue-500 rounded-lg">
-                <DollarSign className="h-4 w-4 text-white" />
+                <TrendingUp className="h-4 w-4 text-white" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-blue-700 mb-1">$15.2T</div>
-              <p className="text-xs text-blue-600">Total watchlist value</p>
+              <div className="text-3xl font-bold text-blue-700 mb-1">
+                {market_overview.positive_stocks}
+              </div>
+              <p className="text-xs text-blue-600">
+                {((market_overview.positive_stocks / market_overview.total_stocks) * 100).toFixed(0)}% of watchlist
+              </p>
             </CardContent>
           </Card>
           
@@ -258,11 +153,13 @@ const Index = () => {
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
               <CardTitle className="text-sm font-medium text-purple-800">Active Stocks</CardTitle>
               <div className="p-2 bg-purple-500 rounded-lg">
-                <TrendingUp className="h-4 w-4 text-white" />
+                <DollarSign className="h-4 w-4 text-white" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-purple-700 mb-1">20</div>
+              <div className="text-3xl font-bold text-purple-700 mb-1">
+                {market_overview.total_stocks}
+              </div>
               <p className="text-xs text-purple-600">Top Technology Stocks</p>
             </CardContent>
           </Card>
@@ -275,8 +172,10 @@ const Index = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-orange-700 mb-1">12.4K</div>
-              <p className="text-xs text-orange-600">Last 24 hours</p>
+              <div className="text-3xl font-bold text-orange-700 mb-1">
+                {(system_status.total_sentiment_records / 1000).toFixed(1)}K
+              </div>
+              <p className="text-xs text-orange-600">Total sentiment records</p>
             </CardContent>
           </Card>
         </div>
@@ -298,59 +197,91 @@ const Index = () => {
             </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-4">
-                {topPositiveStocks.map((stock, index) => <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-green-100 hover:shadow-md transition-all duration-200 hover:border-green-200">
+                {top_stocks.slice(0, 5).map((stock, index) => (
+                  <div 
+                    key={stock.symbol} 
+                    className="flex items-center justify-between p-4 rounded-xl bg-white border border-green-100 hover:shadow-md transition-all duration-200 hover:border-green-200"
+                  >
                     <div className="flex items-center gap-4">
                       <div className="flex items-center justify-center w-8 h-8 bg-green-100 text-green-700 rounded-full text-sm font-bold">
                         {index + 1}
                       </div>
                       <div>
                         <div className="font-bold text-gray-900">{stock.symbol}</div>
-                        <div className="text-sm text-gray-600 font-medium">${stock.price}</div>
+                        <div className="text-sm text-gray-600 font-medium">
+                          ${stock.current_price?.toFixed(2) || 'N/A'}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <Badge className={`${getSentimentBadgeColor(stock.sentiment)} font-medium`}>
-                        {(stock.sentiment * 100).toFixed(0)}%
+                      <Badge className={`${getSentimentBadgeColor(stock.sentiment_score)} font-medium`}>
+                        {formatSentiment(stock.sentiment_score)}%
                       </Badge>
-                      <div className="text-sm text-green-600 mt-2 font-medium">{stock.change}</div>
+                      <div className={`text-sm mt-2 font-medium ${
+                        stock.price_change_24h && stock.price_change_24h > 0 
+                          ? 'text-green-600' 
+                          : 'text-red-600'
+                      }`}>
+                        {stock.price_change_24h 
+                          ? `${stock.price_change_24h > 0 ? '+' : ''}${stock.price_change_24h.toFixed(2)}%`
+                          : 'N/A'
+                        }
+                      </div>
                     </div>
-                  </div>)}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
 
-          {/* Top Negative Stocks */}
-          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-red-50">
-            <CardHeader className="bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-t-lg">
+          {/* Recent Price Movers */}
+          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-yellow-50">
+            <CardHeader className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white rounded-t-lg">
               <CardTitle className="flex items-center gap-3 text-lg">
                 <div className="p-2 bg-white/20 rounded-lg">
-                  <TrendingDown className="h-5 w-5" />
+                  <Activity className="h-5 w-5" />
                 </div>
-                Top Negative Sentiment
+                Recent Price Movers
               </CardTitle>
-              <CardDescription className="text-red-100">
-                Stocks with lowest sentiment scores
+              <CardDescription className="text-yellow-100">
+                Stocks with significant price movements
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-4">
-                {topNegativeStocks.map((stock, index) => <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-red-100 hover:shadow-md transition-all duration-200 hover:border-red-200">
+                {recent_movers.map((stock, index) => (
+                  <div 
+                    key={stock.symbol} 
+                    className="flex items-center justify-between p-4 rounded-xl bg-white border border-yellow-100 hover:shadow-md transition-all duration-200 hover:border-yellow-200"
+                  >
                     <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-8 h-8 bg-red-100 text-red-700 rounded-full text-sm font-bold">
+                      <div className="flex items-center justify-center w-8 h-8 bg-yellow-100 text-yellow-700 rounded-full text-sm font-bold">
                         {index + 1}
                       </div>
                       <div>
                         <div className="font-bold text-gray-900">{stock.symbol}</div>
-                        <div className="text-sm text-gray-600 font-medium">${stock.price}</div>
+                        <div className="text-sm text-gray-600 font-medium">
+                          ${stock.current_price?.toFixed(2) || 'N/A'}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <Badge className={`${getSentimentBadgeColor(stock.sentiment)} font-medium`}>
-                        {(stock.sentiment * 100).toFixed(0)}%
+                      <Badge className={`${getSentimentBadgeColor(stock.sentiment_score)} font-medium`}>
+                        {formatSentiment(stock.sentiment_score)}%
                       </Badge>
-                      <div className="text-sm text-red-600 mt-2 font-medium">{stock.change}</div>
+                      <div className={`text-sm mt-2 font-medium ${
+                        stock.price_change_24h && stock.price_change_24h > 0 
+                          ? 'text-green-600' 
+                          : 'text-red-600'
+                      }`}>
+                        {stock.price_change_24h 
+                          ? `${stock.price_change_24h > 0 ? '+' : ''}${stock.price_change_24h.toFixed(2)}%`
+                          : 'N/A'
+                        }
+                      </div>
                     </div>
-                  </div>)}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -362,28 +293,45 @@ const Index = () => {
                 <div className="p-2 bg-white/20 rounded-lg">
                   <DollarSign className="h-5 w-5" />
                 </div>
-                Near-real-time Stock Prices
+                All Watchlist Stocks
               </CardTitle>
               <CardDescription className="text-blue-100">
-                Live price overview (20 technology stocks)
+                Complete stock overview
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
-                {watchlistStocks.map(stock => <div key={stock.symbol} className="flex items-center justify-between p-3 rounded-lg bg-white border border-blue-100 hover:shadow-sm transition-all duration-200 hover:border-blue-200">
+                {top_stocks.map(stock => (
+                  <div 
+                    key={stock.symbol} 
+                    className="flex items-center justify-between p-3 rounded-lg bg-white border border-blue-100 hover:shadow-sm transition-all duration-200 hover:border-blue-200"
+                  >
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-gray-900">{stock.symbol}</span>
-                      <Badge variant="outline" className={`${getSentimentColor(stock.sentiment)} border-current`}>
-                        {(stock.sentiment * 100).toFixed(0)}%
+                      <Badge 
+                        variant="outline" 
+                        className={`${getSentimentColor(stock.sentiment_score)} border-current`}
+                      >
+                        {formatSentiment(stock.sentiment_score)}%
                       </Badge>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-gray-900">${stock.price}</div>
-                      <div className={`text-sm font-medium ${stock.change.startsWith('+') ? 'text-green-600' : 'text-red-600'}`}>
-                        {stock.change}
+                      <div className="font-bold text-gray-900">
+                        ${stock.current_price?.toFixed(2) || 'N/A'}
+                      </div>
+                      <div className={`text-sm font-medium ${
+                        stock.price_change_24h && stock.price_change_24h > 0 
+                          ? 'text-green-600' 
+                          : 'text-red-600'
+                      }`}>
+                        {stock.price_change_24h 
+                          ? `${stock.price_change_24h > 0 ? '+' : ''}${stock.price_change_24h.toFixed(2)}%`
+                          : 'N/A'
+                        }
                       </div>
                     </div>
-                  </div>)}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -397,7 +345,10 @@ const Index = () => {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-blue-50 border-blue-200" onClick={() => navigate('/analysis')}>
+            <Card 
+              className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-blue-50 border-blue-200" 
+              onClick={() => navigate('/analysis')}
+            >
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="p-3 bg-blue-500 rounded-xl group-hover:bg-blue-600 transition-colors">
@@ -416,7 +367,10 @@ const Index = () => {
               </CardContent>
             </Card>
             
-            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-green-50 border-green-200" onClick={() => navigate('/correlation')}>
+            <Card 
+              className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-green-50 border-green-200" 
+              onClick={() => navigate('/correlation')}
+            >
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="p-3 bg-green-500 rounded-xl group-hover:bg-green-600 transition-colors">
@@ -434,22 +388,25 @@ const Index = () => {
                 </Button>
               </CardContent>
             </Card>
-            
-            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-purple-50 border-purple-200" onClick={() => navigate('/trends')}>
+
+            <Card 
+              className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-purple-50 border-purple-200" 
+              onClick={() => navigate('/sentiment-vs-price')}
+            >
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="p-3 bg-purple-500 rounded-xl group-hover:bg-purple-600 transition-colors">
                     <Activity className="h-6 w-6 text-white" />
                   </div>
-                  <CardTitle className="text-xl text-gray-900">Trend Analysis</CardTitle>
+                  <CardTitle className="text-xl text-gray-900">Sentiment vs Price</CardTitle>
                 </div>
                 <CardDescription className="text-gray-600 leading-relaxed">
-                  Analyze sentiment trends over time with advanced temporal analytics
+                  Compare sentiment trends with price movements over time
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Button className="w-full bg-purple-500 hover:bg-purple-600 text-white font-medium py-2.5">
-                  Analyze Trends
+                  Compare Trends
                 </Button>
               </CardContent>
             </Card>
@@ -473,6 +430,8 @@ const Index = () => {
           background: #94a3b8;
         }
       `}</style>
-    </UserLayout>;
+    </UserLayout>
+  );
 };
+
 export default Index;
