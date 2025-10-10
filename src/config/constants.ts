@@ -2,8 +2,8 @@
 export const APP_NAME = 'Insight Stock Dashboard';
 export const APP_VERSION = '1.0.0';
 
-// API configuration - Backend runs on port 8000
-export const API_BASE_URL = 'http://localhost:8000/api';
+// API configuration
+export const API_BASE_URL = process.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 export const API_TIMEOUT = 30000; // 30 seconds
 
 // Feature flags
