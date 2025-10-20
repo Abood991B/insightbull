@@ -432,7 +432,7 @@ const SystemLogs = () => {
               <div className="space-y-1">
                 {filteredLogs.length === 0 ? (
                   <div className="text-center py-12">
-                    <div className="text-gray-400 mb-2">📋</div>
+                    <div className="text-gray-400 mb-2">No Data</div>
                     <div className="text-gray-500 font-medium">No logs found</div>
                     <div className="text-sm text-gray-400 mt-1">
                       Try adjusting your filters or check back later
@@ -457,7 +457,23 @@ const SystemLogs = () => {
                                   {log.component || 'Unknown'}
                                 </span>
                                 <span className="text-xs text-gray-500 flex-shrink-0">
-                                  {new Date(log.timestamp).toLocaleString()}
+                                  {(() => {
+                                    // Backend sends timestamp with +08:00 timezone (Malaysian time)
+                                    // JavaScript Date will parse it correctly
+                                    const timestamp = new Date(log.timestamp);
+                                    
+                                    // Format in Malaysian timezone
+                                    return timestamp.toLocaleString('en-MY', {
+                                      timeZone: 'Asia/Kuala_Lumpur',
+                                      year: 'numeric',
+                                      month: '2-digit',
+                                      day: '2-digit',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit',
+                                      hour12: true
+                                    });
+                                  })()}
                                 </span>
                               </div>
                               
@@ -469,7 +485,7 @@ const SystemLogs = () => {
                               {(log.function || log.line_number) && (
                                 <div className="mt-1 text-xs text-gray-400">
                                   {log.function && `${log.function}()`}
-                                  {log.function && log.line_number && ' • '}
+                                  {log.function && log.line_number && ' | '}
                                   {log.line_number && `Line ${log.line_number}`}
                                 </div>
                               )}

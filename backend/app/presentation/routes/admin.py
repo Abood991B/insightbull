@@ -39,16 +39,11 @@ from app.presentation.schemas.admin_schemas import (
     StorageSettingsResponse, StorageMetrics, StorageSettingsUpdateRequest as RetentionPolicyRequest, StorageSettingsUpdateResponse as RetentionPolicyResponse,
     
     # System logs schemas
-    SystemLogsResponse, LogFilters
+    SystemLogsResponse, LogFilters, LogLevel
 )
 from enum import Enum
 
-class LogLevel(str, Enum):
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    WARNING = "WARNING" 
-    ERROR = "ERROR"
-    CRITICAL = "CRITICAL"
+# LogLevel enum imported from schemas
 from app.service.admin_service import AdminService
 from app.service.storage_service import StorageManager
 from app.service.system_service import SystemService
@@ -73,7 +68,8 @@ async def admin_health():
 @router.post("/data-collection/manual")
 async def trigger_manual_collection(
     request_data: Optional[Dict[str, Any]] = None,
-    current_admin: AdminUser = Depends(get_current_admin)
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Trigger manual data collection for specified symbols.
@@ -85,8 +81,22 @@ async def trigger_manual_collection(
         
         logger.info("Admin triggering manual data collection", admin_user=current_admin.email)
         
-        # Get symbols from request or use default
-        symbols = request_data.get("symbols", ["AAPL", "GOOGL", "MSFT"]) if request_data else ["AAPL", "GOOGL", "MSFT"]
+        # Get symbols from request or use dynamic active watchlist
+        if request_data and request_data.get("symbols"):
+            symbols = request_data["symbols"]
+        else:
+            from app.data_access.models import StocksWatchlist
+            from sqlalchemy import select
+            symbols = []
+            try:
+                result = await db.execute(
+                    select(StocksWatchlist.symbol).where(StocksWatchlist.is_active == True)
+                )
+                symbols = [row[0] for row in result.all()]
+            except Exception:
+                symbols = []
+            if not symbols:
+                symbols = ["AAPL", "GOOGL", "MSFT"]  # final fallback only if DB empty
         
         # Create pipeline config
         config = PipelineConfig(
@@ -524,6 +534,8 @@ async def create_backup(
 async def get_system_logs(
     level: Optional[LogLevel] = Query(None, description="Filter by log level"),
     component: Optional[str] = Query(None, description="Filter by component"),
+    time_period: Optional[str] = Query(None, description="Time period filter (1h, 6h, 24h, 7d, 30d)"),
+    search_term: Optional[str] = Query(None, description="Search term in message"),
     start_date: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=1000, description="Number of logs to return"),
@@ -540,12 +552,48 @@ async def get_system_logs(
     try:
         logger.info("Admin requesting system logs", 
                    admin_user=current_admin.email,
-                   filters={"level": level, "component": component, "limit": limit})
+                   filters={"level": level, "component": component, "time_period": time_period, "limit": limit})
+        
+        # Parse time period to start_time and end_time
+        start_time = None
+        end_time = None
+        
+        if time_period:
+            now = datetime.utcnow()
+            
+            time_mappings = {
+                "1h": timedelta(hours=1),
+                "6h": timedelta(hours=6), 
+                "24h": timedelta(hours=24),
+                "7d": timedelta(days=7),
+                "30d": timedelta(days=30)
+            }
+            
+            if time_period in time_mappings:
+                start_time = now - time_mappings[time_period]
+                end_time = now
+        
+        # Parse custom date filters if provided
+        if start_date:
+            try:
+                start_time = datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                pass
+                
+        if end_date:
+            try:
+                end_time = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            except ValueError:
+                pass
         
         admin_service = AdminService(db)
         filters = LogFilters(
             level=level,
+            start_time=start_time,
+            end_time=end_time,
+            logger=search_term,  # Use search_term for logger filtering
             module=component,  # Map component to module (which filters by component column)
+            search_term=search_term,
             limit=limit,
             offset=offset
         )

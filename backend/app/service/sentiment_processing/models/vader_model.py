@@ -593,8 +593,8 @@ if __name__ == "__main__":
         from .sentiment_model import TextInput
         
         test_texts = [
-            TextInput("$GME to the moon! 🚀🚀🚀 Diamond hands forever! 💎🙌", DataSource.REDDIT),
-            TextInput("Market crash incoming... This is going to be a bloodbath 😭📉", DataSource.REDDIT),
+            TextInput("$GME to the moon! Diamond hands forever!", DataSource.REDDIT),
+            TextInput("Market crash incoming... This is going to be a bloodbath", DataSource.REDDIT),
             TextInput("BTFD! This dip is a gift. Bullish AF on $TSLA", DataSource.REDDIT),
             TextInput("Bag holding $PLTR, down 40% but still hodling", DataSource.REDDIT),
             TextInput("DD: Strong support at 150, oversold RSI, squeeze incoming", DataSource.REDDIT),

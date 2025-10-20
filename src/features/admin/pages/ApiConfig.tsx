@@ -239,7 +239,7 @@ const ApiConfig = () => {
                             <Input
                               id={`${apiName}-client-id`}
                               type="text"
-                              value={showKeys[`${apiName}-client-id`] ? (formData[`${apiName}-client-id`] || '') : '••••••••••••••••••••'}
+                              value={showKeys[`${apiName}-client-id`] ? (formData[`${apiName}-client-id`] || '') : '********************'}
                               onChange={(e) => handleInputChange(`${apiName}-client-id`, e.target.value)}
                               placeholder="Enter Reddit Client ID"
                               readOnly={!showKeys[`${apiName}-client-id`]}
@@ -264,7 +264,7 @@ const ApiConfig = () => {
                             <Input
                               id={`${apiName}-client-secret`}
                               type="text"
-                              value={showKeys[`${apiName}-client-secret`] ? (formData[`${apiName}-client-secret`] || '') : '••••••••••••••••••••'}
+                              value={showKeys[`${apiName}-client-secret`] ? (formData[`${apiName}-client-secret`] || '') : '********************'}
                               onChange={(e) => handleInputChange(`${apiName}-client-secret`, e.target.value)}
                               placeholder="Enter Reddit Client Secret"
                               readOnly={!showKeys[`${apiName}-client-secret`]}
@@ -307,7 +307,7 @@ const ApiConfig = () => {
                           <Input
                             id={`${apiName}-key`}
                             type="text"
-                            value={showKeys[apiName] ? (formData[apiName] || '') : '••••••••••••••••••••'}
+                            value={showKeys[apiName] ? (formData[apiName] || '') : '********************'}
                             onChange={(e) => handleInputChange(apiName, e.target.value)}
                             placeholder={
                               apiName === 'finnhub' ? 'Enter FinHub API key' :

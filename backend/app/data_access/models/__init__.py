@@ -112,6 +112,7 @@ class NewsArticle(Base):
     __tablename__ = "news_articles"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks_watchlist.id"), nullable=True)
     title = Column(String(500), nullable=False)
     content = Column(Text)
     url = Column(String(1000), unique=True)
@@ -122,6 +123,8 @@ class NewsArticle(Base):
     confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
     stock_mentions = Column(JSON)  # Array of stock symbols mentioned
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Relationship back to stock for joins
+    stock = relationship("StocksWatchlist")
 
 
 class RedditPost(Base):
@@ -129,6 +132,7 @@ class RedditPost(Base):
     __tablename__ = "reddit_posts"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks_watchlist.id"), nullable=True)
     reddit_id = Column(String(50), unique=True, nullable=False)
     title = Column(String(500), nullable=False)
     content = Column(Text)
@@ -142,6 +146,8 @@ class RedditPost(Base):
     confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
     stock_mentions = Column(JSON)  # Array of stock symbols mentioned
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Relationship back to stock for joins
+    stock = relationship("StocksWatchlist")
 
 
 class SystemLog(Base):

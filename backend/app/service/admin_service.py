@@ -142,7 +142,7 @@ class AdminService(WatchlistSubject):
             }
             
         except Exception as e:
-            self.logger.error("Error calculating model accuracy metrics", error=str(e))
+            self.logger.error("Error calculating model accuracy metrics", extra={"error": str(e)})
             raise
     
     async def get_api_configuration_status(self) -> Dict[str, Any]:
@@ -206,7 +206,7 @@ class AdminService(WatchlistSubject):
             }
             
         except Exception as e:
-            self.logger.error("Error getting API configuration status", error=str(e))
+            self.logger.error("Error getting API configuration status", extra={"error": str(e)})
             raise
     
     async def update_api_configuration(self, config_update: APIKeyUpdateRequest) -> Dict[str, Any]:
@@ -281,7 +281,7 @@ class AdminService(WatchlistSubject):
             }
             
         except Exception as e:
-            self.logger.error("Error updating API configuration", error=str(e))
+            self.logger.error("Error updating API configuration", extra={"error": str(e)})
             raise
     
     async def get_stock_watchlist(self) -> WatchlistResponse:
@@ -335,7 +335,7 @@ class AdminService(WatchlistSubject):
             )
             
         except Exception as e:
-            self.logger.error("Error getting stock watchlist", error=str(e))
+            self.logger.error("Error getting stock watchlist", extra={"error": str(e)})
             raise
     
     async def update_stock_watchlist(self, request: WatchlistUpdateRequest) -> WatchlistUpdateResponse:
@@ -462,7 +462,7 @@ class AdminService(WatchlistSubject):
             )
             
         except Exception as e:
-            self.logger.error("Error updating stock watchlist", error=str(e))
+            self.logger.error("Error updating stock watchlist", extra={"error": str(e)})
             raise
     
     async def _notify_watchlist_observers(self, action: str, symbol: str) -> None:
@@ -505,7 +505,7 @@ class AdminService(WatchlistSubject):
             )
             
         except Exception as e:
-            self.logger.error("Error notifying watchlist observers", error=str(e))
+            self.logger.error("Error notifying watchlist observers", extra={"error": str(e)})
             # Don't raise exception here - observer notification failure shouldn't break watchlist update
     
     async def get_storage_settings(self) -> StorageSettingsResponse:
@@ -569,7 +569,7 @@ class AdminService(WatchlistSubject):
             )
             
         except Exception as e:
-            self.logger.error("Error getting storage settings", error=str(e))
+            self.logger.error("Error getting storage settings", extra={"error": str(e)})
             raise
     
     async def get_system_logs(self, filters: LogFilters) -> SystemLogsResponse:
@@ -620,14 +620,40 @@ class AdminService(WatchlistSubject):
             system_logs = result.scalars().all()
             
             # Convert SystemLog models to LogEntry schemas
+            from app.utils.timezone import utc_to_malaysia, malaysia_now
+            
             log_entries = []
             for log in system_logs:
+                # Normalize level gracefully; default to INFO if invalid
+                try:
+                    normalized_level = LogLevel((log.level or "INFO").upper())
+                except Exception:
+                    normalized_level = LogLevel.INFO
+
+                # Ensure required fields have safe fallbacks
+                safe_logger = log.logger or (log.component or "system")
+                safe_message = log.message or ""
+                safe_component = log.component or "system"
+                
+                # Convert timestamp to Malaysian timezone
+                import pytz
+                malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+                
+                log_timestamp = log.timestamp or malaysia_now()
+                if log_timestamp.tzinfo is None:
+                    # Naive datetime from database is ALREADY in Malaysian time
+                    # Just mark it with the timezone, don't convert
+                    log_timestamp = malaysia_tz.localize(log_timestamp)
+                else:
+                    # If aware datetime, convert to Malaysian timezone
+                    log_timestamp = log_timestamp.astimezone(malaysia_tz)
+
                 log_entries.append(LogEntry(
-                    timestamp=log.timestamp,
-                    level=LogLevel(log.level),
-                    logger=log.logger,
-                    message=log.message,
-                    component=log.component,
+                    timestamp=log_timestamp,
+                    level=normalized_level,
+                    logger=safe_logger,
+                    message=safe_message,
+                    component=safe_component,
                     function=log.function,
                     line_number=log.line_number,
                     extra_data=log.extra_data
@@ -647,7 +673,7 @@ class AdminService(WatchlistSubject):
             )
             
         except Exception as e:
-            self.logger.error("Error getting system logs", error=str(e))
+            self.logger.error("Error getting system logs", extra={"error": str(e)})
             raise
     
     async def trigger_manual_data_collection(self, request: ManualDataCollectionRequest) -> ManualDataCollectionResponse:
@@ -668,7 +694,7 @@ class AdminService(WatchlistSubject):
             else:
                 # Get current watchlist
                 current_watchlist = await get_current_stock_symbols(self.db)
-                symbols = current_watchlist[:10]  # Limit to prevent overload
+                symbols = current_watchlist  # Use all symbols in watchlist
             
             # Initialize pipeline
             pipeline = DataPipeline()
@@ -692,7 +718,7 @@ class AdminService(WatchlistSubject):
             )
             
         except Exception as e:
-            self.logger.error("Error triggering manual data collection", error=str(e))
+            self.logger.error("Error triggering manual data collection", extra={"error": str(e)})
             raise
     
     async def get_latest_pipeline_accuracy_metrics(self) -> Dict[str, Any]:
@@ -862,9 +888,10 @@ class AdminService(WatchlistSubject):
                     'f1_score': base_accuracy - 0.01
                 }
             
-            # Use confidence scores to estimate performance
-            avg_confidence = sum(confidences) / len(confidences)
-            high_confidence_count = len([c for c in confidences if c > 0.8])
+            # Use confidence scores to estimate performance (cast Decimal to float to avoid type errors)
+            confidences_float = [float(c) for c in confidences]
+            avg_confidence = sum(confidences_float) / len(confidences_float)
+            high_confidence_count = len([c for c in confidences_float if c > 0.8])
             
             # Estimate accuracy based on confidence distribution
             accuracy = min(0.95, max(0.50, avg_confidence + (high_confidence_count / len(confidences)) * 0.1))
@@ -882,7 +909,7 @@ class AdminService(WatchlistSubject):
             }
             
         except Exception as e:
-            self.logger.error(f"Error calculating metrics for {model_name}", error=str(e))
+            self.logger.error(f"Error calculating metrics for {model_name}", extra={"error": str(e), "model": model_name})
             # Return reasonable defaults on error
             base_accuracy = 0.75 if model_name == 'FinBERT' else 0.68
             return {
@@ -906,5 +933,5 @@ class AdminService(WatchlistSubject):
                            results={"processed_stocks": len(results), "job_id": job_id})
             
         except Exception as e:
-            self.logger.error(f"Manual collection job {job_id} failed", error=str(e))
+            self.logger.error(f"Manual collection job {job_id} failed", extra={"error": str(e), "job_id": job_id})
             raise

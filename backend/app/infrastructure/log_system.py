@@ -18,6 +18,7 @@ import logging
 import json
 import sys
 import threading
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 from uuid import uuid4
@@ -89,6 +90,8 @@ class LogSystem:
         # Rate limiting settings
         self.DEDUP_WINDOW_SECONDS = 60  # Don't repeat same log within 60 seconds
         self.MAX_CACHE_SIZE = 1000  # Limit cache size
+        self._last_cleanup = time.time()  # Track last cleanup time
+        self.CLEANUP_INTERVAL = 300  # Clean cache every 5 minutes
         
         # Setup file logging
         self._setup_file_logging()
@@ -149,7 +152,7 @@ class LogSystem:
     def _add_context(self, **kwargs) -> Dict[str, Any]:
         """Add contextual information to log entry"""
         context = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now().isoformat(),
             "correlation_id": self.get_correlation_id(),
             **kwargs
         }
@@ -196,16 +199,27 @@ class LogSystem:
         context_key = f"{level}:{message}:{kwargs.get('component', '')}:{kwargs.get('function', '')}"
         message_hash = hashlib.md5(context_key.encode()).hexdigest()
         
-        current_time = datetime.utcnow().timestamp()
+        current_time = datetime.now().timestamp()
         
         with self._cache_lock:
-            # Clean old entries from cache
-            if len(self._log_cache) > self.MAX_CACHE_SIZE:
+            # Clean old entries from cache (proactive cleanup)
+            should_cleanup = (
+                len(self._log_cache) > self.MAX_CACHE_SIZE or 
+                (current_time - self._last_cleanup) > self.CLEANUP_INTERVAL
+            )
+            
+            if should_cleanup:
                 cutoff_time = current_time - self.DEDUP_WINDOW_SECONDS
+                old_size = len(self._log_cache)
                 self._log_cache = {
                     k: v for k, v in self._log_cache.items() 
                     if v > cutoff_time
                 }
+                self._last_cleanup = current_time
+                
+                # Log cleanup stats occasionally (but avoid infinite recursion)
+                if old_size > len(self._log_cache) and old_size > 100:
+                    print(f"LogSystem: Cleaned cache from {old_size} to {len(self._log_cache)} entries")
             
             # Check if we've logged this recently
             last_logged = self._log_cache.get(message_hash, 0)
@@ -305,6 +319,7 @@ class LogSystem:
             # Import here to avoid circular imports
             from app.data_access.database.connection import get_db_session
             from app.data_access.models import SystemLog
+            from app.utils.timezone import malaysia_now
             
             async with get_db_session() as db:
                 log_entry = SystemLog(
@@ -314,7 +329,8 @@ class LogSystem:
                     component=component,
                     function=function,
                     line_number=line_number,
-                    extra_data=extra_data or {}
+                    extra_data=extra_data or {},
+                    timestamp=malaysia_now()  # Use Malaysian timezone
                 )
                 db.add(log_entry)
                 await db.commit()

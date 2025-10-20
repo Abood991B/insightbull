@@ -94,7 +94,7 @@ class SystemService:
             else:
                 # Get current watchlist
                 current_watchlist = await get_current_stock_symbols(self.db)
-                symbols = current_watchlist[:10]  # Limit to prevent overload
+                symbols = current_watchlist  # Use all symbols in watchlist
             
             # Initialize pipeline
             pipeline = DataPipeline()
@@ -201,18 +201,25 @@ class SystemService:
                 .where(StocksWatchlist.is_active == True)
             )
             
-            # Calculate total records across all tables
-            total_records = (
-                (db_metrics.get("total_sentiment_data", 0)) +
-                (db_metrics.get("total_news_articles", 0)) +
-                (db_metrics.get("total_reddit_posts", 0))
-            )
+            # Calculate total records - only count sentiment_data (processed records)
+            # Note: news_articles and reddit_posts are raw data that gets processed into sentiment_data
+            # Counting all three would be double-counting the same data
+            total_records = db_metrics.get("total_sentiment_data", 0)
             
+            # Flatten important metrics to top level for frontend compatibility
             return {
                 "uptime": f"{uptime_hours} hours",
                 "uptime_seconds": uptime_seconds,
                 "active_stocks": int(active_stocks_count or 0),
                 "total_records": total_records,
+                # Flatten sentiment_breakdown, news_articles, reddit_posts, price_records to top level
+                "sentiment_breakdown": db_metrics.get("sentiment_breakdown", {"positive": 0, "neutral": 0, "negative": 0}),
+                "news_articles": db_metrics.get("news_articles", 0),
+                "reddit_posts": db_metrics.get("reddit_posts", 0),
+                "price_records": db_metrics.get("price_records", 0),
+                "last_collection": db_metrics.get("last_collection"),
+                "last_price_update": db_metrics.get("last_price_update"),
+                # Keep nested structure for detailed info
                 "system": system_info,
                 "database": db_metrics,
                 "processing": processing_metrics
@@ -234,6 +241,41 @@ class SystemService:
             news_count = await self.db.scalar(select(func.count()).select_from(NewsArticle))
             reddit_count = await self.db.scalar(select(func.count()).select_from(RedditPost))
             
+            # Get sentiment breakdown by label (case-insensitive)
+            positive_count = await self.db.scalar(
+                select(func.count()).select_from(SentimentData)
+                .where(func.lower(SentimentData.sentiment_label) == 'positive')
+            )
+            neutral_count = await self.db.scalar(
+                select(func.count()).select_from(SentimentData)
+                .where(func.lower(SentimentData.sentiment_label) == 'neutral')
+            )
+            negative_count = await self.db.scalar(
+                select(func.count()).select_from(SentimentData)
+                .where(func.lower(SentimentData.sentiment_label) == 'negative')
+            )
+            
+            # Get price records count
+            from app.data_access.models import StockPrice
+            price_count = await self.db.scalar(select(func.count()).select_from(StockPrice))
+            
+            # Get last collection and price update times
+            import pytz
+            malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+            
+            last_sentiment = await self.db.scalar(
+                select(func.max(SentimentData.created_at)).select_from(SentimentData)
+            )
+            last_price = await self.db.scalar(
+                select(func.max(StockPrice.timestamp)).select_from(StockPrice)
+            )
+            
+            # Mark timestamps with Malaysian timezone if they're naive
+            if last_sentiment and last_sentiment.tzinfo is None:
+                last_sentiment = malaysia_tz.localize(last_sentiment)
+            if last_price and last_price.tzinfo is None:
+                last_price = malaysia_tz.localize(last_price)
+            
             # Get recent activity (last 24 hours)
             yesterday = datetime.utcnow() - timedelta(days=1)
             recent_sentiment = await self.db.scalar(
@@ -251,6 +293,16 @@ class SystemService:
                 "total_sentiment_data": int(sentiment_count or 0),
                 "total_news_articles": int(news_count or 0),
                 "total_reddit_posts": int(reddit_count or 0),
+                "sentiment_breakdown": {
+                    "positive": int(positive_count or 0),
+                    "neutral": int(neutral_count or 0),
+                    "negative": int(negative_count or 0)
+                },
+                "news_articles": int(news_count or 0),
+                "reddit_posts": int(reddit_count or 0),
+                "price_records": int(price_count or 0),
+                "last_collection": last_sentiment.isoformat() if last_sentiment else None,
+                "last_price_update": last_price.isoformat() if last_price else None,
                 "recent_activity": {
                     "sentiment_last_24h": int(recent_sentiment or 0),
                     "news_last_24h": int(recent_news or 0)
@@ -335,13 +387,16 @@ class SystemService:
     async def _log_system_event(self, level: str, message: str, extra_data: Dict[str, Any] = None):
         """Log system event to database."""
         try:
+            from app.utils.timezone import malaysia_now
+            
             system_log = SystemLog(
                 level=level,
                 message=message,
                 logger="app.service.system_service",
                 component="system_service",
                 function="_log_system_event",
-                extra_data=extra_data or {}
+                extra_data=extra_data or {},
+                timestamp=malaysia_now()  # Use Malaysian timezone
             )
             
             self.db.add(system_log)

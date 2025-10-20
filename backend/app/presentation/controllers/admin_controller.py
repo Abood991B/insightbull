@@ -420,7 +420,7 @@ async def get_stock_watchlist(
                     company_name=f"{symbol} Inc.",  # Default company name
                     sector="Technology",
                     is_active=True,
-                    added_date=datetime.utcnow()
+                    added_date=__import__('app.utils.timezone', fromlist=['malaysia_now']).malaysia_now()
                 ) for symbol in watchlist_symbols
             ]
         else:

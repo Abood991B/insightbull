@@ -1,198 +1,212 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
 import UserLayout from "@/shared/components/layouts/UserLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
-import { useState } from "react";
+import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useNavigate } from "react-router-dom";
-import { TrendingUp, TrendingDown, DollarSign, Activity, BarChart3, Search, Clock } from "lucide-react";
-const topPositiveStocks = [{
-  symbol: 'NVDA',
-  sentiment: 0.85,
-  change: '+2.4%',
-  price: 875.28
-}, {
-  symbol: 'PLTR',
-  sentiment: 0.82,
-  change: '+1.8%',
-  price: 248.42
-}, {
-  symbol: 'AAPL',
-  sentiment: 0.78,
-  change: '+1.2%',
-  price: 192.53
-}, {
-  symbol: 'AVGO',
-  sentiment: 0.75,
-  change: '+0.9%',
-  price: 1650.34
-}, {
-  symbol: 'MSFT',
-  sentiment: 0.72,
-  change: '+0.7%',
-  price: 420.45
-}];
-const topNegativeStocks = [{
-  symbol: 'INTC',
-  sentiment: 0.25,
-  change: '-2.1%',
-  price: 23.45
-}, {
-  symbol: 'IBM',
-  sentiment: 0.32,
-  change: '-1.8%',
-  price: 182.76
-}, {
-  symbol: 'CSCO',
-  sentiment: 0.38,
-  change: '-1.2%',
-  price: 56.12
-}, {
-  symbol: 'ORCL',
-  sentiment: 0.42,
-  change: '-0.8%',
-  price: 175.34
-}, {
-  symbol: 'TXN',
-  sentiment: 0.45,
-  change: '-0.5%',
-  price: 196.87
-}];
-const watchlistStocks = [{
-  symbol: 'MSFT',
-  name: 'Microsoft Corp',
-  price: 420.45,
-  change: '+0.7%',
-  sentiment: 0.72
-}, {
-  symbol: 'NVDA',
-  name: 'NVIDIA Corp',
-  price: 875.28,
-  change: '+2.4%',
-  sentiment: 0.85
-}, {
-  symbol: 'AAPL',
-  name: 'Apple Inc.',
-  price: 192.53,
-  change: '+0.5%',
-  sentiment: 0.68
-}, {
-  symbol: 'AVGO',
-  name: 'Broadcom Inc.',
-  price: 1650.34,
-  change: '+1.5%',
-  sentiment: 0.73
-}, {
-  symbol: 'ORCL',
-  name: 'Oracle Corp.',
-  price: 175.34,
-  change: '-0.8%',
-  sentiment: 0.42
-}, {
-  symbol: 'PLTR',
-  name: 'Palantir Technologies Inc.',
-  price: 248.42,
-  change: '+1.8%',
-  sentiment: 0.82
-}, {
-  symbol: 'IBM',
-  name: 'International Business Machines',
-  price: 182.76,
-  change: '-1.8%',
-  sentiment: 0.32
-}, {
-  symbol: 'CSCO',
-  name: 'Cisco Systems Inc.',
-  price: 56.12,
-  change: '-1.2%',
-  sentiment: 0.38
-}, {
-  symbol: 'CRM',
-  name: 'Salesforce Inc.',
-  price: 267.89,
-  change: '+1.1%',
-  sentiment: 0.70
-}, {
-  symbol: 'INTU',
-  name: 'Intuit Inc.',
-  price: 556.78,
-  change: '+0.8%',
-  sentiment: 0.62
-}, {
-  symbol: 'NOW',
-  name: 'ServiceNow Inc.',
-  price: 789.45,
-  change: '+1.3%',
-  sentiment: 0.76
-}, {
-  symbol: 'AMD',
-  name: 'Advanced Micro Devices Inc.',
-  price: 140.67,
-  change: '+0.9%',
-  sentiment: 0.64
-}, {
-  symbol: 'ACN',
-  name: 'Accenture PLC',
-  price: 345.23,
-  change: '+0.6%',
-  sentiment: 0.59
-}, {
-  symbol: 'TXN',
-  name: 'Texas Instruments Inc.',
-  price: 196.87,
-  change: '-0.5%',
-  sentiment: 0.45
-}, {
-  symbol: 'QCOM',
-  name: 'Qualcomm Inc.',
-  price: 157.23,
-  change: '+0.4%',
-  sentiment: 0.58
-}, {
-  symbol: 'ADBE',
-  name: 'Adobe Inc.',
-  price: 556.78,
-  change: '+0.8%',
-  sentiment: 0.62
-}, {
-  symbol: 'AMAT',
-  name: 'Applied Materials Inc.',
-  price: 189.34,
-  change: '+0.2%',
-  sentiment: 0.55
-}, {
-  symbol: 'PANW',
-  name: 'Palo Alto Networks Inc.',
-  price: 345.67,
-  change: '+1.4%',
-  sentiment: 0.74
-}, {
-  symbol: 'MU',
-  name: 'Micron Technology Inc.',
-  price: 98.45,
-  change: '-0.3%',
-  sentiment: 0.48
-}, {
-  symbol: 'CRWD',
-  name: 'CrowdStrike Holdings Inc.',
-  price: 278.90,
-  change: '+1.6%',
-  sentiment: 0.79
-}];
+import { TrendingUp, TrendingDown, Activity, Clock, AlertCircle, RefreshCw, Search, BarChart3, TrendingUpIcon } from "lucide-react";
+
+// Import services and types
+import { dashboardService } from "@/api/services/dashboard.service";
+import type { DashboardSummary, StockSummary } from "@/api/types/backend-schemas";
+
+// Import empty state components
+import {EmptyPipelineState, PartialDataWarning } from "@/shared/components/states";
+import { validateDashboardData } from "@/shared/utils/dataValidation";
+import DashboardSkeleton from "@/features/dashboard/components/DashboardSkeleton";
+
+// Import utility functions
+import { formatTimeAgo } from "@/shared/utils/timeUtils";
+
 const Index = () => {
   const navigate = useNavigate();
-  const getSentimentColor = (sentiment: number) => {
-    if (sentiment >= 0.7) return 'text-green-600';
-    if (sentiment >= 0.5) return 'text-yellow-600';
-    return 'text-red-600';
+  const queryClient = useQueryClient();
+  const [lastRefresh, setLastRefresh] = useState<number>(Date.now());
+
+  // Fetch dashboard data with React Query
+  // Use shorter refetch interval (30 seconds) to catch pipeline updates quickly
+  const { data: response, isLoading, error, refetch } = useQuery({
+    queryKey: ['dashboard-summary'],
+    queryFn: () => dashboardService.getDashboardSummary(),
+    refetchInterval: 30000, // Refresh every 30 seconds (more aggressive)
+    retry: 2,
+  });
+
+  // Force refetch when user focuses window (e.g., switching back from admin panel)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refetch();
+        setLastRefresh(Date.now());
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [refetch]);
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <UserLayout>
+        <DashboardSkeleton />
+      </UserLayout>
+    );
+  }
+
+  // Error state
+  if (error || response?.error) {
+    return (
+      <UserLayout>
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Failed to load dashboard data: {error?.message || response?.error}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="ml-4"
+              onClick={() => refetch()}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </UserLayout>
+    );
+  }
+
+  // Extract data from response
+  const data = response?.data;
+
+  // Validate data
+  const validation = validateDashboardData(data);
+
+  // Empty state (pipeline not run)
+  if (validation.isEmpty) {
+    return (
+      <UserLayout>
+        <EmptyPipelineState />
+      </UserLayout>
+    );
+  }
+
+  // If we get here, data exists
+  const { market_overview, top_stocks, system_status } = data!;
+
+  // Split stocks for display
+  const topPositive = top_stocks
+    .filter(s => (s.sentiment_score ?? 0) > 0)
+    .sort((a, b) => (b.sentiment_score ?? 0) - (a.sentiment_score ?? 0))
+    .slice(0, 5);
+    
+  const topNegative = top_stocks
+    .filter(s => (s.sentiment_score ?? 0) < 0)
+    .sort((a, b) => (a.sentiment_score ?? 0) - (b.sentiment_score ?? 0))
+    .slice(0, 5);
+
+  // Helper functions
+  const formatPrice = (price: number | null) => {
+    return price !== null ? `$${price.toFixed(2)}` : 'N/A';
   };
-  const getSentimentBadgeColor = (sentiment: number) => {
-    if (sentiment >= 0.7) return 'bg-green-100 text-green-800';
-    if (sentiment >= 0.5) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
+
+  const formatChange = (change: number | null) => {
+    if (change === null) return 'N/A';
+    const sign = change >= 0 ? '+' : '';
+    return `${sign}${change.toFixed(2)}%`;
   };
-  return <UserLayout>
+
+  const formatMarketCap = (stocks: StockSummary[]) => {
+    // Real Market Cap = Stock Price × Shares Outstanding
+    // Since we don't have shares outstanding data from APIs, we'll use typical values
+    // for tech companies (ranges from ~300M for small caps to ~16B for mega caps like AAPL)
+    
+    const typicalSharesOutstanding: Record<string, number> = {
+      'AAPL': 15204100000,   // Apple: ~15.2B shares
+      'MSFT': 7430000000,    // Microsoft: ~7.43B shares
+      'GOOGL': 5840000000,   // Alphabet (Class A): ~5.84B shares
+      'GOOG': 5840000000,    // Alphabet (Class C): ~5.84B shares
+      'AMZN': 10190000000,   // Amazon: ~10.19B shares
+      'NVDA': 24460000000,   // NVIDIA: ~24.46B shares (after splits)
+      'META': 2550000000,    // Meta: ~2.55B shares
+      'TSLA': 3178000000,    // Tesla: ~3.18B shares
+      'AVGO': 460000000,     // Broadcom: ~460M shares
+      'ORCL': 2710000000,    // Oracle: ~2.71B shares
+      'CSCO': 4020000000,    // Cisco: ~4.02B shares
+      'ADBE': 450000000,     // Adobe: ~450M shares
+      'CRM': 970000000,      // Salesforce: ~970M shares
+      'INTC': 4140000000,    // Intel: ~4.14B shares
+      'AMD': 1620000000,     // AMD: ~1.62B shares
+      'QCOM': 1120000000,    // Qualcomm: ~1.12B shares
+      'TXN': 910000000,      // Texas Instruments: ~910M shares
+      'AMAT': 870000000,     // Applied Materials: ~870M shares
+      'MU': 1110000000,      // Micron: ~1.11B shares
+      'LRCX': 136000000,     // Lam Research: ~136M shares
+    };
+    
+    let totalMarketCap = 0;
+    
+    for (const stock of stocks) {
+      const price = stock.current_price ?? 0;
+      const shares = typicalSharesOutstanding[stock.symbol] || 1000000000; // Default 1B shares for unknown
+      
+      // Market Cap = Price × Shares Outstanding
+      totalMarketCap += price * shares;
+    }
+    
+    if (totalMarketCap === 0) return '$0.0T';
+    
+    // Format based on magnitude
+    if (totalMarketCap >= 1000000000000) {
+      return `$${(totalMarketCap / 1000000000000).toFixed(1)}T`;
+    } else if (totalMarketCap >= 1000000000) {
+      return `$${(totalMarketCap / 1000000000).toFixed(1)}B`;
+    } else if (totalMarketCap >= 1000000) {
+      return `$${(totalMarketCap / 1000000).toFixed(1)}M`;
+    } else {
+      return `$${totalMarketCap.toFixed(0)}`;
+    }
+  };
+
+  const formatDataPoints = (count: number) => {
+    if (count >= 1000000) {
+      return `${(count / 1000000).toFixed(1)}M`;
+    } else if (count >= 1000) {
+      return `${(count / 1000).toFixed(1)}K`;
+    } else {
+      return count.toString();
+    }
+  };
+
+  // Format pipeline status
+  const getPipelineStatusDisplay = (status: string) => {
+    const statusMap: Record<string, { text: string; color: string }> = {
+      'operational': { text: 'Operational', color: 'text-green-600' },
+      'delayed': { text: 'Delayed', color: 'text-yellow-600' },
+      'stale': { text: 'Data Stale', color: 'text-orange-600' },
+      'no_data': { text: 'No Data Collected', color: 'text-gray-600' }
+    };
+    return statusMap[status] || { text: status, color: 'text-gray-600' };
+  };
+
+  // Check if data is partial
+  const showWarning = validation.isPartial;
+
+  return (
+    <UserLayout>
       <div className="space-y-8">
-        {/* Enhanced Header */}
+        {/* Partial Data Warning */}
+        {showWarning && (
+          <PartialDataWarning 
+            dataPoints={top_stocks.length}
+            minRequired={5}
+          />
+        )}
+
+        {/* Header */}
         <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-8 text-white shadow-2xl">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-transparent"></div>
           <div className="relative z-10">
@@ -206,273 +220,352 @@ const Index = () => {
                 </p>
                 <div className="flex items-center gap-2 mt-4 text-blue-200">
                   <Clock className="h-4 w-4" />
-                  <span className="text-sm">Last updated: Live • Data refreshed 2 hours Ago</span>
+                  <span className="text-sm">
+                    Last updated: {formatTimeAgo(system_status.last_collection)}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => refetch()}
+                    className="ml-2 text-blue-200 hover:text-white hover:bg-white/20"
+                    title="Refresh dashboard data"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
               <div className="flex flex-wrap gap-3">
                 <Badge className="bg-green-500/20 text-green-100 border-green-400/30 px-4 py-2">
                   <Activity className="h-4 w-4 mr-2" />
-                  20 Active Stocks
+                  {market_overview.total_stocks} Active Stocks
                 </Badge>
-                <Badge className="bg-blue-500/20 text-blue-100 border-blue-400/30 px-4 py-2">
+                <Badge className={`px-4 py-2 ${
+                  system_status.pipeline_status === 'operational' 
+                    ? 'bg-green-500/20 text-green-100 border-green-400/30'
+                    : system_status.pipeline_status === 'no_data'
+                    ? 'bg-gray-500/20 text-gray-100 border-gray-400/30'
+                    : 'bg-yellow-500/20 text-yellow-100 border-yellow-400/30'
+                }`}>
                   <TrendingUp className="h-4 w-4 mr-2" />
-                  Near-real-time Analytics
+                  {getPipelineStatusDisplay(system_status.pipeline_status).text.toUpperCase()}
                 </Badge>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Enhanced Stats Cards */}
+        {/* Stats Cards - MATCHING SCREENSHOT */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card className="bg-gradient-to-br from-green-50 to-emerald-100 border-green-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-green-800">Average Sentiment</CardTitle>
-              <div className="p-2 bg-green-500 rounded-lg">
-                <Activity className="h-4 w-4 text-white" />
-              </div>
+          {/* Average Sentiment */}
+          <Card className="bg-gradient-to-br from-green-50 to-emerald-100 border-l-4 border-l-green-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-600">Average Sentiment</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-700 mb-1">0.62</div>
-              <p className="text-xs text-green-600 flex items-center">
-                <TrendingUp className="h-3 w-3 mr-1" />
-                +12% from yesterday
+              <div className="text-4xl font-bold text-gray-900 mb-1">
+                {market_overview.average_sentiment.toFixed(2)}
+              </div>
+              <p className="text-sm text-gray-600">
+                Across {market_overview.total_stocks} stocks
               </p>
             </CardContent>
           </Card>
-          
-          <Card className="bg-gradient-to-br from-blue-50 to-sky-100 border-blue-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-blue-800">Market Cap</CardTitle>
-              <div className="p-2 bg-blue-500 rounded-lg">
-                <DollarSign className="h-4 w-4 text-white" />
-              </div>
+
+          {/* Market Cap */}
+          <Card className="bg-gradient-to-br from-blue-50 to-sky-100 border-l-4 border-l-blue-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-600">Market Cap</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-blue-700 mb-1">$15.2T</div>
-              <p className="text-xs text-blue-600">Total watchlist value</p>
+              <div className="text-4xl font-bold text-gray-900 mb-1">
+                {formatMarketCap(top_stocks)}
+              </div>
+              <p className="text-sm text-gray-600">
+                Combined market capitalization
+              </p>
             </CardContent>
           </Card>
-          
-          <Card className="bg-gradient-to-br from-purple-50 to-violet-100 border-purple-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-purple-800">Active Stocks</CardTitle>
-              <div className="p-2 bg-purple-500 rounded-lg">
-                <TrendingUp className="h-4 w-4 text-white" />
-              </div>
+
+          {/* Active Stocks */}
+          <Card className="bg-gradient-to-br from-purple-50 to-violet-100 border-l-4 border-l-purple-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-600">Active Stocks</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-purple-700 mb-1">20</div>
-              <p className="text-xs text-purple-600">Top Technology Stocks</p>
+              <div className="text-4xl font-bold text-gray-900 mb-1">
+                {market_overview.total_stocks}
+              </div>
+              <p className="text-sm text-gray-600">
+                Top Technology Stocks
+              </p>
             </CardContent>
           </Card>
-          
-          <Card className="bg-gradient-to-br from-orange-50 to-amber-100 border-orange-200 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-orange-800">Data Points</CardTitle>
-              <div className="p-2 bg-orange-500 rounded-lg">
-                <Activity className="h-4 w-4 text-white" />
-              </div>
+
+          {/* Data Points */}
+          <Card className="bg-gradient-to-br from-orange-50 to-amber-100 border-l-4 border-l-orange-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-600">Data Points</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-orange-700 mb-1">12.4K</div>
-              <p className="text-xs text-orange-600">Last 24 hours</p>
+              <div className="text-4xl font-bold text-gray-900 mb-1">
+                {formatDataPoints(system_status.total_sentiment_records)}
+              </div>
+              <p className="text-sm text-gray-600">
+                Total sentiment records
+              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Enhanced Top Performers and Stock Lists */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Top Positive Stocks */}
-          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-green-50">
-            <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-t-lg">
-              <CardTitle className="flex items-center gap-3 text-lg">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <TrendingUp className="h-5 w-5" />
-                </div>
-                Top Positive Sentiment
-              </CardTitle>
-              <CardDescription className="text-green-100">
-                Stocks with highest positive sentiment scores
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6">
-              <div className="space-y-4">
-                {topPositiveStocks.map((stock, index) => <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-green-100 hover:shadow-md transition-all duration-200 hover:border-green-200">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-8 h-8 bg-green-100 text-green-700 rounded-full text-sm font-bold">
-                        {index + 1}
-                      </div>
-                      <div>
-                        <div className="font-bold text-gray-900">{stock.symbol}</div>
-                        <div className="text-sm text-gray-600 font-medium">${stock.price}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge className={`${getSentimentBadgeColor(stock.sentiment)} font-medium`}>
-                        {(stock.sentiment * 100).toFixed(0)}%
-                      </Badge>
-                      <div className="text-sm text-green-600 mt-2 font-medium">{stock.change}</div>
-                    </div>
-                  </div>)}
+        {/* Three Column Layout - MATCHING SCREENSHOT */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Top Positive Sentiment - GREEN BOX */}
+          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-t-4 border-t-green-500">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-green-600" />
+                <CardTitle className="text-lg">Top Positive Sentiment</CardTitle>
               </div>
+              <CardDescription>Stocks with highest positive sentiment scores</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {topPositive.length > 0 ? (
+                <div className="space-y-3">
+                  {topPositive.map((stock, index) => (
+                    <div
+                      key={stock.symbol}
+                      className="flex items-center justify-between p-3 bg-white rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => navigate(`/analysis?symbol=${stock.symbol}`)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100 text-green-700 font-bold text-sm">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-900">{stock.symbol}</div>
+                          <div className="text-sm text-gray-600">{formatPrice(stock.current_price)}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-green-600 text-lg">
+                          {((stock.sentiment_score ?? 0) * 100).toFixed(0)}%
+                        </div>
+                        <div className="text-xs text-gray-600">{formatChange(stock.price_change_24h)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">No positive sentiment stocks</p>
+              )}
             </CardContent>
           </Card>
 
-          {/* Top Negative Stocks */}
-          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-red-50">
-            <CardHeader className="bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-t-lg">
-              <CardTitle className="flex items-center gap-3 text-lg">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <TrendingDown className="h-5 w-5" />
-                </div>
-                Top Negative Sentiment
-              </CardTitle>
-              <CardDescription className="text-red-100">
-                Stocks with lowest sentiment scores
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6">
-              <div className="space-y-4">
-                {topNegativeStocks.map((stock, index) => <div key={stock.symbol} className="flex items-center justify-between p-4 rounded-xl bg-white border border-red-100 hover:shadow-md transition-all duration-200 hover:border-red-200">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-8 h-8 bg-red-100 text-red-700 rounded-full text-sm font-bold">
-                        {index + 1}
-                      </div>
-                      <div>
-                        <div className="font-bold text-gray-900">{stock.symbol}</div>
-                        <div className="text-sm text-gray-600 font-medium">${stock.price}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge className={`${getSentimentBadgeColor(stock.sentiment)} font-medium`}>
-                        {(stock.sentiment * 100).toFixed(0)}%
-                      </Badge>
-                      <div className="text-sm text-red-600 mt-2 font-medium">{stock.change}</div>
-                    </div>
-                  </div>)}
+          {/* Top Negative Sentiment - RED BOX */}
+          <Card className="bg-gradient-to-br from-red-50 to-rose-50 border-t-4 border-t-red-500">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <TrendingDown className="h-5 w-5 text-red-600" />
+                <CardTitle className="text-lg">Top Negative Sentiment</CardTitle>
               </div>
+              <CardDescription>Stocks with lowest sentiment scores</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {topNegative.length > 0 ? (
+                <div className="space-y-3">
+                  {topNegative.map((stock, index) => (
+                    <div
+                      key={stock.symbol}
+                      className="flex items-center justify-between p-3 bg-white rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => navigate(`/analysis?symbol=${stock.symbol}`)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-700 font-bold text-sm">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-900">{stock.symbol}</div>
+                          <div className="text-sm text-gray-600">{formatPrice(stock.current_price)}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-red-600 text-lg">
+                          -{Math.abs((stock.sentiment_score ?? 0) * 100).toFixed(0)}%
+                        </div>
+                        <div className="text-xs text-gray-600">{formatChange(stock.price_change_24h)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">No negative sentiment stocks</p>
+              )}
             </CardContent>
           </Card>
 
-          {/* Stock Price Live Overview */}
-          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-blue-50">
-            <CardHeader className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-t-lg">
-              <CardTitle className="flex items-center gap-3 text-lg">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <DollarSign className="h-5 w-5" />
-                </div>
-                Near-real-time Stock Prices
-              </CardTitle>
-              <CardDescription className="text-blue-100">
-                Live price overview (20 technology stocks)
-              </CardDescription>
+          {/* Near-real-time Stock Prices - BLUE BOX - DYNAMIC SCROLLABLE LIST */}
+          <Card className="bg-gradient-to-br from-blue-50 to-sky-50 border-t-4 border-t-blue-500">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-blue-600" />
+                <CardTitle className="text-lg">Near-real-time Stock Prices</CardTitle>
+              </div>
+              <CardDescription>Live price overview ({top_stocks.length} technology stocks)</CardDescription>
             </CardHeader>
-            <CardContent className="p-6">
-              <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
-                {watchlistStocks.map(stock => <div key={stock.symbol} className="flex items-center justify-between p-3 rounded-lg bg-white border border-blue-100 hover:shadow-sm transition-all duration-200 hover:border-blue-200">
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-gray-900">{stock.symbol}</span>
-                      <Badge variant="outline" className={`${getSentimentColor(stock.sentiment)} border-current`}>
-                        {(stock.sentiment * 100).toFixed(0)}%
-                      </Badge>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-gray-900">${stock.price}</div>
-                      <div className={`text-sm font-medium ${stock.change.startsWith('+') ? 'text-green-600' : 'text-red-600'}`}>
-                        {stock.change}
+            <CardContent>
+              {top_stocks.length > 0 ? (
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                  {top_stocks.map((stock) => (
+                    <div
+                      key={stock.symbol}
+                      className="flex items-center justify-between p-3 bg-white rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => navigate(`/analysis?symbol=${stock.symbol}`)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-900">{stock.symbol}</span>
+                            {stock.sentiment_label && stock.sentiment_score !== null && (
+                              <Badge 
+                                className={`text-xs ${
+                                  stock.sentiment_label === 'positive' 
+                                    ? 'bg-green-100 text-green-700' 
+                                    : stock.sentiment_label === 'negative'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-gray-100 text-gray-700'
+                                }`}
+                              >
+                                {(stock.sentiment_score ?? 0) > 0 ? '+' : ''}{((stock.sentiment_score ?? 0) * 100).toFixed(0)}%
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-600">{stock.company_name}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-gray-900 text-lg">
+                          {formatPrice(stock.current_price)}
+                        </div>
+                        <div className={`text-sm font-semibold ${
+                          (stock.price_change_24h ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {formatChange(stock.price_change_24h)}
+                        </div>
                       </div>
                     </div>
-                  </div>)}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">No stock data available</p>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Enhanced Quick Actions */}
-        <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-8 shadow-lg border border-gray-100">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Analytics & Insights</h2>
-            <p className="text-gray-600">Explore comprehensive market analysis tools</p>
-          </div>
+        {/* Analytics & Insights */}
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold mb-2">Analytics & Insights</h2>
+          <p className="text-gray-600 mb-6">Explore comprehensive market analysis tools</p>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-blue-50 border-blue-200" onClick={() => navigate('/analysis')}>
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-3 bg-blue-500 rounded-xl group-hover:bg-blue-600 transition-colors">
-                    <Search className="h-6 w-6 text-white" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Stock Analysis Card */}
+            <Card className="border-t-4 border-t-blue-500 hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Search className="h-6 w-6 text-blue-600" />
                   </div>
-                  <CardTitle className="text-xl text-gray-900">Stock Analysis</CardTitle>
+                  <CardTitle className="text-lg">Stock Analysis</CardTitle>
                 </div>
-                <CardDescription className="text-gray-600 leading-relaxed">
+                <CardDescription>
                   Deep dive into individual stock performance with comprehensive sentiment metrics
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5">
+                <Button 
+                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  onClick={() => navigate('/analysis')}
+                >
                   Explore Analysis
                 </Button>
               </CardContent>
             </Card>
-            
-            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-green-50 border-green-200" onClick={() => navigate('/correlation')}>
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-3 bg-green-500 rounded-xl group-hover:bg-green-600 transition-colors">
-                    <BarChart3 className="h-6 w-6 text-white" />
+
+            {/* Correlation Insights Card */}
+            <Card className="border-t-4 border-t-green-500 hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <BarChart3 className="h-6 w-6 text-green-600" />
                   </div>
-                  <CardTitle className="text-xl text-gray-900">Correlation Insights</CardTitle>
+                  <CardTitle className="text-lg">Correlation Insights</CardTitle>
                 </div>
-                <CardDescription className="text-gray-600 leading-relaxed">
+                <CardDescription>
                   View dynamic correlation between sentiment and stock prices across markets
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-2.5">
+                <Button 
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  onClick={() => navigate('/correlation')}
+                >
                   View Correlations
                 </Button>
               </CardContent>
             </Card>
-            
-            <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-2 bg-gradient-to-br from-white to-purple-50 border-purple-200" onClick={() => navigate('/trends')}>
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-3 bg-purple-500 rounded-xl group-hover:bg-purple-600 transition-colors">
-                    <Activity className="h-6 w-6 text-white" />
+
+            {/* Trend Analysis Card */}
+            <Card className="border-t-4 border-t-purple-500 hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <TrendingUpIcon className="h-6 w-6 text-purple-600" />
                   </div>
-                  <CardTitle className="text-xl text-gray-900">Trend Analysis</CardTitle>
+                  <CardTitle className="text-lg">Trend Analysis</CardTitle>
                 </div>
-                <CardDescription className="text-gray-600 leading-relaxed">
+                <CardDescription>
                   Analyze sentiment trends over time with advanced temporal analytics
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full bg-purple-500 hover:bg-purple-600 text-white font-medium py-2.5">
+                <Button 
+                  className="w-full bg-purple-600 hover:bg-purple-700"
+                  onClick={() => navigate('/trends')}
+                >
                   Analyze Trends
                 </Button>
               </CardContent>
             </Card>
           </div>
         </div>
-      </div>
 
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f5f9;
-          border-radius: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #cbd5e1;
-          border-radius: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #94a3b8;
-        }
-      `}</style>
-    </UserLayout>;
+        {/* System Status */}
+        <Card>
+          <CardHeader>
+            <CardTitle>System Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <span className="text-sm text-gray-600">Pipeline Status:</span>
+                <p className={`font-semibold ${getPipelineStatusDisplay(system_status.pipeline_status).color}`}>
+                  {getPipelineStatusDisplay(system_status.pipeline_status).text}
+                </p>
+              </div>
+              <div>
+                <span className="text-sm text-gray-600">Total Records:</span>
+                <p className="font-semibold">{system_status.total_sentiment_records.toLocaleString()}</p>
+              </div>
+              <div>
+                <span className="text-sm text-gray-600">Data Sources:</span>
+                <p className="font-semibold">{system_status.active_data_sources.join(', ')}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </UserLayout>
+  );
 };
+
 export default Index;

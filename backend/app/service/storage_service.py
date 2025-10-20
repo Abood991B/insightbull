@@ -79,14 +79,16 @@ class StorageManager:
             )
             newest_record = newest_sentiment_result.scalar()
             
-            # Calculate total records and estimated storage size
-            total_records = sentiment_count + price_count + news_count + reddit_count
+            # Calculate total records - only count processed data (sentiment + prices)
+            # Note: news_articles and reddit_posts are raw data that gets processed into sentiment_data
+            # We keep them for audit/reprocessing but don't count them as separate data points
+            total_records = sentiment_count + price_count
             
             # Estimated storage calculation (in MB):
             # - Sentiment records: ~0.5KB each
             # - Price records: ~0.2KB each  
-            # - News articles: ~2KB each
-            # - Reddit posts: ~1KB each
+            # - News articles: ~2KB each (raw storage, kept for audit)
+            # - Reddit posts: ~1KB each (raw storage, kept for audit)
             estimated_size_mb = (
                 (sentiment_count * 0.0005) + 
                 (price_count * 0.0002) + 

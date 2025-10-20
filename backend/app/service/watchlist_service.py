@@ -246,7 +246,7 @@ class WatchlistService:
                 {
                     "symbol": symbol,
                     "name": f"{symbol} Corporation",
-                    "added_date": datetime.utcnow(),
+                    "added_date": malaysia_now(),
                     "is_active": True,
                     "priority": 0
                 }
@@ -290,8 +290,9 @@ class WatchlistService:
                 
                 if inactive_stock:
                     # Reactivate the stock
+                    from app.utils.timezone import malaysia_now
                     inactive_stock.is_active = True
-                    inactive_stock.added_to_watchlist = datetime.utcnow()
+                    inactive_stock.added_to_watchlist = malaysia_now()
                     added_stocks.append(symbol)
                 else:
                     # Create new stock entry
@@ -300,7 +301,7 @@ class WatchlistService:
                         name=self.get_company_name(symbol),
                         sector=self.get_sector(symbol),
                         is_active=True,
-                        added_to_watchlist=datetime.utcnow(),
+                        added_to_watchlist=malaysia_now(),
                         priority=0
                     )
                     self.db.add(new_stock)

@@ -45,6 +45,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Process request with rate limiting"""
         client_ip = self.get_client_ip(request)
+        
+        # Exempt localhost/development IPs from rate limiting
+        # This prevents blocking during development when frontend auto-refreshes
+        localhost_ips = ["127.0.0.1", "localhost", "::1", "0.0.0.0"]
+        if client_ip in localhost_ips or client_ip == "unknown":
+            # Skip rate limiting for local development
+            response = await call_next(request)
+            return response
+        
         current_time = time.time()
         
         # Clean old requests outside the window

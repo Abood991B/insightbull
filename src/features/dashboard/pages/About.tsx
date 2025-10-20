@@ -190,10 +190,10 @@ const About = () => {
                 <div className="p-4 bg-orange-50 rounded-lg">
                   <h3 className="font-semibold mb-3 text-orange-900">Sentiment Analysis Process</h3>
                   <ul className="space-y-2 text-sm text-orange-800">
-                    <li>• Sentiment scores range from -1 (negative) to +1 (positive)</li>
-                    <li>• Multi-model ensemble for improved accuracy</li>
-                    <li>• Temporal aggregation by stock and time period</li>
-                    <li>• Noise filtering and outlier detection</li>
+                    <li>Sentiment scores range from -1 (negative) to +1 (positive)</li>
+                    <li>Multi-model ensemble for improved accuracy</li>
+                    <li>Temporal aggregation by stock and time period</li>
+                    <li>Noise filtering and outlier detection</li>
                   </ul>
                 </div>
               </div>
@@ -201,10 +201,10 @@ const About = () => {
                 <div className="p-4 bg-blue-50 rounded-lg">
                   <h3 className="font-semibold mb-3 text-blue-900">Correlation Analysis</h3>
                   <ul className="space-y-2 text-sm text-blue-800">
-                    <li>• Pearson correlation coefficients with confidence intervals</li>
-                    <li>• R-squared values for variance explanation</li>
-                    <li>• Statistical significance testing (p-values)</li>
-                    <li>• Cross-validation for model reliability</li>
+                    <li>Pearson correlation coefficients with confidence intervals</li>
+                    <li>R-squared values for variance explanation</li>
+                    <li>Statistical significance testing (p-values)</li>
+                    <li>Cross-validation for model reliability</li>
                   </ul>
                 </div>
               </div>

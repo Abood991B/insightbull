@@ -40,6 +40,9 @@ from ..data_access.models import SentimentData, Stock, NewsArticle, RedditPost
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ..data_access.database.connection import get_db
+from ..data_access.database.connection import get_db_session
+from ..data_access.models import StocksWatchlist, SentimentData
+from sqlalchemy import select, func
 # WebSocket imports removed - using direct database storage
 
 # Initialize logger using singleton LogSystem
@@ -74,8 +77,7 @@ class PipelineConfig:
     processing_config: Optional[ProcessingConfig] = None
     
     def __post_init__(self):
-        if not self.symbols:
-            raise ValueError("At least one stock symbol must be provided")
+        # Allow empty symbols for dynamic watchlist resolution
         if self.processing_config is None:
             self.processing_config = ProcessingConfig()
     
@@ -407,6 +409,23 @@ class DataPipeline:
         # Initialize repositories for database operations
         await self._initialize_repositories()
         
+        # Resolve dynamic watchlist if no symbols provided
+        if not config.symbols:
+            from ..service.watchlist_service import get_current_stock_symbols
+            from ..data_access.database.connection import get_db_session
+            async with get_db_session() as db:
+                config.symbols = await get_current_stock_symbols(db)
+                if not config.symbols:
+                    self.logger.warning("No active stocks in watchlist, cannot run pipeline.")
+                    result = PipelineResult(
+                        pipeline_id=pipeline_id,
+                        status=PipelineStatus.FAILED,
+                        start_time=start_time,
+                        end_time=datetime.now(),
+                        error="No active stocks in watchlist"
+                    )
+                    return result
+        
         # Initialize result
         result = PipelineResult(
             pipeline_id=pipeline_id,
@@ -484,7 +503,7 @@ class DataPipeline:
             
             # Log human-readable summary
             self.logger.info(
-                f"📊 Data Collection Summary for Pipeline {pipeline_id}:",
+                f"Data Collection Summary for Pipeline {pipeline_id}:",
                 extra={
                     "pipeline_id": pipeline_id,
                     "total_items": total_collected,
@@ -652,8 +671,10 @@ class DataPipeline:
     
     async def _collect_data(self, config: PipelineConfig) -> Dict[str, CollectionResult]:
         """Collect data from all configured sources"""
+        # Reorder symbols fairly before passing to collectors
+        fair_symbols = await self._get_fair_ordered_symbols(config.symbols)
         collection_config = CollectionConfig(
-            symbols=config.symbols,
+            symbols=fair_symbols,
             date_range=config.date_range,
             max_items_per_symbol=config.max_items_per_symbol,
             include_comments=config.include_comments
@@ -719,6 +740,58 @@ class DataPipeline:
                     )
         
         return collection_results
+
+    async def _get_fair_ordered_symbols(self, symbols: List[str]) -> List[str]:
+        """Compute fair order using rotation and lightweight priority scoring."""
+        if not symbols:
+            return symbols
+        try:
+            # Read rotation offset from system logs extra (lightweight persistence) or default 0
+            rotation_offset = getattr(self, "_rotation_offset", 0)
+            # Compute priority per symbol
+            priorities = {}
+            async with get_db_session() as db:
+                # Recent sentiment counts and last timestamps
+                day_ago = datetime.utcnow() - timedelta(hours=24)
+                for symbol in symbols:
+                    # Get stock id
+                    stock_row = await db.execute(
+                        select(StocksWatchlist.id, StocksWatchlist.symbol)
+                        .where(StocksWatchlist.symbol == symbol)
+                    )
+                    stock = stock_row.first()
+                    if not stock:
+                        priorities[symbol] = 0.0
+                        continue
+                    stock_id = stock.id
+                    # Count last 24h
+                    cnt_row = await db.execute(
+                        select(func.count(SentimentData.id))
+                        .where(SentimentData.stock_id == stock_id, SentimentData.created_at >= day_ago)
+                    )
+                    cnt = (cnt_row.scalar() or 0)
+                    # Last sentiment time
+                    ts_row = await db.execute(
+                        select(func.max(SentimentData.created_at))
+                        .where(SentimentData.stock_id == stock_id)
+                    )
+                    last_ts = ts_row.scalar()
+                    recency_gap_hours = 999 if not last_ts else max(0.0, (datetime.utcnow() - last_ts).total_seconds() / 3600.0)
+                    deficit = max(0, 20 - cnt)  # target 20 per 24h
+                    # Simple score
+                    score = 0.6 * recency_gap_hours + 0.4 * deficit
+                    priorities[symbol] = score
+            # Sort by priority desc
+            ordered = sorted(symbols, key=lambda s: priorities.get(s, 0.0), reverse=True)
+            # Apply rotation offset
+            if ordered:
+                rotation_offset = rotation_offset % len(ordered)
+                ordered = ordered[rotation_offset:] + ordered[:rotation_offset]
+                # Update rotation for next run
+                self._rotation_offset = (rotation_offset + 1) % len(ordered)
+            return ordered
+        except Exception:
+            return symbols
     
     async def _run_collector_with_timeout(
         self, 
@@ -1024,7 +1097,8 @@ class DataPipeline:
                 
                 for raw_data in collection_result.data:
                     try:
-                        async with get_db() as session:
+                        from ..data_access.database.connection import get_db_session
+                        async with get_db_session() as session:
                             # Determine stock from raw data
                             stock_symbol = getattr(raw_data, 'stock_symbol', None)
                             if not stock_symbol:
@@ -1044,33 +1118,53 @@ class DataPipeline:
                             
                             # Store based on source type
                             if source_name.lower() in ['newsapi', 'marketaux', 'finnhub']:
+                                # Check for duplicate URL before storing
+                                url = getattr(raw_data, 'url', '')
+                                if url:
+                                    from sqlalchemy import select
+                                    existing_article = await session.execute(
+                                        select(NewsArticle).where(NewsArticle.url == url)
+                                    )
+                                    if existing_article.scalar_one_or_none():
+                                        continue  # Skip duplicate
+                                
                                 # Store as news article
+                                published_at = getattr(raw_data, 'published_at', None)
+                                if published_at is None:
+                                    published_at = datetime.now()  # Default to current time
+                                
                                 news_article = NewsArticle(
                                     stock_id=stock.id,
                                     title=getattr(raw_data, 'title', '')[:500],  # Limit title length
                                     content=getattr(raw_data, 'content', '')[:10000],  # Limit content length
-                                    url=getattr(raw_data, 'url', ''),
+                                    url=url,
                                     source=source_name.lower(),
-                                    published_at=getattr(raw_data, 'published_at', None),
+                                    published_at=published_at,
                                     author=getattr(raw_data, 'author', ''),
-                                    content_hash=getattr(raw_data, 'content_hash', ''),
-                                    extra_data={
-                                        "pipeline_id": correlation_id,
-                                        "collected_at": datetime.utcnow().isoformat(),
-                                        "original_data": {
-                                            "description": getattr(raw_data, 'description', ''),
-                                            "category": getattr(raw_data, 'category', ''),
-                                            "language": getattr(raw_data, 'language', '')
-                                        }
-                                    }
+                                    # Map any mentions to stock_mentions JSON if available
+                                    stock_mentions=getattr(raw_data, 'stock_mentions', None)
                                 )
                                 session.add(news_article)
                                 
                             elif source_name.lower() == 'reddit':
+                                # Check for duplicate reddit_id before storing
+                                reddit_id = getattr(raw_data, 'post_id', '') or getattr(raw_data, 'reddit_id', '')
+                                if reddit_id:
+                                    from sqlalchemy import select
+                                    existing_post = await session.execute(
+                                        select(RedditPost).where(RedditPost.reddit_id == reddit_id)
+                                    )
+                                    if existing_post.scalar_one_or_none():
+                                        continue  # Skip duplicate
+                                
                                 # Store as Reddit post
+                                created_utc = getattr(raw_data, 'created_utc', None)
+                                if created_utc is None:
+                                    created_utc = datetime.now()  # Default to current time
+                                
                                 reddit_post = RedditPost(
                                     stock_id=stock.id,
-                                    post_id=getattr(raw_data, 'post_id', ''),
+                                    reddit_id=reddit_id,
                                     title=getattr(raw_data, 'title', '')[:500],  # Limit title length
                                     content=getattr(raw_data, 'content', '')[:10000],  # Limit content length
                                     url=getattr(raw_data, 'url', ''),
@@ -1078,18 +1172,9 @@ class DataPipeline:
                                     author=getattr(raw_data, 'author', ''),
                                     score=getattr(raw_data, 'score', 0),
                                     num_comments=getattr(raw_data, 'num_comments', 0),
-                                    created_utc=getattr(raw_data, 'created_utc', None),
-                                    content_hash=getattr(raw_data, 'content_hash', ''),
-                                    extra_data={
-                                        "pipeline_id": correlation_id,
-                                        "collected_at": datetime.utcnow().isoformat(),
-                                        "original_data": {
-                                            "upvote_ratio": getattr(raw_data, 'upvote_ratio', 0.0),
-                                            "distinguished": getattr(raw_data, 'distinguished', None),
-                                            "stickied": getattr(raw_data, 'stickied', False),
-                                            "is_self": getattr(raw_data, 'is_self', False)
-                                        }
-                                    }
+                                    created_utc=created_utc,
+                                    # Store mentioned symbols if present
+                                    stock_mentions=getattr(raw_data, 'stock_mentions', None)
                                 )
                                 session.add(reddit_post)
                             
@@ -1277,7 +1362,7 @@ class DataPipeline:
                     processing_result=proc_result,
                     sentiment_result=sentiment_score,
                     success=True,
-                    timestamp=datetime.utcnow()
+                    timestamp=malaysia_now()
                 )
                 
                 sentiment_results.append(sentiment_result)
@@ -1297,7 +1382,7 @@ class DataPipeline:
                     sentiment_result=None,
                     success=False,
                     error=str(e),
-                    timestamp=datetime.utcnow()
+                    timestamp=malaysia_now()
                 )
                 
                 sentiment_results.append(sentiment_result)
@@ -1507,10 +1592,19 @@ class DataPipeline:
             Dict with execution results
         """
         try:
+            # Resolve dynamic watchlist if symbols not provided
+            if not symbols:
+                async with get_db_session() as db:
+                    result = await db.execute(
+                        select(StocksWatchlist.symbol).where(StocksWatchlist.is_active == True)
+                    )
+                    symbols = [row[0] for row in result.all()]
+            # Order symbols fairly before building config
+            ordered_symbols = await self._get_fair_ordered_symbols(symbols)
             # Create pipeline configuration
             date_range = DateRange.last_days(lookback_days)
             config = PipelineConfig(
-                symbols=symbols,
+                symbols=ordered_symbols,
                 date_range=date_range,
                 max_items_per_symbol=100,
                 include_reddit=True,
@@ -1520,7 +1614,7 @@ class DataPipeline:
                 parallel_collectors=True
             )
             
-            self.logger.info(f"🚀 Starting FULL PIPELINE for {len(symbols)} symbols, {lookback_days} days lookback")
+            self.logger.info(f"Starting FULL PIPELINE for {len(symbols)} symbols, {lookback_days} days lookback")
             
             # Execute the complete pipeline
             result = await self.run_pipeline(config)
@@ -1565,25 +1659,178 @@ class DataPipeline:
             Dict with processing results
         """
         try:
-            self.logger.info(f"🧠 Starting SENTIMENT PROCESSING for {len(symbols)} symbols, {hours_back} hours back")
+            self.logger.info(f"Starting SENTIMENT PROCESSING for {len(symbols)} symbols, {hours_back} hours back")
             
-            # This would process existing data from database for sentiment analysis
-            # For now, return success (in production, implement actual recent data processing)
+            from ..data_access.database.connection import get_db_session
+            from ..service.sentiment_processing import get_sentiment_engine, TextInput, DataSource
+            from sqlalchemy import update
             
             processed_count = 0
             sentiment_records = 0
+            cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
             
-            # TODO: Implement actual recent data processing
-            # 1. Query database for unprocessed items in last N hours
-            # 2. Run sentiment analysis on those items
-            # 3. Update sentiment records
-            # 4. Return processing statistics
-            
+            async with get_db_session() as db:
+                # Use dynamic watchlist if symbols not provided
+                if not symbols:
+                    result = await db.execute(
+                        select(StocksWatchlist.symbol).where(StocksWatchlist.is_active == True)
+                    )
+                    symbols = [row[0] for row in result.all()]
+                # Order fairly
+                symbols = await self._get_fair_ordered_symbols(symbols)
+                # Get stock IDs for the symbols
+                stock_ids = {}
+                for symbol in symbols:
+                    result = await db.execute(
+                        select(StocksWatchlist.id, StocksWatchlist.symbol)
+                        .where(StocksWatchlist.symbol == symbol, StocksWatchlist.is_active == True)
+                    )
+                    stock_row = result.first()
+                    if stock_row:
+                        stock_ids[symbol] = stock_row.id
+                
+                if not stock_ids:
+                    self.logger.warning("No active stocks found for sentiment processing")
+                    return {
+                        "status": "success",
+                        "items_processed": 0,
+                        "sentiment_records": 0,
+                        "symbols_processed": 0,
+                        "hours_back": hours_back
+                    }
+                
+                # 1. Find news articles without sentiment analysis
+                news_result = await db.execute(
+                    select(NewsArticle.id, NewsArticle.title, NewsArticle.content, NewsArticle.stock_id)
+                    .where(
+                        NewsArticle.published_at >= cutoff_time,
+                        NewsArticle.sentiment_score.is_(None),  # Not yet analyzed
+                        NewsArticle.stock_id.in_(stock_ids.values())
+                    )
+                    .limit(500)  # Process in batches
+                )
+                news_articles = news_result.fetchall()
+                
+                # 2. Find Reddit posts without sentiment analysis  
+                reddit_result = await db.execute(
+                    select(RedditPost.id, RedditPost.title, RedditPost.content, RedditPost.stock_id)
+                    .where(
+                        RedditPost.created_utc >= cutoff_time,
+                        RedditPost.sentiment_score.is_(None),  # Not yet analyzed
+                        RedditPost.stock_id.in_(stock_ids.values())
+                    )
+                    .limit(500)  # Process in batches
+                )
+                reddit_posts = reddit_result.fetchall()
+                
+                total_items = len(news_articles) + len(reddit_posts)
+                
+                if total_items == 0:
+                    self.logger.info("No unprocessed items found for sentiment analysis")
+                    return {
+                        "status": "success",
+                        "items_processed": 0,
+                        "sentiment_records": 0,
+                        "symbols_processed": len(stock_ids),
+                        "hours_back": hours_back
+                    }
+                
+                self.logger.info(f"Found {len(news_articles)} news articles and {len(reddit_posts)} Reddit posts to process")
+                
+                # 3. Prepare sentiment analysis inputs
+                sentiment_inputs = []
+                
+                # Process news articles
+                for article in news_articles:
+                    text_content = f"{article.title}\n\n{article.content or ''}"[:2000]  # Limit text length
+                    if len(text_content.strip()) > 10:  # Skip very short content
+                        sentiment_inputs.append(TextInput(
+                            text=text_content,
+                            source=DataSource.NEWS,
+                            metadata={
+                                "article_id": article.id,
+                                "stock_id": article.stock_id,
+                                "type": "news"
+                            }
+                        ))
+                
+                # Process Reddit posts
+                for post in reddit_posts:
+                    text_content = f"{post.title}\n\n{post.content or ''}"[:2000]  # Limit text length
+                    if len(text_content.strip()) > 10:  # Skip very short content
+                        sentiment_inputs.append(TextInput(
+                            text=text_content,
+                            source=DataSource.REDDIT,
+                            metadata={
+                                "post_id": post.id,
+                                "stock_id": post.stock_id,
+                                "type": "reddit"
+                            }
+                        ))
+                
+                # 4. Run sentiment analysis
+                if sentiment_inputs:
+                    sentiment_engine = get_sentiment_engine()
+                    sentiment_results = await sentiment_engine.analyze_batch(sentiment_inputs)
+                    
+                    # 5. Update database with sentiment results
+                    for result in sentiment_results:
+                        try:
+                            metadata = result.metadata
+                            
+                            if metadata["type"] == "news":
+                                # Update news article
+                                await db.execute(
+                                    update(NewsArticle)
+                                    .where(NewsArticle.id == metadata["article_id"])
+                                    .values(
+                                        sentiment_score=result.score,
+                                        confidence=result.confidence
+                                    )
+                                )
+                            elif metadata["type"] == "reddit":
+                                # Update Reddit post
+                                await db.execute(
+                                    update(RedditPost)
+                                    .where(RedditPost.id == metadata["post_id"])
+                                    .values(
+                                        sentiment_score=result.score,
+                                        confidence=result.confidence
+                                    )
+                                )
+                            
+                            # Create sentiment data record
+                            from app.utils.timezone import malaysia_now
+                            sentiment_data = SentimentData(
+                                stock_id=metadata["stock_id"],
+                                source=result.source.value.lower(),
+                                sentiment_score=result.score,
+                                confidence=result.confidence,
+                                sentiment_label=result.label,
+                                model_used=result.model_name,
+                                raw_text=result.text[:1000],  # Store truncated text
+                                content_hash=SentimentData.generate_content_hash(
+                                    result.text, result.source.value, ""
+                                ),
+                                created_at=malaysia_now()  # Use Malaysian timezone
+                            )
+                            db.add(sentiment_data)
+                            sentiment_records += 1
+                            processed_count += 1
+                            
+                        except Exception as e:
+                            self.logger.error(f"Error updating sentiment for item: {e}")
+                            continue
+                    
+                    await db.commit()
+                    
+                    self.logger.info(f"Processed {processed_count} items, created {sentiment_records} sentiment records")
+                
             return {
                 "status": "success",
                 "items_processed": processed_count,
                 "sentiment_records": sentiment_records,
-                "symbols_processed": len(symbols),
+                "symbols_processed": len(stock_ids),
                 "hours_back": hours_back
             }
             

@@ -209,6 +209,11 @@ class LogEntry(BaseModel):
     function: Optional[str] = Field(None, description="Function that generated the log")
     line_number: Optional[int] = Field(None, description="Line number")
     extra_data: Optional[Dict[str, Any]] = Field(None, description="Additional log data")
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
 
 
 class LogFilters(BaseModel):

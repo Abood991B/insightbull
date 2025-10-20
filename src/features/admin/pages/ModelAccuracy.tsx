@@ -157,7 +157,7 @@ const ModelAccuracy = () => {
                 {viewType === 'latest' ? 'Latest Pipeline Performance' : 'Overall Performance'}
               </CardTitle>
               <CardDescription>
-                {modelData.evaluation_period} • Last evaluation: {new Date(modelData.last_evaluation).toLocaleString()}
+                {modelData.evaluation_period} | Last evaluation: {new Date(modelData.last_evaluation).toLocaleString()}
               </CardDescription>
             </CardHeader>
             <CardContent>

@@ -471,7 +471,7 @@ const StorageSettings = () => {
                                 <div>
                                   <div className="font-medium">{tableName}</div>
                                   <div className="text-sm text-gray-500">
-                                    {tableInfo.record_count.toLocaleString()} records • {tableInfo.columns.length} columns
+                                    {tableInfo.record_count.toLocaleString()} records | {tableInfo.columns.length} columns
                                   </div>
                                 </div>
                               </div>
@@ -525,7 +525,7 @@ const StorageSettings = () => {
                                         {tableInfo.foreign_keys.map((fk, index) => (
                                           <div key={index} className="text-sm p-2 bg-blue-50 rounded">
                                             <span className="font-medium">{fk.constrained_columns.join(', ')}</span>
-                                            <span className="text-gray-500"> → </span>
+                                            <span className="text-gray-500"> -> </span>
                                             <span>{fk.referred_table}.{fk.referred_columns.join(', ')}</span>
                                           </div>
                                         ))}

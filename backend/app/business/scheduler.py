@@ -51,7 +51,7 @@ class ScheduledJob:
     trigger_config: Dict[str, Any]
     parameters: Dict[str, Any]
     status: JobStatus = JobStatus.PENDING
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: __import__('app.utils.timezone', fromlist=['malaysia_now']).malaysia_now())
     last_run: Optional[datetime] = None
     next_run: Optional[datetime] = None
     run_count: int = 0
@@ -352,7 +352,7 @@ class Scheduler:
         job.last_run = datetime.utcnow()
         
         try:
-            self.logger.info(f"🚀 EXECUTING SCHEDULED JOB: Data Collection", 
+            self.logger.info(f"EXECUTING SCHEDULED JOB: Data Collection",
                            job_id=job_id, 
                            job_name=job.name,
                            symbols=job.parameters["symbols"][:5],  # Show first 5 symbols

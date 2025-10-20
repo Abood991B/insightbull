@@ -270,7 +270,8 @@ class MarketauxCollector(BaseCollector):
                     published_at.replace("Z", "+00:00")
                 )
             else:
-                timestamp = datetime.utcnow()
+                from app.utils.timezone import malaysia_now
+                timestamp = malaysia_now()
             
             return self._create_raw_data(
                 content_type=content_type,

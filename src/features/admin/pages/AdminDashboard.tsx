@@ -648,7 +648,16 @@ const AdminDashboard: React.FC = () => {
                     <span>Last Collection:</span>
                     <span className="font-medium text-sm">
                       {systemStatus?.metrics.last_collection ? 
-                        new Date(systemStatus.metrics.last_collection).toLocaleString() : 
+                        new Date(systemStatus.metrics.last_collection).toLocaleString('en-MY', {
+                          timeZone: 'Asia/Kuala_Lumpur',
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: true
+                        }) : 
                         'N/A'
                       }
                     </span>
@@ -657,7 +666,16 @@ const AdminDashboard: React.FC = () => {
                     <span>Last Price Update:</span>
                     <span className="font-medium text-sm">
                       {systemStatus?.metrics.last_price_update ? 
-                        new Date(systemStatus.metrics.last_price_update).toLocaleString() : 
+                        new Date(systemStatus.metrics.last_price_update).toLocaleString('en-MY', {
+                          timeZone: 'Asia/Kuala_Lumpur',
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: true
+                        }) : 
                         'N/A'
                       }
                     </span>
@@ -741,7 +759,16 @@ const AdminDashboard: React.FC = () => {
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Activity className="h-4 w-4" />
                 <span>
-                  Last data collection: {new Date(systemStatus.metrics.last_collection).toLocaleString()}
+                  Last data collection: {new Date(systemStatus.metrics.last_collection).toLocaleString('en-MY', {
+                    timeZone: 'Asia/Kuala_Lumpur',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                  })}
                 </span>
               </div>
             </CardContent>

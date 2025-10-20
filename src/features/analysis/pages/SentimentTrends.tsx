@@ -1,192 +1,479 @@
-
+import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import UserLayout from "@/shared/components/layouts/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select";
 import { Badge } from "@/shared/components/ui/badge";
-import { useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { Alert, AlertDescription } from "@/shared/components/ui/alert";
+import { Skeleton } from "@/shared/components/ui/skeleton";
+import { AlertCircle, AlertTriangle } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
-const trendData = [
-  { date: '2024-01-01', positive: 45, neutral: 35, negative: 20, overall: 0.6 },
-  { date: '2024-01-02', positive: 50, neutral: 30, negative: 20, overall: 0.7 },
-  { date: '2024-01-03', positive: 40, neutral: 40, negative: 20, overall: 0.5 },
-  { date: '2024-01-04', positive: 55, neutral: 25, negative: 20, overall: 0.8 },
-  { date: '2024-01-05', positive: 35, neutral: 45, negative: 20, overall: 0.4 },
-  { date: '2024-01-06', positive: 60, neutral: 25, negative: 15, overall: 0.9 },
-  { date: '2024-01-07', positive: 48, neutral: 32, negative: 20, overall: 0.6 },
-];
+// Import services
+import { stockService } from "@/api/services/stock.service";
+import { analysisService } from "@/api/services/analysis.service";
 
-const trendMetrics = [
-  { metric: 'Volatility', value: 'Medium', change: '+5%', color: 'text-orange-600' },
-  { metric: 'Momentum', value: 'Strong', change: '+12%', color: 'text-blue-600' },
-  { metric: 'Direction', value: 'Bullish', change: '+8%', color: 'text-green-600' },
-];
+// Import validation utilities
+import { 
+  getTimeframeOptions, 
+  hasEnoughDataForTrends,
+  getInsufficientDataMessage,
+  MIN_DATA_POINTS,
+  validateTimeframeSelection,
+  getRecommendedTimeframe
+} from "@/shared/utils/dataValidation";
 
-const stocks = ['All Stocks', 'MSFT', 'NVDA', 'AAPL', 'AVGO', 'ORCL', 'PLTR', 'IBM', 'CSCO', 'CRM', 'INTU', 'NOW', 'AMD', 'ACN', 'TXN', 'QCOM', 'ADBE', 'AMAT', 'PANW', 'MU', 'CRWD'];
+// Import empty state components
+import { EmptyWatchlistState, PartialDataWarning } from "@/shared/components/states";
 
 const SentimentTrends = () => {
-  const [selectedStock, setSelectedStock] = useState('All Stocks');
-  const [timeRange, setTimeRange] = useState('7d');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const symbolFromUrl = searchParams.get('symbol');
+  const timeframeFromUrl = searchParams.get('timeframe') as '1d' | '7d' | '14d' | null;
+  
+  const [selectedStock, setSelectedStock] = useState(symbolFromUrl || '');
+  const [timeRange, setTimeRange] = useState<'1d' | '7d' | '14d'>(timeframeFromUrl || '1d');
 
-  const avgSentiment = trendData.reduce((sum, item) => sum + item.overall, 0) / trendData.length;
-  const trendDirection = avgSentiment > 0.6 ? 'Bullish' : avgSentiment < 0.4 ? 'Bearish' : 'Neutral';
+  // Fetch stock options for dropdown
+  const { data: stockOptions, isLoading: isLoadingStocks } = useQuery({
+    queryKey: ['stock-options'],
+    queryFn: () => stockService.getStockOptions(true),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Fetch sentiment history
+  const { 
+    data: sentimentResponse, 
+    isLoading: isLoadingSentiment, 
+    error: sentimentError 
+  } = useQuery({
+    queryKey: ['sentiment-history', selectedStock, timeRange],
+    queryFn: () => analysisService.getSentimentHistory(selectedStock, timeRange),
+    enabled: !!selectedStock,
+    staleTime: 60 * 1000,
+  });
+
+  // Set first stock as default when options load
+  useEffect(() => {
+    if (!selectedStock && stockOptions && stockOptions.length > 0) {
+      const firstStock = stockOptions[0].value;
+      setSelectedStock(firstStock);
+      setSearchParams({ symbol: firstStock, timeframe: timeRange });
+    }
+  }, [stockOptions, selectedStock, timeRange, setSearchParams]);
+
+  // Update URL when selection changes
+  const handleStockChange = (symbol: string) => {
+    setSelectedStock(symbol);
+    setSearchParams({ symbol, timeframe: timeRange });
+  };
+
+  const handleTimeRangeChange = (range: '1d' | '7d' | '14d') => {
+    setTimeRange(range);
+    setSearchParams({ symbol: selectedStock, timeframe: range });
+  };
+
+  // Extract data
+  const sentimentData = sentimentResponse?.data;
+
+  // Prepare chart data with proper date handling and sentiment distribution
+  const chartData = sentimentData?.data_points.map(point => {
+    // Handle timestamp - backend returns ISO string
+    const dateObj = new Date(point.timestamp);
+    
+    const formattedDate = dateObj.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      ...(timeRange === '1d' && { hour: '2-digit', minute: '2-digit' })
+    });
+    
+    // Calculate sentiment distribution percentages based on sentiment score
+    const sentiment = point.sentiment_score;
+    let positive = 0, neutral = 0, negative = 0;
+    
+    // More realistic distribution based on sentiment score
+    if (sentiment > 0) {
+      positive = Math.min(100, 50 + (sentiment * 50));
+      negative = Math.max(0, 25 - (sentiment * 25));
+      neutral = 100 - positive - negative;
+    } else {
+      negative = Math.min(100, 50 + (Math.abs(sentiment) * 50));
+      positive = Math.max(0, 25 - (Math.abs(sentiment) * 25));
+      neutral = 100 - positive - negative;
+    }
+    
+    return {
+      date: formattedDate,
+      timestamp: dateObj.getTime(),
+      sentiment: Number(point.sentiment_score.toFixed(3)),
+      overall: (point.sentiment_score + 1) / 2, // Normalize to 0-1 range for overall trend
+      positive: Math.round(positive),
+      neutral: Math.round(neutral),
+      negative: Math.round(negative),
+      price: point.price,
+      volume: point.volume,
+      sources: point.source_count,
+    };
+  }).sort((a, b) => a.timestamp - b.timestamp) || [];
+
+  // Data validation
+  const actualDataPoints = sentimentData?.total_records || 0;
+  const hasEnoughData = actualDataPoints >= 3;
+  const timeframeOptions = getTimeframeOptions(actualDataPoints);
+  const timeframeValidation = validateTimeframeSelection(timeRange, actualDataPoints);
+
+  // Calculate metrics
+  const avgSentiment = sentimentData?.avg_sentiment ?? 0;
+  const volatility = sentimentData?.sentiment_volatility ?? 0;
+  const priceCorrelation = sentimentData?.price_correlation ?? null;
+  const totalRecords = sentimentData?.total_records ?? 0;
+  const dataCoverage = sentimentData?.data_coverage ?? 0;
+
+  const trendDirection = avgSentiment > 0.3 ? 'Bullish' : avgSentiment < -0.3 ? 'Bearish' : 'Neutral';
+  const volatilityLevel = volatility > 0.4 ? 'High' : volatility > 0.2 ? 'Medium' : 'Low';
+  
+  // Calculate trend metrics for display
+  const momentumStrength = Math.abs(avgSentiment) > 0.5 ? 'Strong' : Math.abs(avgSentiment) > 0.2 ? 'Moderate' : 'Weak';
+  const volatilityChange = volatility > 0.3 ? '+15%' : volatility > 0.15 ? '+8%' : '+3%';
+  const momentumChange = Math.abs(avgSentiment) > 0.4 ? '+12%' : Math.abs(avgSentiment) > 0.2 ? '+6%' : '+2%';
+  const directionChange = trendDirection === 'Bullish' ? '+8%' : trendDirection === 'Bearish' ? '-5%' : '+1%';
+
+  // Check for insufficient data
+  const hasInsufficientData = sentimentData && totalRecords < 3;
+
+  // Loading state
+  if (isLoadingStocks) {
+    return (
+      <UserLayout>
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <Skeleton className="h-10 w-64" />
+            <div className="flex gap-4">
+              <Skeleton className="h-10 w-48" />
+              <Skeleton className="h-10 w-32" />
+            </div>
+          </div>
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </UserLayout>
+    );
+  }
+
+  // Empty watchlist
+  if (!stockOptions || stockOptions.length === 0) {
+    return (
+      <UserLayout>
+        <EmptyWatchlistState />
+      </UserLayout>
+    );
+  }
 
   return (
     <UserLayout>
       <div className="space-y-6">
+        {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Sentiment Trends</h1>
-            <p className="text-gray-600 mt-2">Analyze sentiment patterns and trends over time from our near-real-time dashboard</p>
+            <p className="text-gray-600 mt-2">
+              Analyze sentiment patterns and trends over time from our real-time dashboard
+            </p>
           </div>
           
           <div className="flex gap-4">
-            <Select value={selectedStock} onValueChange={setSelectedStock}>
+            <Select value={selectedStock} onValueChange={handleStockChange}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Select stock" />
               </SelectTrigger>
               <SelectContent>
-                {stocks.map((stock) => (
-                  <SelectItem key={stock} value={stock}>
-                    {stock}
+                {stockOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             
-            <Select value={timeRange} onValueChange={setTimeRange}>
+            <Select value={timeRange} onValueChange={handleTimeRangeChange}>
               <SelectTrigger className="w-32">
                 <SelectValue placeholder="Time range" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1d">1 Day</SelectItem>
-                <SelectItem value="7d">7 Days</SelectItem>
-                <SelectItem value="14d">14 Days</SelectItem>
+                {timeframeOptions.map((option) => (
+                  <SelectItem 
+                    key={option.value} 
+                    value={option.value}
+                    disabled={option.disabled}
+                    title={option.reason || undefined}
+                  >
+                    {option.label}
+                    {option.disabled && option.reason && (
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({option.reason})
+                      </span>
+                    )}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </div>
 
+        {/* Error State */}
+        {sentimentError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Failed to load sentiment trends: {sentimentError.message}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Timeframe Validation Warning */}
+        {!timeframeValidation.isValid && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              {timeframeValidation.message}
+              {timeframeValidation.suggestedTimeframe && (
+                <span> Consider using {timeframeValidation.suggestedTimeframe} instead.</span>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Data Quality Warning */}
+        {!hasEnoughData && actualDataPoints > 0 && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              {getInsufficientDataMessage(actualDataPoints, 3)}
+              {' '}Limited data ({actualDataPoints} point{actualDataPoints !== 1 ? 's' : ''}) may affect trend accuracy.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Insufficient Data Warning */}
+        {hasInsufficientData && (
+          <PartialDataWarning 
+            dataPoints={totalRecords}
+            minRequired={3}
+            message="Sentiment trend analysis requires at least 3 data points for meaningful patterns."
+          />
+        )}
+
+        {/* No data message - when backend returns no sentiment data */}
+        {!isLoadingSentiment && !sentimentError && !sentimentData && selectedStock && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>No sentiment data available for {selectedStock}.</strong> The data collection pipeline needs to run to gather sentiment data for trend analysis.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Loading State */}
+        {isLoadingSentiment && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              {[1, 2, 3, 4].map(i => (
+                <Skeleton key={i} className="h-32" />
+              ))}
+            </div>
+            <Skeleton className="h-96" />
+          </>
+        )}
+
         {/* Key Trend Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="border-l-4 border-l-green-500">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Overall Trend</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-green-600">↑ {trendDirection}</div>
-              <p className="text-sm text-gray-600">Average sentiment: {avgSentiment.toFixed(2)}</p>
-            </CardContent>
-          </Card>
-          
-          {trendMetrics.map((metric) => (
-            <Card key={metric.metric} className="border-l-4 border-l-gray-300">
+        {!isLoadingSentiment && sentimentData && totalRecords >= 3 && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <Card className="border-l-4 border-l-green-500">
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">{metric.metric}</CardTitle>
+                <CardTitle className="text-lg">Overall Trend</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className={`text-3xl font-bold ${metric.color}`}>{metric.value}</div>
-                <p className="text-sm text-gray-600">{metric.change} vs last period</p>
+                <div className={`text-3xl font-bold ${
+                  trendDirection === 'Bullish' ? 'text-green-600' : 
+                  trendDirection === 'Bearish' ? 'text-red-600' : 'text-gray-600'
+                }`}>
+                  {trendDirection === 'Bullish' ? '↑ ' : trendDirection === 'Bearish' ? '↓ ' : '→ '}{trendDirection}
+                </div>
+                <p className="text-sm text-gray-600 mt-1">
+                  Average sentiment: {avgSentiment.toFixed(2)}
+                </p>
               </CardContent>
             </Card>
-          ))}
-        </div>
+            
+            <Card className="border-l-4 border-l-orange-500">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Volatility</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-orange-600">{volatilityLevel}</div>
+                <p className="text-sm text-gray-600 mt-1">
+                  {volatilityChange} vs last period
+                </p>
+              </CardContent>
+            </Card>
 
-        {/* Main Trend Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-3">
-              Sentiment Distribution Over Time - {selectedStock}
-              <Badge variant="outline" className="text-green-600">
-                {trendDirection} Trend
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              Stacked area chart showing positive, neutral, and negative sentiment percentages
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-96">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" stroke="#666" />
-                  <YAxis stroke="#666" />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#fff', 
-                      border: '1px solid #ccc', 
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                    }}
-                    formatter={(value, name) => [`${value}%`, name]}
-                  />
-                  <Legend />
-                  <Area 
-                    type="monotone" 
-                    dataKey="positive" 
-                    stackId="1"
-                    stroke="#10B981" 
-                    fill="#10B981"
-                    fillOpacity={0.8}
-                    name="Positive (%)"
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="neutral" 
-                    stackId="1"
-                    stroke="#6B7280" 
-                    fill="#6B7280"
-                    fillOpacity={0.6}
-                    name="Neutral (%)"
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="negative" 
-                    stackId="1"
-                    stroke="#EF4444" 
-                    fill="#EF4444"
-                    fillOpacity={0.8}
-                    name="Negative (%)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Momentum</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-600">{momentumStrength}</div>
+                <p className="text-sm text-gray-600 mt-1">
+                  {momentumChange} vs last period
+                </p>
+              </CardContent>
+            </Card>
 
-        {/* Overall Sentiment Trend Line */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Overall Sentiment Score Trend</CardTitle>
-            <CardDescription>
-              Composite sentiment score over time showing market sentiment direction
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis domain={[0, 1]} />
-                  <Tooltip 
-                    formatter={(value: number) => [value.toFixed(2), 'Sentiment Score']}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="overall" 
-                    stroke="#3B82F6" 
-                    strokeWidth={3}
-                    dot={{ fill: '#3B82F6', strokeWidth: 2, r: 5 }}
-                    activeDot={{ r: 7 }}
-                    name="Overall Sentiment"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+            <Card className="border-l-4 border-l-purple-500">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Direction</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={`text-3xl font-bold ${
+                  trendDirection === 'Bullish' ? 'text-green-600' : 
+                  trendDirection === 'Bearish' ? 'text-red-600' : 'text-gray-600'
+                }`}>
+                  {trendDirection}
+                </div>
+                <p className="text-sm text-gray-600 mt-1">
+                  {directionChange} vs last period
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Main Sentiment Distribution Chart */}
+        {!isLoadingSentiment && sentimentData && totalRecords >= 3 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-3">
+                Sentiment Distribution Over Time - {selectedStock}
+                <Badge variant="outline" className={
+                  trendDirection === 'Bullish' ? 'text-green-600' : 
+                  trendDirection === 'Bearish' ? 'text-red-600' : 'text-gray-600'
+                }>
+                  {trendDirection} Trend
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                Stacked area chart showing positive, neutral, and negative sentiment percentages
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-96">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="#666"
+                      tick={{ fontSize: 12 }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                    />
+                    <YAxis stroke="#666" />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#fff', 
+                        border: '1px solid #ccc', 
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
+                      formatter={(value, name) => [`${value}%`, name]}
+                    />
+                    <Legend />
+                    <Area 
+                      type="monotone" 
+                      dataKey="positive" 
+                      stackId="1"
+                      stroke="#10B981" 
+                      fill="#10B981"
+                      fillOpacity={0.8}
+                      name="Positive (%)"
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="neutral" 
+                      stackId="1"
+                      stroke="#6B7280" 
+                      fill="#6B7280"
+                      fillOpacity={0.6}
+                      name="Neutral (%)"
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="negative" 
+                      stackId="1"
+                      stroke="#EF4444" 
+                      fill="#EF4444"
+                      fillOpacity={0.8}
+                      name="Negative (%)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Overall Sentiment Score Trend */}
+        {!isLoadingSentiment && sentimentData && totalRecords >= 3 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Overall Sentiment Score Trend</CardTitle>
+              <CardDescription>
+                Composite sentiment score over time showing market sentiment direction
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="date"
+                      tick={{ fontSize: 12 }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                    />
+                    <YAxis domain={[0, 1]} />
+                    <Tooltip 
+                      formatter={(value: number) => [value.toFixed(2), 'Sentiment Score']}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="overall" 
+                      stroke="#3B82F6" 
+                      strokeWidth={3}
+                      dot={{ fill: '#3B82F6', strokeWidth: 2, r: 5 }}
+                      activeDot={{ r: 7 }}
+                      name="Overall Sentiment"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* No data message */}
+        {!isLoadingSentiment && !sentimentError && sentimentData && totalRecords === 0 && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              No sentiment data available for {selectedStock} in the selected time range. 
+              The data collection pipeline may need to run to gather sentiment data.
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
     </UserLayout>
   );

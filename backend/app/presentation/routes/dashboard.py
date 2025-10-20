@@ -5,7 +5,9 @@ Implements U-FR1: View Sentiment Dashboard
 Provides dashboard overview with key metrics, top stocks, and system status.
 """
 
+import logging
 from datetime import datetime, timedelta
+from app.utils.timezone import malaysia_now, malaysia_isoformat, utc_to_malaysia
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, desc
@@ -30,6 +32,7 @@ from app.data_access.repositories import (
 )
 from app.data_access.models import Stock, SentimentData, StockPrice
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
@@ -83,7 +86,7 @@ async def _get_market_sentiment_overview(
     """Calculate market-wide sentiment metrics"""
     
     # Get recent sentiment data (last 24 hours)
-    cutoff_time = datetime.utcnow() - timedelta(hours=24)
+    cutoff_time = malaysia_now() - timedelta(hours=24)
     
     # Calculate average sentiment across all stocks
     recent_sentiments = await sentiment_repo.get_recent_sentiment_scores(
@@ -100,11 +103,11 @@ async def _get_market_sentiment_overview(
             neutral_stocks=0,
             negative_stocks=0,
             total_stocks=total_stocks,
-            last_updated=datetime.utcnow()
+            last_updated=malaysia_now()
         )
     
     # Calculate sentiment distribution
-    sentiment_scores = [s.score for s in recent_sentiments]
+    sentiment_scores = [float(s.sentiment_score) for s in recent_sentiments]
     average_sentiment = sum(sentiment_scores) / len(sentiment_scores)
     
     # Count stocks by sentiment category
@@ -120,7 +123,7 @@ async def _get_market_sentiment_overview(
         neutral_stocks=neutral_count,
         negative_stocks=negative_count,
         total_stocks=total_stocks,
-        last_updated=datetime.utcnow()
+        last_updated=malaysia_now()
     )
 
 
@@ -130,39 +133,79 @@ async def _get_top_stocks_by_sentiment(
     price_repo: StockPriceRepository,
     limit: int = 10
 ) -> List[StockSummary]:
-    """Get top performing stocks by sentiment score"""
+    """
+    Get top performing stocks by sentiment score with real-time prices from Yahoo Finance.
+    
+    ⚠️ CRITICAL: Prices are fetched directly from Yahoo Finance for accuracy:
+    - current_price: Live market price or last closing price
+    - price_change_24h: Calculated from Yahoo Finance previous close vs current price
+    - Updates every 30 seconds during market hours
+    
+    Stock market hours: Monday-Friday 9:30 AM - 4:00 PM ET
+    After hours: Uses last available closing price
+    """
     
     stocks = await stock_repo.get_all()
     stock_summaries = []
+    
+    # Import Yahoo Finance service for fresh price data
+    import yfinance as yf
     
     for stock in stocks[:limit]:  # Limit processing for performance
         # Get latest sentiment
         latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
         
-        # Get latest price
-        latest_price_record = await price_repo.get_latest_price_for_stock(stock.symbol)
-        
-        # Calculate 24h price change
-        price_change_24h = None
+        # 🔴 FETCH FRESH PRICES DIRECTLY FROM YAHOO FINANCE FOR ACCURACY
         current_price = None
+        price_change_24h = None
         
-        if latest_price_record:
-            current_price = latest_price_record.close_price
-            yesterday_price = await price_repo.get_price_at_time(
-                stock.symbol,
-                datetime.utcnow() - timedelta(hours=24)
+        try:
+            # Fetch live data from Yahoo Finance
+            ticker = yf.Ticker(stock.symbol)
+            info = ticker.info
+            
+            # Get current/latest price (prioritizes live data, falls back to previous close)
+            current_price = (
+                info.get('currentPrice') or      # Live price if market is open
+                info.get('regularMarketPrice') or # Current/last trade price
+                info.get('previousClose')         # Last closing price as fallback
             )
-            if yesterday_price:
-                price_change_24h = ((current_price - yesterday_price.close_price) / yesterday_price.close_price) * 100
+            
+            if current_price:
+                current_price = float(current_price)
+                
+                # Calculate 24-hour change using Yahoo Finance data
+                previous_close = float(info.get('previousClose', current_price))
+                
+                if previous_close and previous_close > 0:
+                    price_change_24h = ((current_price - previous_close) / previous_close) * 100
+                    price_change_24h = round(price_change_24h, 2)
+                
+                logger.debug(f"{stock.symbol}: Current=${current_price:.2f}, Change={price_change_24h}%")
+        
+        except Exception as e:
+            logger.warning(f"Error fetching live price for {stock.symbol} from Yahoo Finance: {e}")
+            
+            # Fallback to database if Yahoo Finance fails
+            latest_price_record = await price_repo.get_latest_price_for_stock(stock.symbol)
+            if latest_price_record:
+                current_price = float(latest_price_record.close_price) if latest_price_record.close_price else None
+                yesterday_price = await price_repo.get_price_at_time(
+                    stock.symbol,
+                    malaysia_now() - timedelta(hours=24)
+                )
+                if yesterday_price and yesterday_price.close_price and current_price:
+                    price_change_24h = ((current_price - float(yesterday_price.close_price)) / float(yesterday_price.close_price)) * 100
+                    price_change_24h = round(price_change_24h, 2)
         
         stock_summaries.append(StockSummary(
             symbol=stock.symbol,
-            company_name=stock.company_name,
+            company_name=stock.name,  # Fixed: model uses 'name' not 'company_name'
             current_price=current_price,
-            price_change_24h=round(price_change_24h, 2) if price_change_24h else None,
-            sentiment_score=round(latest_sentiment.score, 3) if latest_sentiment else None,
-            sentiment_label=latest_sentiment.label if latest_sentiment else None,
-            last_updated=latest_sentiment.timestamp if latest_sentiment else None
+            price_change_24h=price_change_24h,
+            sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
+            sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
+            last_updated=latest_sentiment.created_at if latest_sentiment else None
         ))
     
     # Sort by sentiment score (descending)
@@ -177,42 +220,97 @@ async def _get_recent_price_movers(
     sentiment_repo: SentimentDataRepository,
     limit: int = 5
 ) -> List[StockSummary]:
-    """Get stocks with significant recent price movements"""
+    """
+    Get stocks with significant recent price movements from Yahoo Finance.
+    
+    ⚠️ CRITICAL: Prices are fetched directly from Yahoo Finance:
+    - Detects stocks with >2% price change in 24 hours
+    - Uses real-time prices vs previous close
+    - Accurate even outside market hours using last closing price
+    """
     
     stocks = await stock_repo.get_all()
     movers = []
     
+    import yfinance as yf
+    
     for stock in stocks:
-        # Get current and previous day prices
-        latest_price = await price_repo.get_latest_price_for_stock(stock.symbol)
-        if not latest_price:
-            continue
+        try:
+            # 🔴 FETCH FRESH PRICES DIRECTLY FROM YAHOO FINANCE
+            ticker = yf.Ticker(stock.symbol)
+            info = ticker.info
             
-        yesterday_price = await price_repo.get_price_at_time(
-            stock.symbol,
-            datetime.utcnow() - timedelta(hours=24)
-        )
+            # Get current price
+            current_price = (
+                info.get('currentPrice') or
+                info.get('regularMarketPrice') or
+                info.get('previousClose')
+            )
+            
+            if not current_price:
+                continue
+            
+            current_price = float(current_price)
+            previous_close = float(info.get('previousClose', current_price))
+            
+            # Calculate 24-hour change from previous close
+            if previous_close and previous_close > 0:
+                price_change = ((current_price - previous_close) / previous_close) * 100
+            else:
+                continue
+            
+            # Only include significant movers (>2% change)
+            if abs(price_change) > 2.0:
+                # Get latest sentiment
+                latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
+                
+                logger.debug(f"{stock.symbol}: MOVER! ${current_price:.2f} ({price_change:+.2f}%)")
+                
+                movers.append(StockSummary(
+                    symbol=stock.symbol,
+                    company_name=stock.name,
+                    current_price=current_price,
+                    price_change_24h=round(price_change, 2),
+                    sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
+                    sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
+                    last_updated=latest_sentiment.created_at if latest_sentiment else None
+                ))
         
-        if not yesterday_price:
-            continue
-            
-        # Calculate price change
-        price_change = ((latest_price.close_price - yesterday_price.close_price) / yesterday_price.close_price) * 100
-        
-        # Only include significant movers (>2% change)
-        if abs(price_change) > 2.0:
-            # Get latest sentiment
-            latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
-            
-            movers.append(StockSummary(
-                symbol=stock.symbol,
-                company_name=stock.company_name,
-                current_price=latest_price.close_price,
-                price_change_24h=round(price_change, 2),
-                sentiment_score=round(latest_sentiment.score, 3) if latest_sentiment else None,
-                sentiment_label=latest_sentiment.label if latest_sentiment else None,
-                last_updated=latest_price.timestamp
-            ))
+        except Exception as e:
+            logger.warning(f"Error fetching price mover data for {stock.symbol}: {e}")
+            # Fallback to database if Yahoo Finance fails
+            try:
+                latest_price = await price_repo.get_latest_price_for_stock(stock.symbol)
+                if not latest_price:
+                    continue
+                
+                yesterday_price = await price_repo.get_price_at_time(
+                    stock.symbol,
+                    malaysia_now() - timedelta(hours=24)
+                )
+                
+                if not yesterday_price:
+                    continue
+                
+                # Calculate price change from database
+                price_change = ((float(latest_price.close_price) - float(yesterday_price.close_price)) / float(yesterday_price.close_price)) * 100
+                
+                # Only include significant movers
+                if abs(price_change) > 2.0:
+                    latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
+                    
+                    movers.append(StockSummary(
+                        symbol=stock.symbol,
+                        company_name=stock.name,
+                        current_price=float(latest_price.close_price),
+                        price_change_24h=round(price_change, 2),
+                        sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
+                        sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
+                        last_updated=latest_price.timestamp
+                    ))
+            except Exception as db_e:
+                logger.error(f"Database fallback failed for {stock.symbol}: {db_e}")
+                continue
     
     # Sort by absolute price change (descending)
     movers.sort(key=lambda x: abs(x.price_change_24h or 0), reverse=True)
@@ -228,11 +326,21 @@ async def _get_system_status(
     
     # Get last collection time
     latest_sentiment = await sentiment_repo.get_latest_sentiment()
-    last_collection = latest_sentiment.timestamp if latest_sentiment else None
+    last_collection = latest_sentiment.created_at if latest_sentiment else None
     
     # Determine pipeline status
     if last_collection:
-        hours_since_update = (datetime.utcnow() - last_collection).total_seconds() / 3600
+        # Use Malaysia timezone for comparison
+        now_malaysia = malaysia_now()
+        # Convert last_collection to Malaysia timezone if needed
+        if last_collection.tzinfo is None:
+            # Assume naive datetime is UTC, convert to Malaysia
+            last_collection = utc_to_malaysia(last_collection)
+        elif last_collection.tzinfo != malaysia_now().tzinfo:
+            # Convert to Malaysia timezone
+            last_collection = last_collection.astimezone(malaysia_now().tzinfo)
+        
+        hours_since_update = (now_malaysia - last_collection).total_seconds() / 3600
         if hours_since_update < 2:
             pipeline_status = "operational"
         elif hours_since_update < 6:
@@ -245,8 +353,8 @@ async def _get_system_status(
     # Get total sentiment records count
     total_records = await sentiment_repo.get_total_count()
     
-    # Active data sources
-    active_sources = ["reddit", "news"]
+    # Active data sources - all 4 sources
+    active_sources = ["Reddit", "NewsAPI", "FinHub", "Marketaux"]
     
     return SystemStatus(
         pipeline_status=pipeline_status,
