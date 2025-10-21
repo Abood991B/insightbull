@@ -50,6 +50,8 @@ from app.service.system_service import SystemService
 from app.infrastructure.log_system import get_logger
 from app.presentation.controllers.oauth_controller import router as oauth_router
 
+
+
 logger = get_logger()
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -72,14 +74,14 @@ async def trigger_manual_collection(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Trigger manual data collection for specified symbols.
-    Implements manual pipeline execution for admin users.
+    Trigger manual FULL PIPELINE execution for specified symbols.
+    This runs: Collection → Preprocessing → Sentiment Analysis → Storage
     """
     try:
         from app.business.pipeline import DataPipeline, PipelineConfig, DateRange
         from datetime import datetime, timedelta
         
-        logger.info("Admin triggering manual data collection", admin_user=current_admin.email)
+        logger.info("Admin triggering manual FULL PIPELINE execution", admin_user=current_admin.email)
         
         # Get symbols from request or use dynamic active watchlist
         if request_data and request_data.get("symbols"):
@@ -98,39 +100,74 @@ async def trigger_manual_collection(
             if not symbols:
                 symbols = ["AAPL", "GOOGL", "MSFT"]  # final fallback only if DB empty
         
-        # Create pipeline config
+        # Create pipeline config for FULL PIPELINE execution
         config = PipelineConfig(
             symbols=symbols,
             date_range=DateRange(
                 start_date=datetime.now() - timedelta(days=1),
                 end_date=datetime.now()
             ),
-            max_items_per_symbol=10,
+            max_items_per_symbol=5,  # Smaller batch for testing
             include_reddit=True,
             include_finnhub=True,
             include_newsapi=True,
-            include_marketaux=True
+            include_marketaux=True,
+            parallel_collectors=True
         )
         
-        # Execute pipeline
+        # Execute COMPLETE pipeline (Collection → Processing → Sentiment → Storage)
         pipeline = DataPipeline()
         result = await pipeline.run_pipeline(config)
         
-        return {
-            "status": "success",
-            "message": "Manual data collection completed",
-            "result": {
-                "total_items_analyzed": result.total_items_analyzed,
-                "total_items_stored": result.total_items_stored,
-                "execution_time": result.execution_time
-            }
+        # Build comprehensive response
+        response = {
+            "status": "success" if result.status.value == "completed" else "partial",
+            "message": f"Full pipeline execution completed for {len(symbols)} symbols",
+            "pipeline_id": result.pipeline_id,
+            "execution_summary": {
+                "symbols_processed": len(symbols),
+                "data_collection": {
+                    "total_items_collected": result.total_items_collected,
+                    "collectors_used": len(result.collector_stats),
+                    "successful_collectors": len([s for s in result.collector_stats if s.success])
+                },
+                "text_processing": {
+                    "items_processed": result.total_items_processed,
+                    "processing_success_rate": f"{(result.total_items_processed / result.total_items_collected * 100):.1f}%" if result.total_items_collected > 0 else "0%"
+                },
+                "sentiment_analysis": {
+                    "items_analyzed": result.total_items_analyzed,
+                    "analysis_success_rate": f"{(result.total_items_analyzed / result.total_items_processed * 100):.1f}%" if result.total_items_processed > 0 else "0%"
+                },
+                "data_storage": {
+                    "items_stored": result.total_items_stored or 0,
+                    "storage_success_rate": f"{((result.total_items_stored or 0) / result.total_items_analyzed * 100):.1f}%" if result.total_items_analyzed > 0 else "0%"
+                }
+            },
+            "execution_time_seconds": result.execution_time,
+            "timestamp": datetime.utcnow().isoformat()
         }
         
+        # Add warning if pipeline didn't complete successfully
+        if result.status.value != "completed":
+            response["warning"] = f"Pipeline status: {result.status.value}"
+            if result.error_message:
+                response["error_details"] = result.error_message
+        
+        logger.info(f"Full pipeline execution completed", 
+                   pipeline_id=result.pipeline_id,
+                   collected=result.total_items_collected,
+                   processed=result.total_items_processed,
+                   analyzed=result.total_items_analyzed,
+                   stored=result.total_items_stored)
+        
+        return response
+        
     except Exception as e:
-        logger.error("Error during manual data collection", error=str(e))
+        logger.error("Error during manual full pipeline execution", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to execute manual data collection"
+            detail=f"Failed to execute full pipeline: {str(e)}"
         )
 
 
@@ -779,6 +816,203 @@ async def get_system_status(
         )
 
 
+@router.get("/system/health-alerts")
+async def get_system_health_alerts(
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get system health alerts for proactive monitoring.
+    
+    Returns critical issues, warnings, and informational alerts.
+    """
+    try:
+        logger.info("Admin requesting system health alerts", admin_user=current_admin.email)
+        
+        from app.data_access.models import SystemLog, StockPrice, SentimentData
+        from sqlalchemy import select, func, desc, and_
+        from datetime import datetime, timedelta
+        import os
+        
+        alerts = {
+            "critical": [],
+            "warnings": [],
+            "info": []
+        }
+        
+        # Check for critical issues
+        now = datetime.utcnow()
+        one_hour_ago = now - timedelta(hours=1)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+        
+        # 1. Check for recent critical errors in logs
+        critical_errors = await db.execute(
+            select(func.count()).select_from(SystemLog)
+            .where(and_(
+                SystemLog.level == 'ERROR',
+                SystemLog.timestamp >= one_hour_ago
+            ))
+        )
+        critical_error_count = critical_errors.scalar()
+        
+        if critical_error_count > 5:
+            alerts["critical"].append({
+                "id": "high_error_rate",
+                "title": "High Error Rate Detected",
+                "message": f"{critical_error_count} errors in the last hour",
+                "timestamp": now.isoformat(),
+                "action": "View Logs",
+                "action_url": "/admin/logs?level=ERROR"
+            })
+        
+        # 2. Check database connectivity
+        try:
+            await db.execute(select(func.count()).select_from(SystemLog).limit(1))
+        except Exception:
+            alerts["critical"].append({
+                "id": "database_connection",
+                "title": "Database Connection Issue",
+                "message": "Unable to connect to the database",
+                "timestamp": now.isoformat(),
+                "action": "Check Database",
+                "action_url": "/admin/storage"
+            })
+        
+        # 3. Check for stale data (no data collection in 24 hours)
+        latest_sentiment = await db.execute(
+            select(SentimentData.created_at)
+            .order_by(desc(SentimentData.created_at))
+            .limit(1)
+        )
+        latest_sentiment_record = latest_sentiment.scalar()
+        
+        if not latest_sentiment_record or latest_sentiment_record < twenty_four_hours_ago:
+            alerts["warnings"].append({
+                "id": "stale_sentiment_data",
+                "title": "No Recent Data Collection",
+                "message": "No sentiment data collected in the last 24 hours",
+                "timestamp": now.isoformat(),
+                "action": "Run Pipeline",
+                "action_url": "/admin/dashboard"
+            })
+        
+        # 4. Check price service status
+        from app.service.price_service import price_service
+        if not price_service.is_running:
+            alerts["warnings"].append({
+                "id": "price_service_stopped",
+                "title": "Real-time Price Service Stopped",
+                "message": "Price updates are not running",
+                "timestamp": now.isoformat(),
+                "action": "Start Service",
+                "action_url": "/admin/dashboard"
+            })
+        
+        # 5. Check API rate limits
+        try:
+            service_status = price_service.get_service_status()
+            rate_usage = (service_status.get("rate_limiting", {}).get("current_hour_count", 0) / 
+                         service_status.get("rate_limiting", {}).get("requests_per_hour", 1000)) * 100
+            
+            if rate_usage > 80:
+                alerts["warnings"].append({
+                    "id": "api_rate_limit",
+                    "title": "API Rate Limit Warning",
+                    "message": f"Using {rate_usage:.1f}% of hourly rate limit",
+                    "timestamp": now.isoformat(),
+                    "action": "View Config",
+                    "action_url": "/admin/config"
+                })
+        except Exception:
+            pass
+        
+        # 6. Check disk space
+        try:
+            db_file_path = "./data/insight_stock.db"
+            if os.path.exists(db_file_path):
+                file_size_gb = os.path.getsize(db_file_path) / (1024 ** 3)
+                max_size_gb = 5.0  # 5GB limit
+                usage_percentage = (file_size_gb / max_size_gb) * 100
+                
+                if usage_percentage > 90:
+                    alerts["critical"].append({
+                        "id": "disk_space_critical",
+                        "title": "Disk Space Critical",
+                        "message": f"Database using {usage_percentage:.1f}% of allocated space",
+                        "timestamp": now.isoformat(),
+                        "action": "Manage Storage",
+                        "action_url": "/admin/storage"
+                    })
+                elif usage_percentage > 75:
+                    alerts["warnings"].append({
+                        "id": "disk_space_warning",
+                        "title": "Disk Space Warning",
+                        "message": f"Database using {usage_percentage:.1f}% of allocated space",
+                        "timestamp": now.isoformat(),
+                        "action": "Manage Storage",
+                        "action_url": "/admin/storage"
+                    })
+        except Exception:
+            pass
+        
+        # 7. Add informational alerts for successful operations
+        recent_successful_logs = await db.execute(
+            select(func.count()).select_from(SystemLog)
+            .where(and_(
+                SystemLog.level == 'INFO',
+                SystemLog.message.like('%pipeline%completed%'),
+                SystemLog.timestamp >= twenty_four_hours_ago
+            ))
+        )
+        successful_pipelines = recent_successful_logs.scalar()
+        
+        if successful_pipelines > 0:
+            alerts["info"].append({
+                "id": "successful_pipelines",
+                "title": "Pipeline Operations",
+                "message": f"{successful_pipelines} successful pipeline runs in 24h",
+                "timestamp": now.isoformat(),
+                "action": "View Details",
+                "action_url": "/admin/logs"
+            })
+        
+        # 8. Check for recent price updates
+        latest_price = await db.execute(
+            select(StockPrice.timestamp)
+            .order_by(desc(StockPrice.timestamp))
+            .limit(1)
+        )
+        latest_price_record = latest_price.scalar()
+        
+        if latest_price_record and latest_price_record >= one_hour_ago:
+            alerts["info"].append({
+                "id": "recent_price_updates",
+                "title": "Price Data Current",
+                "message": "Real-time price updates are working",
+                "timestamp": now.isoformat(),
+                "action": "View Prices",
+                "action_url": "/admin/dashboard"
+            })
+        
+        return {
+            "alerts": alerts,
+            "summary": {
+                "critical_count": len(alerts["critical"]),
+                "warning_count": len(alerts["warnings"]),
+                "info_count": len(alerts["info"]),
+                "total_alerts": len(alerts["critical"]) + len(alerts["warnings"]) + len(alerts["info"])
+            },
+            "last_updated": now.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving system health alerts", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve system health alerts"
+        )
+
+
 @router.post("/data-collection/trigger")
 async def trigger_manual_collection(
     stock_symbols: Optional[List[str]] = None,
@@ -1283,6 +1517,88 @@ async def test_price_fetch(
         )
 
 
+@router.get("/realtime-price-service/debug")
+async def debug_price_service(
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Get detailed debug information about the price service.
+    """
+    try:
+        logger.info("Admin requesting price service debug info", admin_user=current_admin.email)
+        
+        from app.service.price_service import price_service
+        from app.data_access.models import StocksWatchlist, StockPrice
+        from sqlalchemy import select, func, desc
+        
+        # Get service status
+        service_status = price_service.get_service_status()
+        
+        # Get watchlist stocks
+        watchlist_result = await db.execute(
+            select(StocksWatchlist).where(StocksWatchlist.is_active == True)
+        )
+        watchlist_stocks = watchlist_result.scalars().all()
+        
+        # Get latest price records
+        latest_prices_result = await db.execute(
+            select(StockPrice.symbol, StockPrice.price, StockPrice.timestamp)
+            .order_by(StockPrice.timestamp.desc())
+            .limit(10)
+        )
+        latest_prices = latest_prices_result.all()
+        
+        # Get total price records count
+        total_prices_result = await db.execute(select(func.count()).select_from(StockPrice))
+        total_price_records = total_prices_result.scalar()
+        
+        # Check market hours
+        is_market_open = price_service.is_market_hours()
+        
+        # Test a single stock price fetch
+        test_symbol = "AAPL"
+        test_price_data = None
+        try:
+            test_price_data = await price_service.fetch_single_stock_price(test_symbol)
+        except Exception as e:
+            test_price_data = {"error": str(e)}
+        
+        return {
+            "service_status": service_status,
+            "market_status": {
+                "is_open": is_market_open,
+                "current_time_et": datetime.now().isoformat()
+            },
+            "watchlist": {
+                "total_stocks": len(watchlist_stocks),
+                "symbols": [stock.symbol for stock in watchlist_stocks]
+            },
+            "database": {
+                "total_price_records": total_price_records,
+                "latest_prices": [
+                    {
+                        "symbol": p.symbol,
+                        "price": float(p.price),
+                        "timestamp": p.timestamp.isoformat()
+                    }
+                    for p in latest_prices
+                ]
+            },
+            "test_fetch": {
+                "symbol": test_symbol,
+                "result": test_price_data
+            }
+        }
+        
+    except Exception as e:
+        logger.error("Error getting price service debug info", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get debug information"
+        )
+
+
 # ============================================================================
 # DATABASE INSPECTION
 # ============================================================================
@@ -1587,6 +1903,9 @@ async def get_database_statistics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve database statistics"
         )
+
+
+
 
 
 # Database cleanup utilities removed - using unified Stock table structure

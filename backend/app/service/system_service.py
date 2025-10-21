@@ -164,7 +164,16 @@ class SystemService:
                 self.logger.warning(f"Data collection health check: {e}")
                 services["data_collection"] = "unhealthy"
             
-            # Redis removed - not used in this system
+            # Real-time price service health
+            try:
+                from app.service.price_service import price_service
+                if price_service.is_running:
+                    services["real_time_prices"] = "healthy"
+                else:
+                    services["real_time_prices"] = "stopped"
+            except Exception as e:
+                self.logger.warning(f"Price service health check: {e}")
+                services["real_time_prices"] = "unhealthy"
             
         except Exception as e:
             self.logger.error("Error checking service health", error=str(e))
@@ -178,7 +187,16 @@ class SystemService:
             # Calculate basic uptime since service start
             current_time = time.time()
             uptime_seconds = int(current_time - SYSTEM_START_TIME)
-            uptime_hours = uptime_seconds // 3600
+            uptime_minutes = uptime_seconds // 60
+            uptime_hours = uptime_minutes // 60
+            
+            # Format uptime string
+            if uptime_hours > 0:
+                uptime_display = f"{uptime_hours} hour{'s' if uptime_hours != 1 else ''}"
+                if uptime_minutes % 60 > 0:
+                    uptime_display += f" {uptime_minutes % 60} min"
+            else:
+                uptime_display = f"{uptime_minutes} minute{'s' if uptime_minutes != 1 else ''}"
             
             # Basic system info without external dependencies
             system_info = {
@@ -206,9 +224,36 @@ class SystemService:
             # Counting all three would be double-counting the same data
             total_records = db_metrics.get("total_sentiment_data", 0)
             
+            # Get last collection and price update times for top-level display
+            from app.utils.timezone import utc_to_malaysia
+            
+            last_sentiment = await self.db.scalar(
+                select(func.max(SentimentData.created_at)).select_from(SentimentData)
+            )
+            
+            from app.data_access.models import StockPrice
+            last_price = await self.db.scalar(
+                select(func.max(StockPrice.timestamp)).select_from(StockPrice)
+            )
+            
+            # Convert to Malaysia timezone for display
+            last_collection_display = utc_to_malaysia(last_sentiment).isoformat() if last_sentiment else None
+            last_price_update_display = utc_to_malaysia(last_price).isoformat() if last_price else None
+            
+            # Get rate limiting information
+            rate_limit_info = {}
+            try:
+                from app.business.pipeline import DataPipeline
+                pipeline = DataPipeline()
+                if hasattr(pipeline, 'rate_limiter'):
+                    rate_limit_info = pipeline.rate_limiter.get_all_status()
+            except Exception as e:
+                self.logger.warning(f"Could not get rate limit info: {e}")
+                rate_limit_info = {"error": "Rate limiter not available"}
+            
             # Flatten important metrics to top level for frontend compatibility
             return {
-                "uptime": f"{uptime_hours} hours",
+                "uptime": uptime_display,
                 "uptime_seconds": uptime_seconds,
                 "active_stocks": int(active_stocks_count or 0),
                 "total_records": total_records,
@@ -217,12 +262,14 @@ class SystemService:
                 "news_articles": db_metrics.get("news_articles", 0),
                 "reddit_posts": db_metrics.get("reddit_posts", 0),
                 "price_records": db_metrics.get("price_records", 0),
-                "last_collection": db_metrics.get("last_collection"),
-                "last_price_update": db_metrics.get("last_price_update"),
-                # Keep nested structure for detailed info
+                "price_updates": db_metrics.get("price_records", 0),  # Add price_updates field for frontend compatibility
+                "last_collection": last_collection_display,
+                "last_price_update": last_price_update_display,
+                # Keep nested structure for detailed info (without duplicating last_collection/last_price_update)
                 "system": system_info,
                 "database": db_metrics,
-                "processing": processing_metrics
+                "processing": processing_metrics,
+                "rate_limiting": rate_limit_info
             }
             
         except Exception as e:
@@ -260,8 +307,7 @@ class SystemService:
             price_count = await self.db.scalar(select(func.count()).select_from(StockPrice))
             
             # Get last collection and price update times
-            import pytz
-            malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
+            from app.utils.timezone import utc_to_malaysia
             
             last_sentiment = await self.db.scalar(
                 select(func.max(SentimentData.created_at)).select_from(SentimentData)
@@ -270,11 +316,11 @@ class SystemService:
                 select(func.max(StockPrice.timestamp)).select_from(StockPrice)
             )
             
-            # Mark timestamps with Malaysian timezone if they're naive
-            if last_sentiment and last_sentiment.tzinfo is None:
-                last_sentiment = malaysia_tz.localize(last_sentiment)
-            if last_price and last_price.tzinfo is None:
-                last_price = malaysia_tz.localize(last_price)
+            # Convert UTC timestamps to Malaysia timezone for display
+            if last_sentiment:
+                last_sentiment = utc_to_malaysia(last_sentiment)
+            if last_price:
+                last_price = utc_to_malaysia(last_price)
             
             # Get recent activity (last 24 hours)
             yesterday = datetime.utcnow() - timedelta(days=1)
@@ -301,8 +347,8 @@ class SystemService:
                 "news_articles": int(news_count or 0),
                 "reddit_posts": int(reddit_count or 0),
                 "price_records": int(price_count or 0),
-                "last_collection": last_sentiment.isoformat() if last_sentiment else None,
-                "last_price_update": last_price.isoformat() if last_price else None,
+                # Note: last_collection and last_price_update are returned at top level in _get_system_metrics
+                # Removed from here to avoid duplication in frontend display
                 "recent_activity": {
                     "sentiment_last_24h": int(recent_sentiment or 0),
                     "news_last_24h": int(recent_news or 0)
@@ -334,8 +380,8 @@ class SystemService:
             )
             
             return {
-                "last_sentiment_processing": last_sentiment.isoformat() if last_sentiment else None,
-                "last_news_update": last_news.isoformat() if last_news else None,
+                # Note: last_sentiment_processing removed - already available as last_collection at top level
+                # Note: last_news_update removed - redundant with last_collection
                 "processing_rate_24h": {
                     "sentiment_analyses": int(sentiment_rate or 0),
                     "avg_per_hour": round((sentiment_rate or 0) / 24, 1)

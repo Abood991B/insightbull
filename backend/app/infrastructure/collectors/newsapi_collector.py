@@ -92,7 +92,12 @@ class NewsAPICollector(BaseCollector):
     
     def _get_http_client(self) -> httpx.AsyncClient:
         """Get a fresh HTTP client for each request"""
-        return httpx.AsyncClient(timeout=30.0)
+        return httpx.AsyncClient(
+            timeout=30.0,
+            headers={
+                "User-Agent": "InsightStockDash/1.0 (Financial News Collector)"
+            }
+        )
     
     async def validate_connection(self) -> bool:
         """Validate NewsAPI connection"""

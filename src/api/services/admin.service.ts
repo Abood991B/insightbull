@@ -41,6 +41,30 @@ export interface SystemStatus {
   timestamp: string;
 }
 
+export interface SystemHealthAlert {
+  id: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  action: string;
+  action_url: string;
+}
+
+export interface SystemHealthAlerts {
+  alerts: {
+    critical: SystemHealthAlert[];
+    warnings: SystemHealthAlert[];
+    info: SystemHealthAlert[];
+  };
+  summary: {
+    critical_count: number;
+    warning_count: number;
+    info_count: number;
+    total_alerts: number;
+  };
+  last_updated: string;
+}
+
 export interface ModelAccuracy {
   overall_accuracy: number;
   model_metrics: {
@@ -161,11 +185,33 @@ export interface ManualCollectionRequest {
 }
 
 export interface ManualCollectionResponse {
-  job_id: string;
-  status: 'initiated' | 'running' | 'completed' | 'failed';
-  estimated_completion: string;
-  symbols_targeted: string[];
+  status: 'success' | 'partial' | 'failed';
   message: string;
+  pipeline_id: string;
+  execution_summary?: {
+    symbols_processed: number;
+    data_collection: {
+      total_items_collected: number;
+      collectors_used: number;
+      successful_collectors: number;
+    };
+    text_processing: {
+      items_processed: number;
+      processing_success_rate: string;
+    };
+    sentiment_analysis: {
+      items_analyzed: number;
+      analysis_success_rate: string;
+    };
+    data_storage: {
+      items_stored: number;
+      storage_success_rate: string;
+    };
+  };
+  execution_time_seconds: number;
+  timestamp: string;
+  warning?: string;
+  error_details?: string;
 }
 
 export interface ScheduledJob {
@@ -361,6 +407,13 @@ class AdminAPIService {
   
   async getSystemStatus(): Promise<SystemStatus> {
     const response = await fetch(`${API_BASE_URL}/api/admin/system/status`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async getSystemHealthAlerts(): Promise<SystemHealthAlerts> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/system/health-alerts`, {
       headers: getAuthHeaders(),
     });
     return handleApiResponse(response);

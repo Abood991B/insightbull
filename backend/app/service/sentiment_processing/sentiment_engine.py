@@ -43,7 +43,7 @@ class EngineConfig:
     """Configuration for the sentiment analysis engine."""
     enable_vader: bool = True
     enable_finbert: bool = True
-    use_enhanced_vader: bool = True  # Use enhanced VADER by default
+    use_enhanced_vader: bool = False  # Use standard VADER by default
     finbert_use_gpu: bool = True
     max_concurrent_batches: int = 3
     default_batch_size: int = 32

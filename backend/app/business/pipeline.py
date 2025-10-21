@@ -44,6 +44,8 @@ from ..data_access.database.connection import get_db_session
 from ..data_access.models import StocksWatchlist, SentimentData
 from sqlalchemy import select, func
 # WebSocket imports removed - using direct database storage
+# Timezone utilities
+from ..utils.timezone import malaysia_now
 
 # Initialize logger using singleton LogSystem
 logger = get_logger()
@@ -206,6 +208,7 @@ class DataPipeline:
         sentiment_config = EngineConfig(
             enable_vader=True,
             enable_finbert=True,
+            use_enhanced_vader=False,  # Use standard VADER
             finbert_use_gpu=True,  # Will auto-detect if GPU is available
             max_concurrent_batches=2,  # Conservative for stability
             default_batch_size=16,
@@ -1147,34 +1150,75 @@ class DataPipeline:
                                 session.add(news_article)
                                 
                             elif source_name.lower() == 'reddit':
-                                # Check for duplicate reddit_id before storing
-                                reddit_id = getattr(raw_data, 'post_id', '') or getattr(raw_data, 'reddit_id', '')
-                                if reddit_id:
-                                    from sqlalchemy import select
-                                    existing_post = await session.execute(
-                                        select(RedditPost).where(RedditPost.reddit_id == reddit_id)
+                                # Extract reddit_id from metadata (where Reddit collector stores it)
+                                metadata = getattr(raw_data, 'metadata', {}) or {}
+                                
+                                # Try multiple sources for reddit_id
+                                reddit_id = (
+                                    getattr(raw_data, 'post_id', '') or 
+                                    getattr(raw_data, 'reddit_id', '') or
+                                    metadata.get('post_id', '') or
+                                    metadata.get('reddit_id', '')
+                                )
+                                
+                                # Extract URL and use it as fallback identifier
+                                url = getattr(raw_data, 'url', '')
+                                
+                                # Skip if both reddit_id and URL are empty (prevents UNIQUE constraint failures)
+                                if not reddit_id and not url:
+                                    self.logger.warning(
+                                        f"Skipping Reddit post with no ID or URL",
+                                        extra={"source": source_name, "correlation_id": correlation_id}
                                     )
-                                    if existing_post.scalar_one_or_none():
-                                        continue  # Skip duplicate
+                                    continue
+                                
+                                # If no reddit_id, extract from URL (e.g., https://reddit.com/r/stocks/comments/abc123/...)
+                                if not reddit_id and url:
+                                    import re
+                                    match = re.search(r'/comments/([a-z0-9]+)/', url)
+                                    if match:
+                                        reddit_id = match.group(1)
+                                    else:
+                                        # Use URL hash as last resort
+                                        import hashlib
+                                        reddit_id = hashlib.md5(url.encode()).hexdigest()[:16]
+                                
+                                from sqlalchemy import select
+                                existing_post = await session.execute(
+                                    select(RedditPost).where(RedditPost.reddit_id == reddit_id)
+                                )
+                                if existing_post.scalar_one_or_none():
+                                    continue  # Skip duplicate
                                 
                                 # Store as Reddit post
-                                created_utc = getattr(raw_data, 'created_utc', None)
+                                created_utc = getattr(raw_data, 'timestamp', None)
                                 if created_utc is None:
-                                    created_utc = datetime.now()  # Default to current time
+                                    created_utc = malaysia_now()  # Use Malaysia timezone
+                                
+                                # Extract metadata fields
+                                subreddit = metadata.get('subreddit', '')
+                                author = metadata.get('author', '')
+                                score = metadata.get('score', 0)
+                                num_comments = metadata.get('num_comments', 0)
+                                
+                                # Extract title from text (first line) if not in metadata
+                                text_lines = raw_data.text.split('\n', 1)
+                                title = text_lines[0] if text_lines else ''
+                                content = text_lines[1] if len(text_lines) > 1 else raw_data.text
                                 
                                 reddit_post = RedditPost(
                                     stock_id=stock.id,
                                     reddit_id=reddit_id,
-                                    title=getattr(raw_data, 'title', '')[:500],  # Limit title length
-                                    content=getattr(raw_data, 'content', '')[:10000],  # Limit content length
-                                    url=getattr(raw_data, 'url', ''),
-                                    subreddit=getattr(raw_data, 'subreddit', ''),
-                                    author=getattr(raw_data, 'author', ''),
-                                    score=getattr(raw_data, 'score', 0),
-                                    num_comments=getattr(raw_data, 'num_comments', 0),
+                                    title=title[:500],  # Limit title length
+                                    content=content[:10000],  # Limit content length
+                                    url=url,
+                                    subreddit=subreddit,
+                                    author=author,
+                                    score=score,
+                                    num_comments=num_comments,
                                     created_utc=created_utc,
                                     # Store mentioned symbols if present
-                                    stock_mentions=getattr(raw_data, 'stock_mentions', None)
+                                    stock_mentions=metadata.get('all_symbols', None)
                                 )
                                 session.add(reddit_post)
                             

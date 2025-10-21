@@ -1,39 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../../../shared/components/layouts';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../shared/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../shared/components/ui/card';
 import { Button } from '../../../shared/components/ui/button';
 import { Badge } from '../../../shared/components/ui/badge';
 import { Alert, AlertDescription } from '../../../shared/components/ui/alert';
 import { useToast } from '../../../shared/hooks/use-toast';
-import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus } from '../../../api/services/admin.service';
-import { 
-  Activity, 
-  Database, 
-  Server, 
-  AlertTriangle, 
-  CheckCircle, 
+import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus, SystemHealthAlerts } from '../../../api/services/admin.service';
+import {
+  Activity,
+  Database,
+  Server,
+  AlertTriangle,
+  CheckCircle,
   XCircle,
   TrendingUp,
-  Users,
   RefreshCw,
   Play,
   Settings,
-  FileText,
   BarChart3,
-  Zap
+  Zap,
+  Shield,
+  Bell,
+  Info,
+  Clock
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   // State management
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [modelAccuracy, setModelAccuracy] = useState<ModelAccuracy | null>(null);
   const [priceServiceStatus, setPriceServiceStatus] = useState<RealTimePriceServiceStatus | null>(null);
+  const [healthAlerts, setHealthAlerts] = useState<SystemHealthAlerts | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);  
+  const [refreshing, setRefreshing] = useState(false);
   const [collectingData, setCollectingData] = useState(false);
   const [priceServiceLoading, setPriceServiceLoading] = useState(false);
 
@@ -41,25 +44,39 @@ const AdminDashboard: React.FC = () => {
   const loadDashboardData = async (showRefreshToast = false) => {
     try {
       setRefreshing(true);
-      
-      // Load system status, model accuracy, and price service status in parallel
+
+      // Load all dashboard data in parallel
       const [statusResponse, accuracyResponse, priceServiceResponse] = await Promise.all([
         adminAPI.getSystemStatus(),
         adminAPI.getModelAccuracy(),
         adminAPI.getRealTimePriceServiceStatus()
       ]);
-      
+
       setSystemStatus(statusResponse);
       setModelAccuracy(accuracyResponse);
       setPriceServiceStatus(priceServiceResponse);
-      
+
+      // Try to load health alerts separately (optional)
+      try {
+        const healthAlertsResponse = await adminAPI.getSystemHealthAlerts();
+        setHealthAlerts(healthAlertsResponse);
+      } catch (error) {
+        console.warn('Health alerts endpoint not available:', error);
+        // Set a default empty state
+        setHealthAlerts({
+          alerts: { critical: [], warnings: [], info: [] },
+          summary: { critical_count: 0, warning_count: 0, info_count: 0, total_alerts: 0 },
+          last_updated: new Date().toISOString()
+        });
+      }
+
       if (showRefreshToast) {
         toast({
           title: "Dashboard Updated",
           description: "System status and metrics have been refreshed.",
         });
       }
-      
+
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       toast({
@@ -73,28 +90,42 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Manual data collection
+  // Manual full pipeline execution
   const triggerDataCollection = async () => {
     try {
       setCollectingData(true);
-      
-      await adminAPI.triggerManualCollection();
-      
-      toast({
-        title: "Data Collection Started",
-        description: "Manual data collection has been triggered successfully.",
-      });
-      
+
+      const result = await adminAPI.triggerManualCollection();
+
+      if (result.status === 'success') {
+        toast({
+          title: "Full Pipeline Completed",
+          description: `Successfully processed ${result.execution_summary?.data_collection?.total_items_collected || 0} items through complete pipeline (collection → processing → sentiment → storage)`,
+        });
+      } else if (result.status === 'partial') {
+        toast({
+          title: "Pipeline Completed with Issues",
+          description: result.message || "Pipeline completed but some steps may have had issues.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Pipeline Failed",
+          description: result.message || "Pipeline execution failed.",
+          variant: "destructive",
+        });
+      }
+
       // Refresh dashboard after a delay to show updated metrics
       setTimeout(() => {
         loadDashboardData();
-      }, 2000);
-      
+      }, 3000);
+
     } catch (error) {
-      console.error('Failed to trigger data collection:', error);
+      console.error('Failed to trigger full pipeline:', error);
       toast({
-        title: "Error",
-        description: "Failed to trigger data collection. Please try again.",
+        title: "Pipeline Error",
+        description: "Failed to execute full pipeline. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -106,7 +137,7 @@ const AdminDashboard: React.FC = () => {
   const handlePriceServiceControl = async (action: 'start' | 'stop') => {
     try {
       setPriceServiceLoading(true);
-      
+
       if (action === 'start') {
         await adminAPI.startRealTimePriceService();
         toast({
@@ -116,11 +147,11 @@ const AdminDashboard: React.FC = () => {
       } else {
         await adminAPI.stopRealTimePriceService();
         toast({
-          title: "Price Service Stopped", 
+          title: "Price Service Stopped",
           description: "Real-time price service has been stopped successfully.",
         });
       }
-      
+
       // Refresh price service status
       setTimeout(async () => {
         try {
@@ -130,7 +161,7 @@ const AdminDashboard: React.FC = () => {
           console.error('Failed to refresh price service status:', error);
         }
       }, 1000);
-      
+
     } catch (error) {
       console.error(`Failed to ${action} price service:`, error);
       toast({
@@ -146,9 +177,9 @@ const AdminDashboard: React.FC = () => {
   const testPriceFetch = async () => {
     try {
       setPriceServiceLoading(true);
-      
+
       const response = await adminAPI.testPriceFetch();
-      
+
       if (response.success) {
         toast({
           title: "Price Fetch Test Successful",
@@ -161,7 +192,7 @@ const AdminDashboard: React.FC = () => {
           variant: "destructive",
         });
       }
-      
+
     } catch (error) {
       console.error('Failed to test price fetch:', error);
       toast({
@@ -246,17 +277,17 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="space-y-8">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-            <p className="text-gray-600 mt-2">Monitor system health and manage operations</p>
+            <h1 className="text-3xl font-bold text-gray-900">System Control Center</h1>
+            <p className="text-gray-600 mt-2">Comprehensive monitoring and management dashboard</p>
           </div>
-          
+
           <div className="flex gap-3">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => loadDashboardData(true)}
               disabled={refreshing}
               className="flex items-center gap-2"
@@ -264,34 +295,24 @@ const AdminDashboard: React.FC = () => {
               <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </Button>
-            
-            <Button 
+
+            <Button
               onClick={triggerDataCollection}
               disabled={collectingData}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
             >
               <Play className="h-4 w-4" />
-              {collectingData ? 'Running Pipeline...' : 'Run Pipeline'}
+              {collectingData ? 'Running Pipeline...' : 'Execute Pipeline'}
             </Button>
           </div>
         </div>
 
-        {/* System Status Alert */}
-        {systemStatus && systemStatus.status !== 'operational' && systemStatus.status !== 'online' && (
-          <Alert>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              System is currently {systemStatus.status}. Some features may be limited.
-            </AlertDescription>
-          </Alert>
-        )}
-
         {/* System Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-          <Card>
+          <Card className="border-l-4 border-l-blue-500">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">System Status</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+              <Shield className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
@@ -304,13 +325,13 @@ const AdminDashboard: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-l-4 border-l-green-500">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Stocks</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-bold text-green-600">
                 {systemStatus?.metrics.active_stocks || 0}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -319,461 +340,659 @@ const AdminDashboard: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-l-4 border-l-purple-500">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Real-Time Prices</CardTitle>
-              <Zap className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Live Updates</CardTitle>
+              <Zap className="h-4 w-4 text-purple-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-bold text-purple-600">
                 {systemStatus?.metrics.price_updates || 0}
               </div>
               <p className="text-xs text-muted-foreground">
-                Live price updates
+                Real-time price feeds
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-l-4 border-l-orange-500">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Records</CardTitle>
-              <Database className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Data Records</CardTitle>
+              <Database className="h-4 w-4 text-orange-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-bold text-orange-600">
                 {systemStatus?.metrics.total_records?.toLocaleString() || 0}
               </div>
               <p className="text-xs text-muted-foreground">
-                Data points collected
+                Total data points
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-l-4 border-l-indigo-500">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Model Accuracy</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Sentiment Accuracy</CardTitle>
+              <BarChart3 className="h-4 w-4 text-indigo-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-2xl font-bold text-indigo-600">
                 {modelAccuracy ? `${(modelAccuracy.overall_accuracy * 100).toFixed(1)}%` : 'N/A'}
               </div>
               <p className="text-xs text-muted-foreground">
-                Overall performance
+                VADER + FinBERT models
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Services Status */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Services Status</CardTitle>
-            <CardDescription>Current status of system components</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              {systemStatus?.services && Object.entries(systemStatus.services).map(([service, status]) => (
-                <div key={service} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center gap-2">
-                    {service === 'database' && <Database className="h-4 w-4" />}
-                    {service === 'sentiment_engine' && <BarChart3 className="h-4 w-4" />}
-                    {service === 'data_collection' && <Zap className="h-4 w-4" />}
-                    {service === 'real_time_prices' && <TrendingUp className="h-4 w-4" />}
-                    {service === 'scheduler' && <Activity className="h-4 w-4" />}
-                    <span className="capitalize font-medium">
-                      {service === 'sentiment_engine' ? 'Sentiment Engine' :
-                       service === 'data_collection' ? 'Data Collection' :
-                       service === 'real_time_prices' ? 'Real-Time Prices' :
-                       service}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(status)}
-                    {getStatusBadge(status)}
-                  </div>
+        {/* System Health Alerts */}
+        <Card className="border-2 border-gray-200 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Bell className="h-5 w-5 text-blue-600" />
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Real-time Price Service Control */}
-        {priceServiceStatus && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Real-time Price Service Control
-              </CardTitle>
-              <CardDescription>Manage the background stock price fetching service</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <h4 className="font-medium mb-3">Service Status</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span>Status:</span>
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(priceServiceStatus.service_status.is_running ? 'running' : 'stopped')}
-                        <span className={`font-medium ${priceServiceStatus.service_status.is_running ? 'text-green-600' : 'text-red-600'}`}>
-                          {priceServiceStatus.service_status.is_running ? 'Running' : 'Stopped'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Update Interval:</span>
-                      <span className="font-medium">{priceServiceStatus.service_status.update_interval}s</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Market Status:</span>
-                      <span className={`font-medium capitalize ${priceServiceStatus.service_status.current_market_status === 'open' ? 'text-green-600' : 'text-red-600'}`}>
-                        {priceServiceStatus.service_status.current_market_status}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Active Stocks:</span>
-                      <span className="font-medium">{priceServiceStatus.service_status.active_stocks_count}</span>
-                    </div>
-                    {priceServiceStatus.service_status.next_market_open && (
-                      <div className="flex justify-between">
-                        <span>Next Market Open:</span>
-                        <span className="font-medium text-sm">
-                          {new Date(priceServiceStatus.service_status.next_market_open).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium mb-3">Rate Limiting</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span>Requests/Hour Limit:</span>
-                      <span className="font-medium">{priceServiceStatus.service_status.rate_limiting.requests_per_hour}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Current Hour Count:</span>
-                      <span className="font-medium">{priceServiceStatus.service_status.rate_limiting.current_hour_count}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Usage:</span>
-                      <span className="font-medium">
-                        {Math.round((priceServiceStatus.service_status.rate_limiting.current_hour_count / priceServiceStatus.service_status.rate_limiting.requests_per_hour) * 100)}%
-                      </span>
-                    </div>
-                    {priceServiceStatus.service_status.last_request_time && (
-                      <div className="flex justify-between">
-                        <span>Last Request:</span>
-                        <span className="font-medium text-sm">
-                          {new Date(priceServiceStatus.service_status.last_request_time).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900">System Health Alerts</h3>
+                  <p className="text-sm text-gray-600">Proactive monitoring and issue detection</p>
                 </div>
               </div>
-              
-              <div className="mt-6 pt-4 border-t">
-                <div className="flex gap-3 flex-wrap">
-                  {priceServiceStatus.service_status.is_running ? (
-                    <Button
-                      variant="outline"
-                      onClick={() => handlePriceServiceControl('stop')}
-                      disabled={priceServiceLoading}
-                      className="flex items-center gap-2"
-                    >
+              <div className="flex items-center gap-2">
+                {healthAlerts && (
+                  <div className="flex gap-2">
+                    {healthAlerts.summary.critical_count > 0 && (
+                      <Badge className="bg-red-100 text-red-800 border-red-200">
+                        {healthAlerts.summary.critical_count} Critical
+                      </Badge>
+                    )}
+                    {healthAlerts.summary.warning_count > 0 && (
+                      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
+                        {healthAlerts.summary.warning_count} Warnings
+                      </Badge>
+                    )}
+                    {healthAlerts.summary.info_count > 0 && (
+                      <Badge className="bg-blue-100 text-blue-800 border-blue-200">
+                        {healthAlerts.summary.info_count} Info
+                      </Badge>
+                    )}
+                  </div>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadDashboardData(true)}
+                  disabled={refreshing}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            {healthAlerts ? (
+              <div className="space-y-6">
+                {/* Critical Alerts */}
+                {healthAlerts.alerts.critical.length > 0 && (
+                  <div>
+                    <h4 className="flex items-center gap-2 text-sm font-semibold text-red-700 mb-3">
                       <XCircle className="h-4 w-4" />
-                      {priceServiceLoading ? 'Stopping...' : 'Stop Service'}
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={() => handlePriceServiceControl('start')}
-                      disabled={priceServiceLoading}
-                      className="flex items-center gap-2"
-                    >
-                      <Play className="h-4 w-4" />
-                      {priceServiceLoading ? 'Starting...' : 'Start Service'}
-                    </Button>
-                  )}
-                  
-                  <Button
-                    variant="outline"
-                    onClick={testPriceFetch}
-                    disabled={priceServiceLoading}
-                    className="flex items-center gap-2"
-                  >
-                    <Zap className="h-4 w-4" />
-                    {priceServiceLoading ? 'Testing...' : 'Test Price Fetch'}
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate('/admin/scheduler')}
-                    className="flex items-center gap-2"
-                  >
-                    <Settings className="h-4 w-4" />
-                    Scheduler Manager
-                  </Button>
+                      Critical Issues ({healthAlerts.alerts.critical.length})
+                    </h4>
+                    <div className="space-y-3">
+                      {healthAlerts.alerts.critical.map((alert) => (
+                        <div key={alert.id} className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <AlertTriangle className="h-4 w-4 text-red-600" />
+                            <h5 className="font-medium text-red-900">{alert.title}</h5>
+                          </div>
+                          <p className="text-sm text-red-700 mb-2">{alert.message}</p>
+                          <div className="flex items-center gap-2 text-xs text-red-600">
+                            <Clock className="h-3 w-3" />
+                            {new Date(alert.timestamp).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Warning Alerts */}
+                {healthAlerts.alerts.warnings.length > 0 && (
+                  <div>
+                    <h4 className="flex items-center gap-2 text-sm font-semibold text-yellow-700 mb-3">
+                      <AlertTriangle className="h-4 w-4" />
+                      Warnings ({healthAlerts.alerts.warnings.length})
+                    </h4>
+                    <div className="space-y-3">
+                      {healthAlerts.alerts.warnings.map((alert) => (
+                        <div key={alert.id} className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                            <h5 className="font-medium text-yellow-900">{alert.title}</h5>
+                          </div>
+                          <p className="text-sm text-yellow-700 mb-2">{alert.message}</p>
+                          <div className="flex items-center gap-2 text-xs text-yellow-600">
+                            <Clock className="h-3 w-3" />
+                            {new Date(alert.timestamp).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Info Alerts */}
+                {healthAlerts.alerts.info.length > 0 && (
+                  <div>
+                    <h4 className="flex items-center gap-2 text-sm font-semibold text-blue-700 mb-3">
+                      <Info className="h-4 w-4" />
+                      Information ({healthAlerts.alerts.info.length})
+                    </h4>
+                    <div className="space-y-3">
+                      {healthAlerts.alerts.info.map((alert) => (
+                        <div key={alert.id} className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <CheckCircle className="h-4 w-4 text-blue-600" />
+                            <h5 className="font-medium text-blue-900">{alert.title}</h5>
+                          </div>
+                          <p className="text-sm text-blue-700 mb-2">{alert.message}</p>
+                          <div className="flex items-center gap-2 text-xs text-blue-600">
+                            <Clock className="h-3 w-3" />
+                            {new Date(alert.timestamp).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* No Alerts */}
+                {healthAlerts.summary.total_alerts === 0 && (
+                  <div className="text-center py-8">
+                    <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">All Systems Operational</h4>
+                    <p className="text-gray-600">No issues detected. System is running smoothly.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-1/4 mx-auto mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-1/2 mx-auto"></div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </CardContent>
+        </Card>
 
-        {/* Model Performance */}
-        {modelAccuracy && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Model Performance</CardTitle>
-              <CardDescription>
-                Last evaluation: {new Date(modelAccuracy.last_evaluation).toLocaleString()}
-              </CardDescription>
+        {/* Enhanced Services Status & Control */}
+        <Card className="border-2 border-gray-200 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-gray-50 to-slate-50 border-b">
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-100 rounded-lg">
+                  <Server className="h-5 w-5 text-gray-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Services Management</h3>
+                  <p className="text-sm text-gray-600">Monitor and control system components</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadDashboardData(true)}
+                  disabled={refreshing}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 space-y-6">
+            {/* Services Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {systemStatus?.services && Object.entries(systemStatus.services).map(([service, status]) => {
+                const getServiceDetails = (serviceName: string) => {
+                  switch (serviceName) {
+                    case 'database':
+                      return {
+                        icon: <Database className="h-6 w-6" />,
+                        name: 'Database Engine',
+                        description: 'SQLite database with optimized queries and indexing',
+                        color: status === 'healthy' ? 'text-green-600' : 'text-red-600',
+                        bgColor: status === 'healthy' ? 'bg-green-50' : 'bg-red-50',
+                        borderColor: status === 'healthy' ? 'border-green-200' : 'border-red-200',
+                        accentColor: 'bg-green-500'
+                      };
+                    case 'sentiment_engine':
+                      return {
+                        icon: <BarChart3 className="h-6 w-6" />,
+                        name: 'Sentiment Analysis Engine',
+                        description: 'VADER & FinBERT models with ensemble prediction',
+                        color: status === 'healthy' ? 'text-blue-600' : 'text-yellow-600',
+                        bgColor: status === 'healthy' ? 'bg-blue-50' : 'bg-yellow-50',
+                        borderColor: status === 'healthy' ? 'border-blue-200' : 'border-yellow-200',
+                        accentColor: 'bg-blue-500'
+                      };
+                    case 'data_collection':
+                      return {
+                        icon: <Zap className="h-6 w-6" />,
+                        name: 'Data Collection Hub',
+                        description: 'Multi-source aggregation: Reddit, News, Financial APIs',
+                        color: status === 'healthy' ? 'text-purple-600' : 'text-red-600',
+                        bgColor: status === 'healthy' ? 'bg-purple-50' : 'bg-red-50',
+                        borderColor: status === 'healthy' ? 'border-purple-200' : 'border-red-200',
+                        accentColor: 'bg-purple-500'
+                      };
+                    case 'real_time_prices':
+                      return {
+                        icon: <TrendingUp className="h-6 w-6" />,
+                        name: 'Live Price Feed',
+                        description: 'Real-time market data with intelligent rate limiting',
+                        color: priceServiceStatus?.service_status?.is_running ? 'text-emerald-600' : 'text-gray-600',
+                        bgColor: priceServiceStatus?.service_status?.is_running ? 'bg-emerald-50' : 'bg-gray-50',
+                        borderColor: priceServiceStatus?.service_status?.is_running ? 'border-emerald-200' : 'border-gray-200',
+                        accentColor: 'bg-emerald-500'
+                      };
+                    default:
+                      return {
+                        icon: <Activity className="h-6 w-6" />,
+                        name: service.charAt(0).toUpperCase() + service.slice(1),
+                        description: 'System service component',
+                        color: status === 'healthy' ? 'text-green-600' : 'text-red-600',
+                        bgColor: status === 'healthy' ? 'bg-green-50' : 'bg-red-50',
+                        borderColor: status === 'healthy' ? 'border-green-200' : 'border-red-200',
+                        accentColor: 'bg-gray-500'
+                      };
+                  }
+                };
+
+                const serviceDetails = getServiceDetails(service);
+
+                return (
+                  <div
+                    key={service}
+                    className={`relative p-6 border-2 rounded-xl hover:shadow-xl transition-all duration-300 ${serviceDetails.bgColor} ${serviceDetails.borderColor} group`}
+                  >
+                    {/* Accent Bar */}
+                    <div className={`absolute top-0 left-0 w-full h-1 ${serviceDetails.accentColor} rounded-t-lg`}></div>
+
+                    {/* Service Header */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-4">
+                        <div className={`p-3 rounded-xl bg-white shadow-md group-hover:shadow-lg transition-shadow ${serviceDetails.color}`}>
+                          {serviceDetails.icon}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-lg text-gray-900">{serviceDetails.name}</h3>
+                          <p className="text-sm text-gray-600 mt-1 leading-relaxed">{serviceDetails.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        {getStatusIcon(status)}
+                        {getStatusBadge(status)}
+                      </div>
+                    </div>
+
+                    {/* Service Metrics */}
+                    <div className="bg-white rounded-xl p-5 shadow-md border border-gray-100">
+                      {service === 'real_time_prices' && priceServiceStatus && (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Status:</span>
+                              <span className={`font-medium ${priceServiceStatus.service_status.is_running ? 'text-green-600' : 'text-red-600'}`}>
+                                {priceServiceStatus.service_status.is_running ? 'Running' : 'Stopped'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Market:</span>
+                              <span className={`font-medium capitalize ${priceServiceStatus.service_status.current_market_status === 'open' ? 'text-green-600' : 'text-red-600'}`}>
+                                {priceServiceStatus.service_status.current_market_status}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Interval:</span>
+                              <span className="font-medium">{priceServiceStatus.service_status.update_interval}s</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Rate Usage:</span>
+                              <span className="font-medium">
+                                {Math.round((priceServiceStatus.service_status.rate_limiting.current_hour_count / priceServiceStatus.service_status.rate_limiting.requests_per_hour) * 100)}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {priceServiceStatus.service_status.next_market_open && (
+                            <div className="pt-2 border-t">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">Next Market Open:</span>
+                                <span className="font-medium text-blue-600">
+                                  {new Date(priceServiceStatus.service_status.next_market_open).toLocaleString('en-MY', {
+                                    timeZone: 'Asia/Kuala_Lumpur',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Price Service Controls */}
+                          <div className="flex gap-3 pt-4 border-t border-gray-200">
+                            {priceServiceStatus.service_status.is_running ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handlePriceServiceControl('stop')}
+                                disabled={priceServiceLoading}
+                                className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50 hover:border-red-400 transition-colors"
+                              >
+                                <XCircle className="h-4 w-4" />
+                                {priceServiceLoading ? 'Stopping...' : 'Stop Service'}
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                onClick={() => handlePriceServiceControl('start')}
+                                disabled={priceServiceLoading}
+                                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-md"
+                              >
+                                <Play className="h-4 w-4" />
+                                {priceServiceLoading ? 'Starting...' : 'Start Service'}
+                              </Button>
+                            )}
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={testPriceFetch}
+                              disabled={priceServiceLoading}
+                              className="flex items-center gap-2 border-gray-300 hover:bg-gray-50"
+                            >
+                              <Zap className="h-4 w-4" />
+                              Test Fetch
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {service === 'data_collection' && (
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">API Keys:</span>
+                            <span className="font-medium text-green-600">Configured</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Last Collection:</span>
+                            <span className="font-medium">
+                              {systemStatus?.metrics.last_collection ?
+                                new Date(systemStatus.metrics.last_collection).toLocaleString('en-MY', {
+                                  timeZone: 'Asia/Kuala_Lumpur',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                }) :
+                                'Never'
+                              }
+                            </span>
+                          </div>
+
+                        </div>
+                      )}
+
+                      {service === 'database' && (
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Total Records:</span>
+                            <span className="font-medium text-blue-600">{systemStatus?.metrics.total_records?.toLocaleString() || 0}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Active Stocks:</span>
+                            <span className="font-medium text-green-600">{systemStatus?.metrics.active_stocks || 0}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Price Records:</span>
+                            <span className="font-medium text-purple-600">{systemStatus?.metrics.price_records?.toLocaleString() || 0}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {service === 'sentiment_engine' && modelAccuracy && (
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Overall Accuracy:</span>
+                            <span className="font-medium text-blue-600">{(modelAccuracy.overall_accuracy * 100).toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">VADER Model:</span>
+                            <span className="font-medium text-orange-600">{(modelAccuracy.model_metrics.vader_sentiment.accuracy * 100).toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">FinBERT Model:</span>
+                            <span className="font-medium text-green-600">{(modelAccuracy.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Global Actions */}
+            <div className="flex justify-center pt-6 border-t border-gray-200">
+              <div className="flex gap-4">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate('/admin/scheduler')}
+                  className="flex items-center gap-2 px-6 py-2 border-gray-300 hover:bg-gray-50"
+                >
+                  <Settings className="h-4 w-4" />
+                  Scheduler Manager
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate('/admin/logs')}
+                  className="flex items-center gap-2 px-6 py-2 border-gray-300 hover:bg-gray-50"
+                >
+                  <Activity className="h-4 w-4" />
+                  System Logs
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate('/admin/storage')}
+                  className="flex items-center gap-2 px-6 py-2 border-gray-300 hover:bg-gray-50"
+                >
+                  <Database className="h-4 w-4" />
+                  Storage Manager
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+
+
+        {/* Analytics & Performance Overview */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Sentiment Analysis Overview */}
+          <Card className="border-2 border-gray-200 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b">
+              <CardTitle className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <BarChart3 className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Sentiment Analytics</h3>
+                  <p className="text-sm text-gray-600">AI-powered sentiment distribution</p>
+                </div>
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <CardContent className="p-6">
+              <div className="space-y-6">
                 <div>
-                  <h4 className="font-medium mb-3">VADER Sentiment</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span>Accuracy:</span>
-                      <span className="font-medium">{(modelAccuracy.model_metrics.vader_sentiment.accuracy * 100).toFixed(1)}%</span>
+                  <h4 className="font-semibold mb-4 text-gray-800">Current Distribution</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+                      <span className="flex items-center gap-3">
+                        <div className="w-4 h-4 bg-green-500 rounded-full shadow-sm"></div>
+                        <span className="font-medium text-green-800">Positive Sentiment</span>
+                      </span>
+                      <span className="font-bold text-green-700 text-lg">{systemStatus?.metrics.sentiment_breakdown?.positive || 0}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Precision:</span>
-                      <span className="font-medium">{(modelAccuracy.model_metrics.vader_sentiment.precision * 100).toFixed(1)}%</span>
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <span className="flex items-center gap-3">
+                        <div className="w-4 h-4 bg-gray-500 rounded-full shadow-sm"></div>
+                        <span className="font-medium text-gray-800">Neutral Sentiment</span>
+                      </span>
+                      <span className="font-bold text-gray-700 text-lg">{systemStatus?.metrics.sentiment_breakdown?.neutral || 0}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Recall:</span>
-                      <span className="font-medium">{(modelAccuracy.model_metrics.vader_sentiment.recall * 100).toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>F1 Score:</span>
-                      <span className="font-medium">{(modelAccuracy.model_metrics.vader_sentiment.f1_score * 100).toFixed(1)}%</span>
+                    <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
+                      <span className="flex items-center gap-3">
+                        <div className="w-4 h-4 bg-red-500 rounded-full shadow-sm"></div>
+                        <span className="font-medium text-red-800">Negative Sentiment</span>
+                      </span>
+                      <span className="font-bold text-red-700 text-lg">{systemStatus?.metrics.sentiment_breakdown?.negative || 0}</span>
                     </div>
                   </div>
                 </div>
-                
-                <div>
-                  <h4 className="font-medium mb-3">FinBERT Sentiment</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span>Accuracy:</span>
-                      <span className="font-medium">{(modelAccuracy.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%</span>
+
+                <div className="pt-4 border-t border-gray-200">
+                  <h4 className="font-semibold mb-3 text-gray-800">Model Performance</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {modelAccuracy ? `${(modelAccuracy.model_metrics.vader_sentiment.accuracy * 100).toFixed(1)}%` : 'N/A'}
+                      </div>
+                      <div className="text-sm text-blue-700 font-medium">VADER</div>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Precision:</span>
-                      <span className="font-medium">{(modelAccuracy.model_metrics.finbert_sentiment.precision * 100).toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Recall:</span>
-                      <span className="font-medium">{(modelAccuracy.model_metrics.finbert_sentiment.recall * 100).toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>F1 Score:</span>
-                      <span className="font-medium">{(modelAccuracy.model_metrics.finbert_sentiment.f1_score * 100).toFixed(1)}%</span>
+                    <div className="text-center p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                      <div className="text-2xl font-bold text-indigo-600">
+                        {modelAccuracy ? `${(modelAccuracy.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%` : 'N/A'}
+                      </div>
+                      <div className="text-sm text-indigo-700 font-medium">FinBERT</div>
                     </div>
                   </div>
                 </div>
-              </div>
-              
-              <div className="mt-4 pt-4 border-t">
-                <p className="text-sm text-gray-600">
-                  Evaluated on {modelAccuracy.evaluation_samples.toLocaleString()} samples
-                </p>
               </div>
             </CardContent>
           </Card>
-        )}
 
-        {/* Sentiment Analysis Overview */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Sentiment Analysis Overview</CardTitle>
-            <CardDescription>Latest sentiment distribution and data storage metrics</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <h4 className="font-medium mb-3">Sentiment Distribution</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                      Positive:
-                    </span>
-                    <span className="font-medium">{systemStatus?.metrics.sentiment_breakdown?.positive || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
-                      Neutral:
-                    </span>
-                    <span className="font-medium">{systemStatus?.metrics.sentiment_breakdown?.neutral || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                      Negative:
-                    </span>
-                    <span className="font-medium">{systemStatus?.metrics.sentiment_breakdown?.negative || 0}</span>
+          {/* Data Storage & Activity */}
+          <Card className="border-2 border-gray-200 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
+              <CardTitle className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Database className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Data Storage</h3>
+                  <p className="text-sm text-gray-600">Storage metrics and recent activity</p>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="space-y-6">
+                <div>
+                  <h4 className="font-semibold mb-4 text-gray-800">Storage Breakdown</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200">
+                      <span className="font-medium text-purple-800">News Articles</span>
+                      <span className="font-bold text-purple-700 text-lg">{systemStatus?.metrics.news_articles?.toLocaleString() || 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
+                      <span className="font-medium text-orange-800">Reddit Posts</span>
+                      <span className="font-bold text-orange-700 text-lg">{systemStatus?.metrics.reddit_posts?.toLocaleString() || 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-teal-50 rounded-lg border border-teal-200">
+                      <span className="font-medium text-teal-800">Price Records</span>
+                      <span className="font-bold text-teal-700 text-lg">{systemStatus?.metrics.price_records?.toLocaleString() || 0}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              
-              <div>
-                <h4 className="font-medium mb-3">Data Storage</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span>News Articles:</span>
-                    <span className="font-medium">{systemStatus?.metrics.news_articles || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Reddit Posts:</span>
-                    <span className="font-medium">{systemStatus?.metrics.reddit_posts || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Price Records:</span>
-                    <span className="font-medium">{systemStatus?.metrics.price_records || 0}</span>
+
+                <div className="pt-4 border-t border-gray-200">
+                  <h4 className="font-semibold mb-3 text-gray-800">Recent Activity</h4>
+                  <div className="space-y-3">
+                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-600">Last Data Collection</span>
+                        <Clock className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <div className="text-sm font-semibold text-gray-800">
+                        {systemStatus?.metrics.last_collection ?
+                          new Date(systemStatus.metrics.last_collection).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                          }) :
+                          'No recent activity'
+                        }
+                      </div>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-600">Last Price Update</span>
+                        <TrendingUp className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <div className="text-sm font-semibold text-gray-800">
+                        {systemStatus?.metrics.last_price_update ?
+                          new Date(systemStatus.metrics.last_price_update).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                          }) :
+                          'No recent updates'
+                        }
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-              
-              <div>
-                <h4 className="font-medium mb-3">Recent Activity</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span>Last Collection:</span>
-                    <span className="font-medium text-sm">
-                      {systemStatus?.metrics.last_collection ? 
-                        new Date(systemStatus.metrics.last_collection).toLocaleString('en-MY', {
-                          timeZone: 'Asia/Kuala_Lumpur',
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                          hour12: true
-                        }) : 
-                        'N/A'
-                      }
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Last Price Update:</span>
-                    <span className="font-medium text-sm">
-                      {systemStatus?.metrics.last_price_update ? 
-                        new Date(systemStatus.metrics.last_price_update).toLocaleString('en-MY', {
-                          timeZone: 'Asia/Kuala_Lumpur',
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                          hour12: true
-                        }) : 
-                        'N/A'
-                      }
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Quick Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Navigate to management pages</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Button 
-                variant="outline" 
-                className="h-20 flex flex-col gap-2"
-                onClick={() => navigate('/admin/system-logs')}
-              >
-                <FileText className="h-6 w-6" />
-                <span>System Logs</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="h-20 flex flex-col gap-2"
-                onClick={() => navigate('/admin/model-accuracy')}
-              >
-                <BarChart3 className="h-6 w-6" />
-                <span>Model Accuracy</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="h-20 flex flex-col gap-2"
-                onClick={() => navigate('/admin/api-config')}
-              >
-                <Settings className="h-6 w-6" />
-                <span>API Configuration</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="h-20 flex flex-col gap-2"
-                onClick={() => navigate('/admin/watchlist')}
-              >
-                <Users className="h-6 w-6" />
-                <span>Watchlist Manager</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="h-20 flex flex-col gap-2"
-                onClick={() => navigate('/admin/storage')}
-              >
-                <Database className="h-6 w-6" />
-                <span>Storage Settings</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="h-20 flex flex-col gap-2"
-                onClick={triggerDataCollection}
-                disabled={collectingData}
-              >
-                <Play className="h-6 w-6" />
-                <span>{collectingData ? 'Running Pipeline...' : 'Run Pipeline'}</span>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Last Collection Info */}
-        {systemStatus?.metrics.last_collection && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Activity className="h-4 w-4" />
-                <span>
-                  Last data collection: {new Date(systemStatus.metrics.last_collection).toLocaleString('en-MY', {
-                    timeZone: 'Asia/Kuala_Lumpur',
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: true
-                  })}
-                </span>
               </div>
             </CardContent>
           </Card>
-        )}
+        </div>
+
+
+
       </div>
     </AdminLayout>
   );

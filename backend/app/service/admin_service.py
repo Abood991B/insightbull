@@ -171,6 +171,23 @@ class AdminService(WatchlistSubject):
             finnhub_key = keys.get('finnhub_api_key', '')
             newsapi_key = keys.get('news_api_key', '')
             marketaux_key = keys.get('marketaux_api_key', '')
+
+            # Test NewsAPI connection if key is available
+            newsapi_status = "inactive"
+            newsapi_last_test = None
+            if newsapi_key:
+                try:
+                    from app.infrastructure.collectors.newsapi_collector import NewsAPICollector
+                    newsapi_collector = NewsAPICollector(api_key=newsapi_key)
+                    is_valid = await newsapi_collector.validate_connection()
+                    newsapi_status = "active" if is_valid else "error"
+                    newsapi_last_test = datetime.utcnow().isoformat()
+                    self.logger.info(f"NewsAPI connection test: {'success' if is_valid else 'failed'}", component="admin_service")
+                except Exception as e:
+                    newsapi_status = "error"
+                    newsapi_last_test = datetime.utcnow().isoformat()
+                    self.logger.warning(f"NewsAPI connection test failed: {e}", component="admin_service")
+
             
             # Build API configuration structure expected by frontend
             return {
@@ -188,8 +205,8 @@ class AdminService(WatchlistSubject):
                         "api_key": finnhub_key
                     },
                     "newsapi": {
-                        "status": "unknown" if not newsapi_key else "active",
-                        "last_test": None,
+                        "status": newsapi_status,
+                        "last_test": newsapi_last_test,
                         "api_key": newsapi_key
                     },
                     "marketaux": {
