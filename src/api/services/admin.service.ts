@@ -41,29 +41,6 @@ export interface SystemStatus {
   timestamp: string;
 }
 
-export interface SystemHealthAlert {
-  id: string;
-  title: string;
-  message: string;
-  timestamp: string;
-  action: string;
-  action_url: string;
-}
-
-export interface SystemHealthAlerts {
-  alerts: {
-    critical: SystemHealthAlert[];
-    warnings: SystemHealthAlert[];
-    info: SystemHealthAlert[];
-  };
-  summary: {
-    critical_count: number;
-    warning_count: number;
-    info_count: number;
-    total_alerts: number;
-  };
-  last_updated: string;
-}
 
 export interface ModelAccuracy {
   overall_accuracy: number;
@@ -412,12 +389,6 @@ class AdminAPIService {
     return handleApiResponse(response);
   }
 
-  async getSystemHealthAlerts(): Promise<SystemHealthAlerts> {
-    const response = await fetch(`${API_BASE_URL}/api/admin/system/health-alerts`, {
-      headers: getAuthHeaders(),
-    });
-    return handleApiResponse(response);
-  }
 
   async getSystemLogs(
     level?: string,
