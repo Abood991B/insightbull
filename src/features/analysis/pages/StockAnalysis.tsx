@@ -378,10 +378,10 @@ const StockAnalysis = () => {
 
         {/* No Analysis Data Warning */}
         {!isLoadingAnalysis && !stockAnalysis && !error && selectedStock && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              <strong>No analysis data available for {selectedStock}.</strong> Run the data collection pipeline from the admin panel to gather sentiment analysis from news sources and social media.
+          <Alert className="border-blue-200 bg-blue-50">
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-900">
+              <strong>No Data Available:</strong> No analysis data found for {selectedStock}. This typically means the data collection pipeline needs to run to gather sentiment analysis from news sources and social media. Please check back later or try a different stock.
             </AlertDescription>
           </Alert>
         )}

@@ -14,8 +14,7 @@ from app.presentation.schemas import (
     SentimentHistory,
     CorrelationAnalysis,
     CorrelationMetrics,
-    SentimentTrendPoint,
-    TrendAnalysis
+    SentimentTrendPoint
 )
 from app.presentation.deps import (
     get_stock_repository,
@@ -166,9 +165,15 @@ async def get_correlation_analysis(
         )
         
         if len(correlation_data) < 3:
+            # Provide user-friendly error with suggestion for better timeframe
+            timeframe_labels = {"1d": "1 day", "7d": "7 days", "14d": "14 days"}
+            current_label = timeframe_labels.get(timeframe, timeframe)
+            
+            suggested_timeframe = "7 days" if timeframe == "1d" else "14 days"
+            
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Insufficient data for correlation analysis (minimum 3 data points required)"
+                detail=f"Insufficient data for {current_label} timeframe. Found {len(correlation_data)} data points, but correlation analysis requires at least 3. Try selecting a longer timeframe ({suggested_timeframe}) or wait for more data to be collected."
             )
         
         # Calculate correlation metrics

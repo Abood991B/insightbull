@@ -15,13 +15,12 @@ import { stockService } from "@/api/services/stock.service";
 import { analysisService } from "@/api/services/analysis.service";
 
 // Import empty state components
-import { EmptyWatchlistState, InsufficientCorrelationData } from "@/shared/components/states";
+import { EmptyWatchlistState } from "@/shared/components/states";
 
 // Import validation utilities
 import {
   getTimeframeOptions,
-  getInsufficientDataMessage,
-  validateTimeframeSelection
+  getInsufficientDataMessage
 } from "@/shared/utils/dataValidation";
 
 const SentimentVsPrice = () => {
@@ -30,7 +29,7 @@ const SentimentVsPrice = () => {
   const timeframeFromUrl = searchParams.get('timeframe') as '1d' | '7d' | '14d' | null;
 
   const [selectedStock, setSelectedStock] = useState(symbolFromUrl || '');
-  const [timeRange, setTimeRange] = useState<'1d' | '7d' | '14d'>(timeframeFromUrl || '1d');  // Default to 1d
+  const [timeRange, setTimeRange] = useState<'1d' | '7d' | '14d'>(timeframeFromUrl || '7d');  // Default to 7d
 
   // Fetch stock options for dropdown
   const { data: stockOptionsResponse, isLoading: isLoadingStocks } = useQuery({
@@ -78,11 +77,20 @@ const SentimentVsPrice = () => {
     setSearchParams({ symbol, timeframe: timeRange });
   };
 
-  const handleTimeRangeChange = (range: '1d' | '7d' | '14d') => {
-    // Handler is simple - disabled options can't be selected by user
-    // but this provides a safety net if called programmatically
-    setTimeRange(range);
-    setSearchParams({ symbol: selectedStock, timeframe: range });
+  const handleTimeRangeChange = (range: string) => {
+    // Clean and validate the timeframe value to prevent format issues
+    const cleanRange = range.trim().split(':')[0] as '1d' | '7d' | '14d';
+    
+    // Validate it's a valid timeframe
+    if (!['1d', '7d', '14d'].includes(cleanRange)) {
+      console.warn(`Invalid timeframe value received: ${range}, defaulting to 7d`);
+      setTimeRange('7d');
+      setSearchParams({ symbol: selectedStock, timeframe: '7d' });
+      return;
+    }
+    
+    setTimeRange(cleanRange);
+    setSearchParams({ symbol: selectedStock, timeframe: cleanRange });
   };
 
   // Extract data
@@ -133,7 +141,6 @@ const SentimentVsPrice = () => {
   const actualDataPoints = sentimentData?.total_records || 0;
   const hasEnoughData = actualDataPoints >= 3; // Match backend requirement
   const timeframeOptions = getTimeframeOptions(actualDataPoints);
-  const timeframeValidation = validateTimeframeSelection(timeRange, actualDataPoints);
 
   // Calculate insights from correlation_metrics
   const correlation = correlationData?.correlation_metrics.pearson_correlation ?? 0;
@@ -249,53 +256,12 @@ const SentimentVsPrice = () => {
           </Alert>
         )}
 
-        {/* Timeframe Validation Warning */}
-        {!timeframeValidation.isValid && (
+        {/* Data Quality Warning - Only show if we have SOME data but not enough */}
+        {!hasEnoughData && actualDataPoints > 0 && actualDataPoints < 3 && (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              {timeframeValidation.message}
-              {timeframeValidation.suggestedTimeframe && (
-                <span> Consider using {timeframeValidation.suggestedTimeframe} instead.</span>
-              )}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Data Quality Warning */}
-        {!hasEnoughData && actualDataPoints > 0 && (
-          <Alert>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              {getInsufficientDataMessage(actualDataPoints, 3)}
-              {' '}Limited data ({actualDataPoints} point{actualDataPoints !== 1 ? 's' : ''}) may affect correlation accuracy.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Insufficient Data Warning */}
-        {hasInsufficientData && correlationData && (
-          <InsufficientCorrelationData
-            currentPoints={correlationData.correlation_metrics.sample_size}
-          />
-        )}
-
-        {/* No data message - when backend returns no data */}
-        {!isLoading && !correlationError && !sentimentError && (!correlationData || !sentimentData) && selectedStock && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              <strong>No analysis data available for {selectedStock}.</strong> The data collection pipeline needs to run to gather sentiment and price data for analysis.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* No data message - when data exists but is empty */}
-        {!isLoading && !correlationError && !sentimentError && sentimentData && sentimentData.data_points.length === 0 && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              <strong>No data points found for {selectedStock} in the {timeRange} timeframe.</strong> The data collection pipeline may need to run to gather sentiment and price data.
+              <strong>Limited Data:</strong> Found {actualDataPoints} data point{actualDataPoints !== 1 ? 's' : ''} for the selected timeframe. For accurate sentiment vs price analysis, at least 3 data points are recommended. Try selecting a longer timeframe (e.g., 7 days or 14 days) or wait for more data to be collected.
             </AlertDescription>
           </Alert>
         )}
@@ -310,6 +276,16 @@ const SentimentVsPrice = () => {
             </div>
             <Skeleton className="h-96" />
           </>
+        )}
+
+        {/* Unified No Data Message */}
+        {!isLoading && !correlationError && !sentimentError && (!sentimentData || actualDataPoints === 0) && selectedStock && (
+          <Alert className="border-blue-200 bg-blue-50">
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-900">
+              <strong>No Data Available:</strong> No sentiment data found for {selectedStock} in the selected timeframe. This typically means the data collection pipeline needs to run to gather sentiment and price information. Please check back later or try a different stock.
+            </AlertDescription>
+          </Alert>
         )}
 
         {/* Data Quality Summary */}

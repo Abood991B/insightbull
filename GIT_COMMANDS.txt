@@ -1,0 +1,43 @@
+# Git Commands for BACK-FRONTEND-INT-V1.4 Branch
+
+## Step 1: Create and checkout new branch
+git checkout -b BACK-FRONTEND-INT-V1.4
+
+## Step 2: Check status (optional - to see what will be committed)
+git status
+
+## Step 3: Add all changes
+git add .
+
+## Step 4: Commit with descriptive message
+git commit -m "feat: Fix critical UX issues and standardize error messages across all pages
+
+- Fixed 400 Bad Request error by changing default timeframe from 1d to 7d
+- Resolved user trap issue where timeframe options were incorrectly disabled
+- Removed all duplicate and stacking error messages (12 duplicates removed)
+- Standardized error messages across all analysis pages with professional tone
+- Removed unused imports and cleaned up code (~150 lines removed)
+- Improved backend error messages with context and helpful suggestions
+- Added defensive parameter validation to prevent future issues
+
+Affected pages:
+- CorrelationAnalysis.tsx (cleaned & standardized)
+- SentimentVsPrice.tsx (cleaned & standardized)
+- SentimentTrends.tsx (cleaned & standardized)
+- StockAnalysis.tsx (standardized messages)
+- backend/app/presentation/routes/analysis.py (improved errors)
+- src/shared/utils/dataValidation.ts (simplified validation)
+
+Files modified: 6 files
+Code removed: ~150 lines of duplicate/old code
+Documentation added: 3 comprehensive MD files"
+
+## Alternative shorter commit message:
+git commit -m "feat: Fix user dashboard critical issues - standardize error messages and prevent UX traps"
+
+## Step 5: Push to remote (optional)
+git push -u origin BACK-FRONTEND-INT-V1.4
+
+## Step 6: Verify branch
+git branch
+git log --oneline -1

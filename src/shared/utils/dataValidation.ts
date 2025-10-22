@@ -328,29 +328,18 @@ export function getInsufficientDataMessage(
 
 /**
  * Validate timeframe selection based on available data
+ * 
+ * NOTE: Since we allow all timeframes to prevent user traps (see CRITICAL_UX_FIX.md),
+ * this function now always returns valid. We keep it for backwards compatibility
+ * and to show warnings instead of blocking selection.
  */
 export function validateTimeframeSelection(
   selectedTimeframe: '1d' | '7d' | '14d',
   availableDataPoints: number
 ): { isValid: boolean; message?: string; suggestedTimeframe?: '1d' | '7d' | '14d' } {
-  const availableTimeframes = getAvailableTimeframes(availableDataPoints);
-  
-  if (!availableTimeframes.includes(selectedTimeframe)) {
-    const timeframeLabels = {
-      '1d': '1 Day',
-      '7d': '7 Days',
-      '14d': '14 Days'
-    };
-    
-    // Suggest the longest available timeframe
-    const suggestedTimeframe = availableTimeframes[availableTimeframes.length - 1] || '1d';
-    
-    return {
-      isValid: false,
-      message: `Insufficient data for ${timeframeLabels[selectedTimeframe]}. Try "${timeframeLabels[suggestedTimeframe]}" or run the data collection pipeline.`,
-      suggestedTimeframe
-    };
-  }
+  // CRITICAL UX FIX: Always allow timeframe selection
+  // Show warnings in the UI instead of preventing selection
+  // This prevents users from being trapped in error states
   
   return { isValid: true };
 }
@@ -378,6 +367,10 @@ export function calculateDataQualityScore(
 
 /**
  * Get timeframe options with disabled state
+ * 
+ * IMPORTANT: Never disable timeframe options based on data availability!
+ * This prevents users from being trapped in error states.
+ * Always allow navigation between timeframes - show warnings instead.
  */
 export interface TimeframeOption {
   value: '1d' | '7d' | '14d';
@@ -387,26 +380,28 @@ export interface TimeframeOption {
 }
 
 export function getTimeframeOptions(availableDataPoints: number): TimeframeOption[] {
-  const available = getAvailableTimeframes(availableDataPoints);
+  // CRITICAL UX FIX: Never disable timeframe options
+  // Users must always be able to switch between timeframes
+  // If data is insufficient, show warnings AFTER selection, not prevent selection
   
   return [
     {
       value: '1d',
       label: '1 Day',
-      disabled: !available.includes('1d'),
-      reason: available.includes('1d') ? undefined : `Need at least ${EXPECTED_DATA_POINTS['1d'].min} data points`
+      disabled: false,  // ✅ Always enabled - let users navigate
+      reason: undefined
     },
     {
       value: '7d',
       label: '7 Days',
-      disabled: !available.includes('7d'),
-      reason: available.includes('7d') ? undefined : `Need at least ${EXPECTED_DATA_POINTS['7d'].min} data points`
+      disabled: false,  // ✅ Always enabled - let users navigate
+      reason: undefined
     },
     {
       value: '14d',
       label: '14 Days',
-      disabled: !available.includes('14d'),
-      reason: available.includes('14d') ? undefined : `Need at least ${EXPECTED_DATA_POINTS['14d'].min} data points`
+      disabled: false,  // ✅ Always enabled - let users navigate
+      reason: undefined
     }
   ];
 }

@@ -17,15 +17,11 @@ import { analysisService } from "@/api/services/analysis.service";
 // Import validation utilities
 import { 
   getTimeframeOptions, 
-  hasEnoughDataForTrends,
-  getInsufficientDataMessage,
-  MIN_DATA_POINTS,
-  validateTimeframeSelection,
-  getRecommendedTimeframe
+  getInsufficientDataMessage
 } from "@/shared/utils/dataValidation";
 
 // Import empty state components
-import { EmptyWatchlistState, PartialDataWarning } from "@/shared/components/states";
+import { EmptyWatchlistState } from "@/shared/components/states";
 
 const SentimentTrends = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,7 +29,7 @@ const SentimentTrends = () => {
   const timeframeFromUrl = searchParams.get('timeframe') as '1d' | '7d' | '14d' | null;
   
   const [selectedStock, setSelectedStock] = useState(symbolFromUrl || '');
-  const [timeRange, setTimeRange] = useState<'1d' | '7d' | '14d'>(timeframeFromUrl || '1d');
+  const [timeRange, setTimeRange] = useState<'1d' | '7d' | '14d'>(timeframeFromUrl || '7d');
 
   // Fetch stock options for dropdown
   const { data: stockOptions, isLoading: isLoadingStocks } = useQuery({
@@ -69,9 +65,20 @@ const SentimentTrends = () => {
     setSearchParams({ symbol, timeframe: timeRange });
   };
 
-  const handleTimeRangeChange = (range: '1d' | '7d' | '14d') => {
-    setTimeRange(range);
-    setSearchParams({ symbol: selectedStock, timeframe: range });
+  const handleTimeRangeChange = (range: string) => {
+    // Clean and validate the timeframe value to prevent format issues
+    const cleanRange = range.trim().split(':')[0] as '1d' | '7d' | '14d';
+    
+    // Validate it's a valid timeframe
+    if (!['1d', '7d', '14d'].includes(cleanRange)) {
+      console.warn(`Invalid timeframe value received: ${range}, defaulting to 7d`);
+      setTimeRange('7d');
+      setSearchParams({ symbol: selectedStock, timeframe: '7d' });
+      return;
+    }
+    
+    setTimeRange(cleanRange);
+    setSearchParams({ symbol: selectedStock, timeframe: cleanRange });
   };
 
   // Extract data
@@ -121,7 +128,6 @@ const SentimentTrends = () => {
   const actualDataPoints = sentimentData?.total_records || 0;
   const hasEnoughData = actualDataPoints >= 3;
   const timeframeOptions = getTimeframeOptions(actualDataPoints);
-  const timeframeValidation = validateTimeframeSelection(timeRange, actualDataPoints);
 
   // Calculate metrics
   const avgSentiment = sentimentData?.avg_sentiment ?? 0;
@@ -230,45 +236,22 @@ const SentimentTrends = () => {
           </Alert>
         )}
 
-        {/* Timeframe Validation Warning */}
-        {!timeframeValidation.isValid && (
+        {/* Data Quality Warning - Only show if we have SOME data but not enough */}
+        {!hasEnoughData && actualDataPoints > 0 && actualDataPoints < 3 && (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              {timeframeValidation.message}
-              {timeframeValidation.suggestedTimeframe && (
-                <span> Consider using {timeframeValidation.suggestedTimeframe} instead.</span>
-              )}
+              <strong>Limited Data:</strong> Found {actualDataPoints} data point{actualDataPoints !== 1 ? 's' : ''} for the selected timeframe. For accurate trend analysis, at least 3 data points are recommended. Try selecting a longer timeframe (e.g., 7 days or 14 days) or wait for more data to be collected.
             </AlertDescription>
           </Alert>
         )}
 
-        {/* Data Quality Warning */}
-        {!hasEnoughData && actualDataPoints > 0 && (
-          <Alert>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              {getInsufficientDataMessage(actualDataPoints, 3)}
-              {' '}Limited data ({actualDataPoints} point{actualDataPoints !== 1 ? 's' : ''}) may affect trend accuracy.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Insufficient Data Warning */}
-        {hasInsufficientData && (
-          <PartialDataWarning 
-            dataPoints={totalRecords}
-            minRequired={3}
-            message="Sentiment trend analysis requires at least 3 data points for meaningful patterns."
-          />
-        )}
-
-        {/* No data message - when backend returns no sentiment data */}
-        {!isLoadingSentiment && !sentimentError && !sentimentData && selectedStock && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              <strong>No sentiment data available for {selectedStock}.</strong> The data collection pipeline needs to run to gather sentiment data for trend analysis.
+        {/* Unified No Data Message */}
+        {!isLoadingSentiment && !sentimentError && (!sentimentData || totalRecords === 0) && selectedStock && (
+          <Alert className="border-blue-200 bg-blue-50">
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-900">
+              <strong>No Data Available:</strong> No sentiment data found for {selectedStock} in the selected timeframe. This typically means the data collection pipeline needs to run to gather sentiment information. Please check back later or try a different stock.
             </AlertDescription>
           </Alert>
         )}
@@ -462,17 +445,6 @@ const SentimentTrends = () => {
               </div>
             </CardContent>
           </Card>
-        )}
-
-        {/* No data message */}
-        {!isLoadingSentiment && !sentimentError && sentimentData && totalRecords === 0 && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              No sentiment data available for {selectedStock} in the selected time range. 
-              The data collection pipeline may need to run to gather sentiment data.
-            </AlertDescription>
-          </Alert>
         )}
       </div>
     </UserLayout>
