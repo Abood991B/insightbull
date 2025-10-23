@@ -537,36 +537,12 @@ class AdminAPIService {
     return handleApiResponse(response);
   }
 
-  async removeFromWatchlist(symbol: string): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/api/admin/watchlist`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        action: 'remove',
-        symbol: symbol.toUpperCase(),
-      }),
-    });
-    return handleApiResponse(response);
-  }
-
   async toggleStock(symbol: string): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/api/admin/watchlist`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({
         action: 'toggle',
-        symbol: symbol.toUpperCase(),
-      }),
-    });
-    return handleApiResponse(response);
-  }
-
-  async deactivateStock(symbol: string): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/api/admin/watchlist`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        action: 'deactivate',
         symbol: symbol.toUpperCase(),
       }),
     });

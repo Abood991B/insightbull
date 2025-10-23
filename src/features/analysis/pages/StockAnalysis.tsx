@@ -42,7 +42,9 @@ const StockAnalysis = () => {
   const { data: stockListResponse, isLoading: isLoadingList } = useQuery({
     queryKey: ['stocks-list'],
     queryFn: () => stockService.getAllStocks(100, true),
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 30 * 1000, // 30 seconds - sync with admin changes faster
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchInterval: 60 * 1000, // Poll every minute for admin changes
   });
 
   // Fetch selected stock analysis data

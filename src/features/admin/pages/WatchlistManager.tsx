@@ -31,7 +31,7 @@ import {
   CommandList,
 } from "@/shared/components/ui/command";
 import { adminAPI, WatchlistResponse, StockInfo } from "../../../api/services/admin.service";
-import { RefreshCw, Plus, Trash2, TrendingUp, Activity, Users, Check, ChevronsUpDown } from "lucide-react";
+import { RefreshCw, Plus, TrendingUp, Activity, Users, Check, ChevronsUpDown, Eye, EyeOff, Filter } from "lucide-react";
 import { cn } from "@/shared/utils/utils";
 
 const WatchlistManager = () => {
@@ -41,9 +41,9 @@ const WatchlistManager = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [stockToRemove, setStockToRemove] = useState<string | null>(null);
   const [stockToToggle, setStockToToggle] = useState<{stock: string, currentStatus: boolean} | null>(null);
   const [availableStocks, setAvailableStocks] = useState<{ [symbol: string]: string }>({});
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [stockSearchOpen, setStockSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
@@ -139,42 +139,28 @@ const WatchlistManager = () => {
     }
   };
 
-  const handleRemoveStock = async (stock: string) => {
-    try {
-      setIsUpdating(true);
-      await adminAPI.removeFromWatchlist(stock);
-      
-      toast({
-        title: "Stock Removed",
-        description: `${stock} has been removed from the watchlist.`,
-      });
-      
-      await loadWatchlist(); // Reload the watchlist
-    } catch (error) {
-      console.error('Failed to remove stock:', error);
-      toast({
-        title: "Error",
-        description: `Failed to remove ${stock}. Please try again.`,
-        variant: "destructive",
-      });
-    } finally {
-      setIsUpdating(false);
-      setStockToRemove(null);
-    }
-  };
 
   const handleToggleStock = async (stock: string, currentStatus: boolean) => {
     try {
       setIsUpdating(true);
-      await adminAPI.toggleStock(stock);
+      const response = await adminAPI.toggleStock(stock);
+      
+      console.log('Toggle response:', response);
+      
+      // The backend returns updated_watchlist in the response
+      if (response.updated_watchlist) {
+        console.log('Updated watchlist from API:', response.updated_watchlist);
+        setWatchlistData(response.updated_watchlist);
+      } else {
+        // Fallback: reload from API if not in response
+        await loadWatchlist();
+      }
       
       const action = currentStatus ? "deactivated" : "activated";
       toast({
         title: "Stock Updated",
         description: `${stock} has been ${action}.`,
       });
-      
-      await loadWatchlist(); // Reload the watchlist
     } catch (error) {
       console.error('Failed to toggle stock:', error);
       toast({
@@ -194,7 +180,7 @@ const WatchlistManager = () => {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Watchlist Manager</h1>
-            <p className="text-gray-600 mt-2">Manage the list of stocks being monitored</p>
+            <p className="text-gray-600 mt-2">Manage active and inactive stocks. Deactivated stocks are hidden from users but data is preserved.</p>
           </div>
           
           <div className="flex gap-3">
@@ -352,18 +338,53 @@ const WatchlistManager = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Current Watchlist ({watchlistData?.stocks.length || 0} Stocks)
-            </CardTitle>
-            <CardDescription>
-              Stocks currently being monitored for sentiment analysis
-              {watchlistData?.last_updated && (
-                <span className="block text-xs mt-1">
-                  Last updated: {new Date(watchlistData.last_updated).toLocaleString()}
-                </span>
-              )}
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Current Watchlist ({watchlistData?.stocks.length || 0} Stocks)
+                </CardTitle>
+                <CardDescription>
+                  Stocks currently being monitored for sentiment analysis
+                  {watchlistData?.last_updated && (
+                    <span className="block text-xs mt-1">
+                      Last updated: {new Date(watchlistData.last_updated).toLocaleString()}
+                    </span>
+                  )}
+                </CardDescription>
+              </div>
+              
+              {/* Filter Tabs */}
+              <div className="flex gap-2">
+                <Button
+                  variant={activeFilter === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveFilter('all')}
+                  className="flex items-center gap-2"
+                >
+                  <Filter className="h-4 w-4" />
+                  All ({watchlistData?.stocks.length || 0})
+                </Button>
+                <Button
+                  variant={activeFilter === 'active' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveFilter('active')}
+                  className="flex items-center gap-2"
+                >
+                  <Eye className="h-4 w-4" />
+                  Active ({watchlistData?.active_stocks || 0})
+                </Button>
+                <Button
+                  variant={activeFilter === 'inactive' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveFilter('inactive')}
+                  className="flex items-center gap-2"
+                >
+                  <EyeOff className="h-4 w-4" />
+                  Inactive ({(watchlistData?.total_stocks || 0) - (watchlistData?.active_stocks || 0)})
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -374,24 +395,71 @@ const WatchlistManager = () => {
               <div className="text-center py-8 text-gray-500">
                 No stocks in watchlist. Add some stocks to get started.
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {watchlistData.stocks.map((stock, index) => (
-                  <div key={stock.symbol} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+            ) : (() => {
+              // Filter stocks based on active filter
+              const filteredStocks = watchlistData.stocks.filter(stock => {
+                if (activeFilter === 'active') return stock.is_active;
+                if (activeFilter === 'inactive') return !stock.is_active;
+                return true; // 'all' shows everything
+              });
+              
+              if (filteredStocks.length === 0) {
+                return (
+                  <div className="text-center py-8 text-gray-500">
+                    No {activeFilter} stocks found.
+                  </div>
+                );
+              }
+              
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredStocks.map((stock, index) => (
+                  <div key={stock.symbol} className={cn(
+                    "flex items-center justify-between p-3 border rounded-lg transition-all",
+                    stock.is_active 
+                      ? "hover:bg-gray-50 border-gray-200" 
+                      : "bg-gray-50 opacity-60 border-gray-300"
+                  )}>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
+                      <span className={cn(
+                        "text-sm font-medium",
+                        stock.is_active ? "text-gray-500" : "text-gray-400"
+                      )}>#{index + 1}</span>
                       <div>
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="font-medium">{stock.symbol}</Badge>
+                          <Badge 
+                            variant="outline" 
+                            className={cn(
+                              "font-medium",
+                              !stock.is_active && "text-gray-400 border-gray-300"
+                            )}
+                          >
+                            {stock.symbol}
+                          </Badge>
                           {stock.is_active ? (
-                            <Badge className="bg-green-100 text-green-800 text-xs">Active</Badge>
+                            <Badge className="bg-green-100 text-green-800 text-xs border-green-200">
+                              <Eye className="h-3 w-3 mr-1" />
+                              Active
+                            </Badge>
                           ) : (
-                            <Badge className="bg-gray-100 text-gray-800 text-xs">Inactive</Badge>
+                            <Badge variant="outline" className="bg-gray-100 text-gray-600 text-xs border-gray-300">
+                              <EyeOff className="h-3 w-3 mr-1" />
+                              Inactive - Hidden from users
+                            </Badge>
                           )}
                         </div>
-                        <p className="text-xs text-gray-600 mt-1">{stock.company_name}</p>
-                        <p className="text-xs text-gray-500">{stock.sector}</p>
-                        <p className="text-xs text-gray-400">
+                        <p className={cn(
+                          "text-xs mt-1",
+                          stock.is_active ? "text-gray-600" : "text-gray-500"
+                        )}>{stock.company_name}</p>
+                        <p className={cn(
+                          "text-xs",
+                          stock.is_active ? "text-gray-500" : "text-gray-400"
+                        )}>{stock.sector}</p>
+                        <p className={cn(
+                          "text-xs",
+                          stock.is_active ? "text-gray-400" : "text-gray-300"
+                        )}>
                           Added: {new Date(stock.added_date).toLocaleDateString()}
                         </p>
                       </div>
@@ -400,58 +468,69 @@ const WatchlistManager = () => {
                       <AlertDialog open={stockToToggle?.stock === stock.symbol} onOpenChange={(open) => !open && setStockToToggle(null)}>
                         <AlertDialogTrigger asChild>
                           <Button
-                            variant="ghost"
+                            variant={stock.is_active ? "outline" : "default"}
                             size="sm"
                             onClick={() => setStockToToggle({stock: stock.symbol, currentStatus: stock.is_active})}
                             disabled={isUpdating}
-                            className={`${stock.is_active 
-                              ? 'text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50' 
-                              : 'text-green-600 hover:text-green-700 hover:bg-green-50'
-                            }`}
-                            title={stock.is_active ? 'Deactivate stock' : 'Activate stock'}
+                            className={cn(
+                              "min-w-[110px]",
+                              stock.is_active 
+                                ? "border-yellow-300 text-yellow-700 hover:bg-yellow-50" 
+                                : "bg-green-600 hover:bg-green-700 text-white"
+                            )}
                           >
-                            <Activity className="h-4 w-4" />
+                            {stock.is_active ? (
+                              <>
+                                <EyeOff className="h-4 w-4 mr-2" />
+                                Deactivate
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="h-4 w-4 mr-2" />
+                                Activate
+                              </>
+                            )}
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>{stock.is_active ? 'Deactivate' : 'Activate'} Stock</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to {stock.is_active ? 'deactivate' : 'activate'} {stock.symbol} in the watchlist?
+                            <AlertDialogTitle>
+                              {stock.is_active ? 'Deactivate' : 'Activate'} Stock - {stock.symbol}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription className="space-y-2">
+                              {stock.is_active ? (
+                                <>
+                                  <p>
+                                    <strong>Deactivating {stock.symbol}</strong> will:
+                                  </p>
+                                  <ul className="list-disc pl-5 space-y-1 text-sm">
+                                    <li>Hide it from user dashboard stock selectors</li>
+                                    <li>Stop collecting new sentiment data</li>
+                                    <li><strong className="text-green-600">✓ Preserve all historical sentiment data</strong></li>
+                                    <li><strong className="text-green-600">✓ Can be reactivated anytime</strong></li>
+                                  </ul>
+                                </>
+                              ) : (
+                                <>
+                                  <p>
+                                    <strong>Activating {stock.symbol}</strong> will:
+                                  </p>
+                                  <ul className="list-disc pl-5 space-y-1 text-sm">
+                                    <li>Make it visible in user dashboard</li>
+                                    <li>Resume sentiment data collection</li>
+                                    <li><strong className="text-green-600">✓ All historical data is intact</strong></li>
+                                  </ul>
+                                </>
+                              )}
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleToggleStock(stock.symbol, stock.is_active)}>
+                            <AlertDialogAction 
+                              onClick={() => handleToggleStock(stock.symbol, stock.is_active)}
+                              className={stock.is_active ? "bg-yellow-600 hover:bg-yellow-700" : "bg-green-600 hover:bg-green-700"}
+                            >
                               {stock.is_active ? 'Deactivate' : 'Activate'}
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                      <AlertDialog open={stockToRemove === stock.symbol} onOpenChange={(open) => !open && setStockToRemove(null)}>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setStockToRemove(stock.symbol)}
-                            disabled={isUpdating}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            title="Remove from watchlist"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Remove Stock</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to remove {stock.symbol} from the watchlist? This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleRemoveStock(stock.symbol)} className="bg-red-600 hover:bg-red-700">
-                              Remove
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
@@ -459,40 +538,9 @@ const WatchlistManager = () => {
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              Watchlist Statistics
-            </CardTitle>
-            <CardDescription>Overview of monitored stocks</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600">
-                  {watchlistData?.total_stocks || 0}
                 </div>
-                <p className="text-sm text-gray-600">Total Stocks</p>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">
-                  {watchlistData?.active_stocks || 0}
-                </div>
-                <p className="text-sm text-gray-600">Active</p>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-yellow-600">
-                  {(watchlistData?.total_stocks || 0) - (watchlistData?.active_stocks || 0)}
-                </div>
-                <p className="text-sm text-gray-600">Inactive</p>
-              </div>
-            </div>
+              );
+            })()}
           </CardContent>
         </Card>
       </div>

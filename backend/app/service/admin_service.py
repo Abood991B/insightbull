@@ -310,11 +310,12 @@ class AdminService(WatchlistSubject):
         try:
             self.logger.info("Getting stock watchlist")
             
-            # Get all stocks from the unified stocks_watchlist table
+            # Get all stocks from the unified stocks_watchlist table (both active and inactive)
+            # Admin needs to see inactive stocks to manage them
             result = await self.db.execute(
                 select(StocksWatchlist)
-                .where(StocksWatchlist.is_active == True)
-                .order_by(StocksWatchlist.added_to_watchlist)
+                # Removed filter: .where(StocksWatchlist.is_active == True)
+                .order_by(StocksWatchlist.is_active.desc(), StocksWatchlist.added_to_watchlist)  # Active first, then by date
             )
             watchlist_data = result.scalars().all()
             

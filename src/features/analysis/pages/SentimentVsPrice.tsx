@@ -35,7 +35,9 @@ const SentimentVsPrice = () => {
   const { data: stockOptionsResponse, isLoading: isLoadingStocks } = useQuery({
     queryKey: ['stock-options'],
     queryFn: () => stockService.getStockOptions(true),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000, // 30 seconds - sync with admin changes faster
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchInterval: 60 * 1000, // Poll every minute for admin changes
   });
 
   // Fetch correlation analysis for metrics

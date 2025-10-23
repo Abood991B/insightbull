@@ -7,6 +7,7 @@ import { Badge } from '../../../shared/components/ui/badge';
 import { Alert, AlertDescription } from '../../../shared/components/ui/alert';
 import { useToast } from '../../../shared/hooks/use-toast';
 import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus } from '../../../api/services/admin.service';
+import SystemHealthAlerts from '../components/SystemHealthAlerts';
 import {
   Activity,
   Database,
@@ -291,6 +292,13 @@ const AdminDashboard: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        {/* System Health Alerts */}
+        <SystemHealthAlerts
+          systemStatus={systemStatus}
+          modelAccuracy={modelAccuracy}
+          onRefresh={() => loadDashboardData(false)}
+        />
 
         {/* System Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">

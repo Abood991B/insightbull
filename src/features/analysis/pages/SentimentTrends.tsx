@@ -32,10 +32,12 @@ const SentimentTrends = () => {
   const [timeRange, setTimeRange] = useState<'1d' | '7d' | '14d'>(timeframeFromUrl || '7d');
 
   // Fetch stock options for dropdown
-  const { data: stockOptions, isLoading: isLoadingStocks } = useQuery({
+  const { data: stockOptionsResponse, isLoading: isLoadingStocks } = useQuery({
     queryKey: ['stock-options'],
     queryFn: () => stockService.getStockOptions(true),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000, // 30 seconds - sync with admin changes faster
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchInterval: 60 * 1000, // Poll every minute for admin changes
   });
 
   // Fetch sentiment history
@@ -49,6 +51,9 @@ const SentimentTrends = () => {
     enabled: !!selectedStock,
     staleTime: 60 * 1000,
   });
+
+  // Extract stock options from response
+  const stockOptions = stockOptionsResponse || [];
 
   // Set first stock as default when options load
   useEffect(() => {

@@ -246,6 +246,19 @@ class SentimentEngine:
                 return self._create_fallback_results(inputs)
             raise
     
+    async def analyze_batch(self, inputs: List[TextInput]) -> List[SentimentResult]:
+        """
+        Analyze sentiment for a batch of text inputs.
+        Alias for analyze() method for backward compatibility.
+        
+        Args:
+            inputs: List of TextInput objects to analyze
+            
+        Returns:
+            List of SentimentResult objects in the same order as inputs
+        """
+        return await self.analyze(inputs)
+    
     async def analyze_single(self, text: str, source: DataSource, **kwargs) -> SentimentResult:
         """
         Analyze sentiment for a single text.

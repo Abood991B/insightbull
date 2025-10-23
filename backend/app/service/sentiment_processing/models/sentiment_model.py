@@ -41,6 +41,9 @@ class SentimentResult:
         raw_scores: Original model scores for debugging
         processing_time: Time taken for analysis in milliseconds
         model_name: Name of the model used
+        text: Original text that was analyzed
+        source: Data source of the text
+        metadata: Additional context from input (stock_id, article_id, etc.)
     """
     label: SentimentLabel
     score: float  # -1.0 (very negative) to 1.0 (very positive)
@@ -48,6 +51,9 @@ class SentimentResult:
     raw_scores: Dict[str, float]
     processing_time: float
     model_name: str
+    text: str = ""  # Original text analyzed
+    source: Optional[DataSource] = None  # Data source
+    metadata: Optional[Dict[str, Any]] = None  # Context from input
 
 
 @dataclass
@@ -168,7 +174,16 @@ class SentimentModel(ABC):
         
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i + batch_size]
+            batch_inputs = inputs[i:i + batch_size]
             batch_results = await self._analyze_batch(batch_texts)
+            
+            # Populate text, source, and metadata from inputs
+            for j, result in enumerate(batch_results):
+                input_obj = batch_inputs[j]
+                result.text = input_obj.text
+                result.source = input_obj.source
+                result.metadata = input_obj.metadata or {}
+            
             results.extend(batch_results)
         
         return results

@@ -15,6 +15,7 @@ class StockSummary(BaseModel):
     company_name: str = Field(..., description="Company name")
     current_price: Optional[float] = Field(None, description="Latest stock price")
     price_change_24h: Optional[float] = Field(None, description="24h price change percentage")
+    market_cap: Optional[str] = Field(None, description="Market capitalization from Yahoo Finance (e.g., '2.85T', '150.5B')")
     sentiment_score: Optional[float] = Field(None, description="Latest sentiment score (-1.0 to 1.0)")
     sentiment_label: Optional[str] = Field(None, description="Sentiment label (Positive/Neutral/Negative)")
     last_updated: Optional[datetime] = Field(None, description="Last data update timestamp")

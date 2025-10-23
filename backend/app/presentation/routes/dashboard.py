@@ -7,11 +7,9 @@ Provides dashboard overview with key metrics, top stocks, and system status.
 
 import logging
 from datetime import datetime, timedelta
-from app.utils.timezone import malaysia_now, malaysia_isoformat, utc_to_malaysia
+from app.utils.timezone import malaysia_now, utc_to_malaysia
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, desc
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.presentation.schemas import (
     DashboardSummary,
@@ -20,7 +18,6 @@ from app.presentation.schemas import (
     SystemStatus
 )
 from app.presentation.deps import (
-    get_db,
     get_stock_repository,
     get_sentiment_repository,
     get_price_repository
@@ -30,10 +27,36 @@ from app.data_access.repositories import (
     SentimentDataRepository,
     StockPriceRepository
 )
-from app.data_access.models import Stock, SentimentData, StockPrice
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+
+
+def format_market_cap(market_cap_value: float) -> str:
+    """
+    Format market cap value from Yahoo Finance into readable string.
+    
+    Args:
+        market_cap_value: Market cap in dollars (e.g., 2850000000000 for $2.85T)
+    
+    Returns:
+        Formatted string (e.g., "2.85T", "150.5B", "5.2M")
+    """
+    if not market_cap_value or market_cap_value <= 0:
+        return "N/A"
+    
+    # Trillions
+    if market_cap_value >= 1_000_000_000_000:
+        return f"{market_cap_value / 1_000_000_000_000:.2f}T"
+    # Billions
+    elif market_cap_value >= 1_000_000_000:
+        return f"{market_cap_value / 1_000_000_000:.2f}B"
+    # Millions
+    elif market_cap_value >= 1_000_000:
+        return f"{market_cap_value / 1_000_000:.2f}M"
+    # Thousands
+    else:
+        return f"{market_cap_value / 1_000:.2f}K"
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -88,15 +111,23 @@ async def _get_market_sentiment_overview(
     # Get recent sentiment data (last 24 hours)
     cutoff_time = malaysia_now() - timedelta(hours=24)
     
-    # Calculate average sentiment across all stocks
-    recent_sentiments = await sentiment_repo.get_recent_sentiment_scores(
+    # Calculate average sentiment across ACTIVE stocks only
+    all_recent_sentiments = await sentiment_repo.get_recent_sentiment_scores(
         since=cutoff_time,
         limit=1000
     )
     
+    # Get active stocks to filter sentiments
+    all_stocks = await stock_repo.get_all()
+    active_stock_ids = {s.id for s in all_stocks if s.is_active}
+    
+    # Filter sentiments to only include those from ACTIVE stocks
+    recent_sentiments = [s for s in all_recent_sentiments if s.stock_id in active_stock_ids]
+    
     if not recent_sentiments:
         # Return default values if no recent data
-        total_stocks = len(await stock_repo.get_all())
+        # Only count ACTIVE stocks (not deactivated ones)
+        total_stocks = len([s for s in all_stocks if s.is_active])
         return MarketSentimentOverview(
             average_sentiment=0.0,
             positive_stocks=0,
@@ -106,7 +137,7 @@ async def _get_market_sentiment_overview(
             last_updated=malaysia_now()
         )
     
-    # Calculate sentiment distribution
+    # Calculate sentiment distribution (only from ACTIVE stocks)
     sentiment_scores = [float(s.sentiment_score) for s in recent_sentiments]
     average_sentiment = sum(sentiment_scores) / len(sentiment_scores)
     
@@ -115,7 +146,8 @@ async def _get_market_sentiment_overview(
     negative_count = len([s for s in sentiment_scores if s < -0.1])
     neutral_count = len(sentiment_scores) - positive_count - negative_count
     
-    total_stocks = len(await stock_repo.get_all())
+    # Total stocks count (already have all_stocks from above)
+    total_stocks = len([s for s in all_stocks if s.is_active])
     
     return MarketSentimentOverview(
         average_sentiment=round(average_sentiment, 3),
@@ -145,19 +177,22 @@ async def _get_top_stocks_by_sentiment(
     After hours: Uses last available closing price
     """
     
-    stocks = await stock_repo.get_all()
+    all_stocks = await stock_repo.get_all()
+    # Only process ACTIVE stocks (not deactivated ones)
+    active_stocks = [s for s in all_stocks if s.is_active]
     stock_summaries = []
     
     # Import Yahoo Finance service for fresh price data
     import yfinance as yf
     
-    for stock in stocks[:limit]:  # Limit processing for performance
+    for stock in active_stocks[:limit]:  # Limit processing for performance
         # Get latest sentiment
         latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
         
-        # 🔴 FETCH FRESH PRICES DIRECTLY FROM YAHOO FINANCE FOR ACCURACY
+        # 🔴 FETCH FRESH PRICES AND MARKET CAP DIRECTLY FROM YAHOO FINANCE
         current_price = None
         price_change_24h = None
+        market_cap = None
         
         try:
             # Fetch live data from Yahoo Finance
@@ -171,6 +206,10 @@ async def _get_top_stocks_by_sentiment(
                 info.get('previousClose')         # Last closing price as fallback
             )
             
+            # Get market cap from Yahoo Finance
+            market_cap_raw = info.get('marketCap')
+            market_cap = format_market_cap(market_cap_raw) if market_cap_raw else None
+            
             if current_price:
                 current_price = float(current_price)
                 
@@ -181,7 +220,7 @@ async def _get_top_stocks_by_sentiment(
                     price_change_24h = ((current_price - previous_close) / previous_close) * 100
                     price_change_24h = round(price_change_24h, 2)
                 
-                logger.debug(f"{stock.symbol}: Current=${current_price:.2f}, Change={price_change_24h}%")
+                logger.debug(f"{stock.symbol}: Current=${current_price:.2f}, Change={price_change_24h}%, MarketCap={market_cap}")
         
         except Exception as e:
             logger.warning(f"Error fetching live price for {stock.symbol} from Yahoo Finance: {e}")
@@ -203,6 +242,7 @@ async def _get_top_stocks_by_sentiment(
             company_name=stock.name,  # Fixed: model uses 'name' not 'company_name'
             current_price=current_price,
             price_change_24h=price_change_24h,
+            market_cap=market_cap,  # Real-time market cap from Yahoo Finance
             sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
             sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
             last_updated=latest_sentiment.created_at if latest_sentiment else None
@@ -229,12 +269,14 @@ async def _get_recent_price_movers(
     - Accurate even outside market hours using last closing price
     """
     
-    stocks = await stock_repo.get_all()
+    all_stocks = await stock_repo.get_all()
+    # Only process ACTIVE stocks (not deactivated ones)
+    active_stocks = [s for s in all_stocks if s.is_active]
     movers = []
     
     import yfinance as yf
     
-    for stock in stocks:
+    for stock in active_stocks:
         try:
             # 🔴 FETCH FRESH PRICES DIRECTLY FROM YAHOO FINANCE
             ticker = yf.Ticker(stock.symbol)
@@ -253,6 +295,10 @@ async def _get_recent_price_movers(
             current_price = float(current_price)
             previous_close = float(info.get('previousClose', current_price))
             
+            # Get market cap from Yahoo Finance
+            market_cap_raw = info.get('marketCap')
+            market_cap = format_market_cap(market_cap_raw) if market_cap_raw else None
+            
             # Calculate 24-hour change from previous close
             if previous_close and previous_close > 0:
                 price_change = ((current_price - previous_close) / previous_close) * 100
@@ -264,13 +310,14 @@ async def _get_recent_price_movers(
                 # Get latest sentiment
                 latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
                 
-                logger.debug(f"{stock.symbol}: MOVER! ${current_price:.2f} ({price_change:+.2f}%)")
+                logger.debug(f"{stock.symbol}: MOVER! ${current_price:.2f} ({price_change:+.2f}%), MarketCap={market_cap}")
                 
                 movers.append(StockSummary(
                     symbol=stock.symbol,
                     company_name=stock.name,
                     current_price=current_price,
                     price_change_24h=round(price_change, 2),
+                    market_cap=market_cap,  # Real-time market cap from Yahoo Finance
                     sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
                     sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
                     last_updated=latest_sentiment.created_at if latest_sentiment else None
@@ -304,6 +351,7 @@ async def _get_recent_price_movers(
                         company_name=stock.name,
                         current_price=float(latest_price.close_price),
                         price_change_24h=round(price_change, 2),
+                        market_cap=None,  # Market cap unavailable in database fallback
                         sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
                         sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
                         last_updated=latest_price.timestamp
