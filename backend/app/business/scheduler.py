@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 from enum import Enum
 import uuid
+import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from ..utils.timezone import utc_now, to_naive_utc
 from apscheduler.triggers.cron import CronTrigger
@@ -88,8 +89,10 @@ class Scheduler:
             
         self.logger = get_logger()
         self.scheduler = AsyncIOScheduler()
-        # Remove duplicate DataCollector - pipeline handles its own collectors
-        self.pipeline = DataPipeline()
+        # Initialize pipeline with enhanced collection features enabled
+        self.pipeline = DataPipeline(
+            use_enhanced_collection=True  # Enable batching and all optimizations
+        )
         
         self.jobs: Dict[str, ScheduledJob] = {}
         self._is_running = False
@@ -174,23 +177,101 @@ class Scheduler:
         except Exception as e:
             self.logger.error(f"Error refreshing scheduled jobs: {e}")
     
+    def _is_market_hours(self) -> tuple[bool, str]:
+        """
+        Check if current time is during market hours (NYSE/NASDAQ).
+        Returns (is_market_hours, period_name)
+        
+        Market periods (Eastern Time):
+        - Pre-market: 7:00 AM - 9:30 AM
+        - Market hours: 9:30 AM - 4:00 PM
+        - After-hours: 4:00 PM - 8:00 PM
+        - Overnight: 8:00 PM - 7:00 AM
+        """
+        try:
+            et_tz = pytz.timezone('America/New_York')
+            current_time_et = datetime.now(et_tz)
+            current_hour = current_time_et.hour
+            current_minute = current_time_et.minute
+            day_of_week = current_time_et.weekday()
+            
+            # Weekend check (Saturday=5, Sunday=6)
+            if day_of_week >= 5:
+                return False, "weekend"
+            
+            # Convert to minutes for easier comparison
+            current_minutes = current_hour * 60 + current_minute
+            
+            # Market periods in minutes from midnight
+            pre_market_start = 7 * 60  # 7:00 AM
+            market_open = 9 * 60 + 30  # 9:30 AM
+            market_close = 16 * 60  # 4:00 PM
+            after_hours_end = 20 * 60  # 8:00 PM
+            
+            if pre_market_start <= current_minutes < market_open:
+                return False, "pre_market"
+            elif market_open <= current_minutes < market_close:
+                return True, "market_hours"
+            elif market_close <= current_minutes < after_hours_end:
+                return False, "after_hours"
+            else:
+                return False, "overnight"
+                
+        except Exception as e:
+            self.logger.warning(f"Error checking market hours: {e}, defaulting to non-market hours")
+            return False, "unknown"
+    
+    def _get_smart_interval(self) -> int:
+        """
+        Get smart collection interval based on market hours.
+        
+        Returns interval in minutes:
+        - Market hours: 15 minutes (high frequency)
+        - Pre-market: 30 minutes (moderate frequency)
+        - After-hours: 30 minutes (moderate frequency)
+        - Overnight: 120 minutes (low frequency)
+        - Weekend: 240 minutes (very low frequency)
+        """
+        is_market, period = self._is_market_hours()
+        
+        interval_map = {
+            "market_hours": 15,
+            "pre_market": 30,
+            "after_hours": 30,
+            "overnight": 120,
+            "weekend": 240
+        }
+        
+        interval = interval_map.get(period, 60)  # Default 60 min
+        self.logger.info(f"Smart scheduling: period='{period}', interval={interval} minutes")
+        return interval
+    
     async def _setup_default_jobs(self):
-        """Setup default scheduled jobs for the pipeline"""
+        """Setup default scheduled jobs for the pipeline with smart scheduling"""
         
         # Get current symbols from dynamic watchlist
         current_symbols = await self.get_current_symbols()
         
-        # Daily data collection job at 6 AM UTC
+        # Market hours data collection (every 15 minutes during trading hours)
+        # More frequent during market hours (9:30 AM - 4:00 PM ET = 14:30 - 21:00 UTC)
         await self.schedule_data_collection(
-            name="Daily Data Collection",
-            cron_expression="0 6 * * *",  # Daily at 6 AM
+            name="Market Hours Data Collection",
+            cron_expression="*/15 14-20 * * 1-5",  # Every 15 min, 9:30 AM-4:00 PM ET weekdays
             symbols=current_symbols,
             lookback_days=1
         )
         
-        # Hourly sentiment analysis during market hours
+        # Off-hours data collection (every 2 hours overnight)
+        await self.schedule_data_collection(
+            name="Off-Hours Data Collection",
+            cron_expression="0 */2 * * *",  # Every 2 hours
+            symbols=current_symbols,
+            lookback_days=1
+        )
+        
+        # Market hours sentiment analysis (more frequent during trading)
         await self.schedule_sentiment_analysis(
-            name="Hourly Sentiment Analysis", 
+            name="Market Hours Sentiment", 
             cron_expression="0 9-16 * * 1-5",  # Hourly 9AM-4PM weekdays
             symbols=current_symbols
         )

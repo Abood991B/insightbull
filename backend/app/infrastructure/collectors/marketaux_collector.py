@@ -63,8 +63,15 @@ class MarketauxCollector(BaseCollector):
         return True
     
     def _get_http_client(self) -> httpx.AsyncClient:
-        """Get a fresh HTTP client for each request"""
-        return httpx.AsyncClient(timeout=30.0)
+        """Get HTTP client with connection pooling for better performance"""
+        return httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(
+                max_keepalive_connections=20,  # Keep 20 connections alive
+                max_connections=100,            # Max 100 total connections
+                keepalive_expiry=30.0           # Keep connections alive for 30s
+            )
+        )
     
     async def validate_connection(self) -> bool:
         """Validate MarketAux API connection"""
@@ -86,7 +93,7 @@ class MarketauxCollector(BaseCollector):
     
     async def collect_data(self, config: CollectionConfig) -> CollectionResult:
         """
-        Collect financial news from MarketAux.
+        Collect financial news from MarketAux with batch support.
         
         Args:
             config: Collection configuration
@@ -99,20 +106,17 @@ class MarketauxCollector(BaseCollector):
         
         try:
             self._validate_config(config)
-            await self._apply_rate_limit()
             
-            # Collect symbol-specific news only for equal distribution
-            for symbol in config.symbols:
-                symbol_data = await self._collect_symbol_news(symbol, config)
-                # Ensure equal distribution by limiting to max_items_per_symbol
-                limited_data = symbol_data[:config.max_items_per_symbol]
-                collected_data.extend(limited_data)
-                
-                # Apply rate limiting between symbols
-                if self.rate_limiter:
-                    await asyncio.sleep(0.2)
-            
-            # Skip general market news to focus on target stocks only
+            # Use batch collection for better efficiency (MarketAux supports up to 10 symbols per request)
+            if len(config.symbols) > 3:
+                collected_data = await self._collect_batch(config.symbols, config)
+            else:
+                # Small number of symbols - collect individually with rate limiting
+                for symbol in config.symbols:
+                    await self._apply_rate_limit()
+                    symbol_data = await self._collect_symbol_news(symbol, config)
+                    limited_data = symbol_data[:config.max_items_per_symbol]
+                    collected_data.extend(limited_data)
             
             execution_time = (utc_now() - start_time).total_seconds()
             
@@ -135,6 +139,138 @@ class MarketauxCollector(BaseCollector):
                 error_message=error_msg,
                 execution_time=execution_time
             )
+    
+    async def _collect_batch(self, symbols: List[str], config: CollectionConfig) -> List[RawData]:
+        """
+        Collect news for multiple symbols using MarketAux batch API.
+        MarketAux supports up to 10 symbols per request (comma-separated).
+        
+        Args:
+            symbols: List of stock symbols
+            config: Collection configuration
+            
+        Returns:
+            List of collected news data
+        """
+        collected_data = []
+        batch_size = 10  # MarketAux max symbols per request
+        
+        # Split symbols into batches
+        for i in range(0, len(symbols), batch_size):
+            batch_symbols = symbols[i:i + batch_size]
+            
+            # Apply rate limiting before each batch
+            await self._apply_rate_limit()
+            
+            try:
+                # Create comma-separated symbol list
+                symbols_param = ",".join([s.upper() for s in batch_symbols])
+                
+                url = f"{self.base_url}/news/all"
+                params = {
+                    "symbols": symbols_param,  # Batch request
+                    "filter_entities": "true",
+                    "language": "en",
+                    "limit": config.max_items_per_symbol * len(batch_symbols),  # Total items for batch
+                    "published_after": config.date_range.start_date.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "api_token": self.api_key
+                }
+                
+                async with self._get_http_client() as client:
+                    response = await client.get(url, params=params)
+                    response.raise_for_status()
+                    
+                    data = response.json()
+                    
+                    if "data" in data:
+                        articles = data["data"]
+                        
+                        # Group articles by symbol to ensure fair distribution
+                        articles_by_symbol = {symbol: [] for symbol in batch_symbols}
+                        
+                        for article in articles:
+                            # Determine which symbol(s) this article belongs to
+                            article_symbols = self._extract_symbols_from_article(article, batch_symbols)
+                            
+                            for symbol in article_symbols:
+                                if len(articles_by_symbol[symbol]) < config.max_items_per_symbol:
+                                    parsed_article = self._parse_news_item(article, symbol)
+                                    if parsed_article:
+                                        articles_by_symbol[symbol].append(parsed_article)
+                        
+                        # Flatten the grouped articles
+                        for symbol_articles in articles_by_symbol.values():
+                            collected_data.extend(symbol_articles)
+                        
+                        self.logger.info(f"Batch collected {len(collected_data)} articles for {len(batch_symbols)} symbols")
+                
+            except Exception as e:
+                self.logger.error(f"Error collecting batch: {str(e)}")
+                # Fall back to individual collection with retry logic
+                for symbol in batch_symbols:
+                    symbol_data = await self._collect_symbol_with_retry(symbol, config, max_retries=3)
+                    collected_data.extend(symbol_data)
+        
+        return collected_data
+    
+    def _extract_symbols_from_article(self, article: dict, candidate_symbols: List[str]) -> List[str]:
+        """
+        Extract which symbols an article is relevant to.
+        
+        Args:
+            article: Article data from API
+            candidate_symbols: List of symbols to check against
+            
+        Returns:
+            List of relevant symbols
+        """
+        relevant_symbols = []
+        
+        # Check if article has entities field
+        if "entities" in article:
+            article_symbols = [e.get("symbol", "").upper() for e in article.get("entities", [])]
+            for symbol in candidate_symbols:
+                if symbol.upper() in article_symbols:
+                    relevant_symbols.append(symbol)
+        
+        # If no entities, check title and description
+        if not relevant_symbols:
+            text = f"{article.get('title', '')} {article.get('description', '')}".upper()
+            for symbol in candidate_symbols:
+                if symbol.upper() in text:
+                    relevant_symbols.append(symbol)
+        
+        # Default to first symbol if none found
+        if not relevant_symbols and candidate_symbols:
+            relevant_symbols = [candidate_symbols[0]]
+        
+        return relevant_symbols
+    
+    async def _collect_symbol_with_retry(
+        self, 
+        symbol: str, 
+        config: CollectionConfig, 
+        max_retries: int = 3
+    ) -> List[RawData]:
+        """Collect news for a symbol with exponential backoff retry logic"""
+        for attempt in range(max_retries):
+            try:
+                await self._apply_rate_limit()
+                symbol_data = await self._collect_symbol_news(symbol, config)
+                return symbol_data[:config.max_items_per_symbol]
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 2^attempt seconds (1s, 2s, 4s)
+                    delay = 2 ** attempt
+                    self.logger.warning(
+                        f"Marketaux collection failed for {symbol} (attempt {attempt + 1}/{max_retries}): {str(e)}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    self.logger.error(f"Marketaux collection failed for {symbol} after {max_retries} attempts: {str(e)}")
+                    return []  # Return empty list on final failure
+        return []
     
     async def _collect_symbol_news(self, symbol: str, config: CollectionConfig) -> List[RawData]:
         """Collect news for specific stock symbol"""

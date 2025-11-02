@@ -135,7 +135,7 @@ class RedditCollector(BaseCollector):
     
     async def collect_data(self, config: CollectionConfig) -> CollectionResult:
         """
-        Collect posts and comments from Reddit.
+        Collect posts and comments from Reddit with parallel symbol processing.
         
         Args:
             config: Collection configuration
@@ -152,14 +152,22 @@ class RedditCollector(BaseCollector):
             
             reddit = self._get_reddit_client()
             
-            # Collect data for each symbol individually to ensure equal distribution
-            for symbol in config.symbols:
-                symbol_data = await self._collect_for_symbol(reddit, symbol.upper(), config)
-                collected_data.extend(symbol_data)
-                
-                # Apply rate limiting between symbols
-                if self.rate_limiter:
-                    await asyncio.sleep(0.3)
+            # Parallelize collection across symbols for better performance
+            tasks = [
+                self._collect_for_symbol(reddit, symbol.upper(), config)
+                for symbol in config.symbols
+            ]
+            
+            # Execute all symbol collections in parallel
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            for result in results:
+                if isinstance(result, Exception):
+                    self.logger.error(f"Reddit symbol collection failed: {str(result)}")
+                    continue
+                if isinstance(result, list):
+                    collected_data.extend(result)
             
             execution_time = (utc_now() - start_time).total_seconds()
             
@@ -205,9 +213,6 @@ class RedditCollector(BaseCollector):
                 )
                 collected_data.extend(subreddit_data)
                 items_collected += len(subreddit_data)
-                
-                # Small delay between subreddits
-                await asyncio.sleep(0.2)
                 
         except Exception as e:
             self.logger.warning(f"Error collecting Reddit data for {symbol}: {str(e)}")

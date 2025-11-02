@@ -2,8 +2,14 @@
 Rate Limiting System
 ===================
 
-Implements intelligent rate limiting for external API calls.
-Handles different rate limits per API source with exponential backoff.
+Implements intelligent rate limiting for external API calls with advanced features:
+- Per-source rate limit configuration
+- Adaptive rate limiting based on API response headers
+- Intelligent caching with TTL
+- Circuit breaker pattern for failing APIs
+- Priority queue for high-volume stocks
+- Request deduplication
+- Burst handling and exponential backoff
 
 Following FYP Report specification:
 - SY-FR6: Handle API Rate Limits
@@ -11,10 +17,13 @@ Following FYP Report specification:
 
 import asyncio
 import time
+import hashlib
+import json
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List, Set
 from dataclasses import dataclass, field
 from enum import Enum
+from collections import defaultdict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,6 +34,14 @@ class BackoffStrategy(Enum):
     LINEAR = "linear"
     EXPONENTIAL = "exponential"
     FIXED = "fixed"
+
+
+class RequestPriority(Enum):
+    """Request priority levels for stock processing"""
+    CRITICAL = 1  # High-volume stocks (AAPL, TSLA, etc.)
+    HIGH = 2      # Recently active stocks
+    NORMAL = 3    # Standard processing
+    LOW = 4       # Background/maintenance
 
 
 @dataclass
@@ -55,14 +72,45 @@ class RequestRecord:
     delay_applied: float = 0.0
 
 
+@dataclass
+class CacheEntry:
+    """Cached API response entry with TTL"""
+    data: Any
+    timestamp: float
+    ttl: float  # Time to live in seconds
+    hash_key: str
+    
+    def is_expired(self) -> bool:
+        """Check if cache entry has expired"""
+        return time.time() - self.timestamp > self.ttl
+
+
+@dataclass
+class CircuitBreakerState:
+    """Circuit breaker state for failing APIs"""
+    failure_count: int = 0
+    last_failure_time: float = 0
+    is_open: bool = False
+    success_count: int = 0
+    
+    # Thresholds
+    failure_threshold: int = 5  # Open after 5 failures
+    success_threshold: int = 2  # Close after 2 successes
+    timeout: float = 300.0  # 5 minutes in open state
+
+
 class RateLimitHandler:
     """
-    Handles rate limiting for multiple API sources.
+    Handles rate limiting for multiple API sources with advanced features.
     
     Features:
     - Per-source rate limit configuration
+    - Adaptive rate limiting from API response headers
+    - Intelligent caching with TTL
+    - Circuit breaker pattern for failing APIs
+    - Priority queue for high-volume stocks
+    - Request deduplication
     - Exponential backoff with jitter
-    - Request queue management
     - Burst handling
     - Thread-safe operation
     """
@@ -91,6 +139,28 @@ class RateLimitHandler:
         )
     }
     
+    # High-priority stocks (high trading volume)
+    HIGH_PRIORITY_SYMBOLS = {
+        "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", 
+        "META", "TSLA", "NFLX"
+    }
+    
+    # Cache TTL by source (in seconds)
+    CACHE_TTL = {
+        "reddit": 300,      # 5 minutes
+        "finnhub": 600,     # 10 minutes
+        "newsapi": 900,     # 15 minutes
+        "marketaux": 900    # 15 minutes
+    }
+    
+    # Concurrency limits per source
+    SEMAPHORE_LIMITS = {
+        "reddit": 3,       # 3 concurrent Reddit requests
+        "finnhub": 5,      # 5 concurrent FinHub requests
+        "newsapi": 2,      # 2 concurrent NewsAPI requests
+        "marketaux": 3     # 3 concurrent Marketaux requests
+    }
+    
     def __init__(self, custom_configs: Optional[Dict[str, RateLimitConfig]] = None):
         """
         Initialize rate limiter with configurations.
@@ -107,11 +177,30 @@ class RateLimitHandler:
         self._locks: Dict[str, asyncio.Lock] = {}
         self._queues: Dict[str, asyncio.Queue] = {}
         
-        # Initialize locks and queues for each configured source
+        # Caching layer
+        self._cache: Dict[str, CacheEntry] = {}
+        self._cache_lock = asyncio.Lock()
+        
+        # Circuit breakers per source
+        self._circuit_breakers: Dict[str, CircuitBreakerState] = defaultdict(CircuitBreakerState)
+        
+        # Semaphores for parallel collection (limit concurrent requests per source)
+        self._semaphores: Dict[str, asyncio.Semaphore] = {}
+        
+        # Request deduplication tracking
+        self._active_requests: Dict[str, Set[asyncio.Event]] = defaultdict(set)
+        
+        # Adaptive rate tracking
+        self._api_quotas: Dict[str, Dict[str, int]] = {}
+        
+        # Initialize locks, queues, and semaphores for each configured source
         for source in self.configs:
             self._request_history[source] = []
             self._locks[source] = asyncio.Lock()
             self._queues[source] = asyncio.Queue()
+            self._semaphores[source] = asyncio.Semaphore(
+                self.SEMAPHORE_LIMITS.get(source, 3)
+            )
             
         self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
     
@@ -308,5 +397,277 @@ class RateLimitHandler:
             self._locks[source] = asyncio.Lock()
         if source not in self._queues:
             self._queues[source] = asyncio.Queue()
+        if source not in self._semaphores:
+            self._semaphores[source] = asyncio.Semaphore(
+                self.SEMAPHORE_LIMITS.get(source, 3)
+            )
         
         self.logger.info(f"Updated rate limit config for {source}")
+    
+    # ==================== Enhanced Features ====================
+    
+    def get_symbol_priority(self, symbol: str) -> RequestPriority:
+        """Determine priority for a stock symbol"""
+        symbol = symbol.upper()
+        if symbol in self.HIGH_PRIORITY_SYMBOLS:
+            return RequestPriority.CRITICAL
+        return RequestPriority.NORMAL
+    
+    async def acquire_with_cache(
+        self, 
+        source: str, 
+        symbol: str,
+        use_cache: bool = True
+    ) -> tuple[bool, Optional[Any]]:
+        """
+        Acquire permission to make API request with cache checking.
+        
+        Args:
+            source: API source identifier
+            symbol: Stock symbol
+            use_cache: Whether to check cache first
+            
+        Returns:
+            Tuple of (should_make_request, cached_data)
+        """
+        # Check circuit breaker
+        if not await self._check_circuit_breaker(source):
+            raise Exception(f"Circuit breaker open for {source}")
+        
+        # Check cache first
+        if use_cache:
+            cache_key = self._generate_cache_key(source, symbol)
+            cached_data = await self._get_from_cache(cache_key)
+            if cached_data is not None:
+                self.logger.debug(f"Cache hit for {source}:{symbol}")
+                return False, cached_data  # Don't make request, use cache
+        
+        # Check for duplicate in-flight requests
+        request_key = f"{source}:{symbol}"
+        if request_key in self._active_requests and self._active_requests[request_key]:
+            # Wait for existing request to complete
+            self.logger.debug(f"Waiting for duplicate request: {request_key}")
+            event = list(self._active_requests[request_key])[0]
+            await event.wait()
+            # Check cache again after wait
+            cache_key = self._generate_cache_key(source, symbol)
+            cached_data = await self._get_from_cache(cache_key)
+            return False, cached_data  # Use result from first request
+        
+        # Acquire semaphore for parallel execution
+        async with self._semaphores[source]:
+            # Apply base rate limiting
+            await self.acquire(source)
+            
+            # Mark request as active
+            event = asyncio.Event()
+            self._active_requests[request_key].add(event)
+            
+            return True, None  # Proceed with request
+    
+    async def release_request(self, source: str, symbol: str):
+        """Release request tracking and notify waiting tasks"""
+        request_key = f"{source}:{symbol}"
+        if request_key in self._active_requests:
+            for event in self._active_requests[request_key]:
+                event.set()
+            self._active_requests[request_key].clear()
+    
+    async def _check_circuit_breaker(self, source: str) -> bool:
+        """Check if circuit breaker allows requests"""
+        breaker = self._circuit_breakers[source]
+        
+        if not breaker.is_open:
+            return True
+        
+        # Check if timeout has expired
+        if time.time() - breaker.last_failure_time > breaker.timeout:
+            # Try half-open state
+            self.logger.info(f"Circuit breaker half-open for {source}")
+            breaker.is_open = False
+            breaker.failure_count = 0
+            breaker.success_count = 0
+            return True
+        
+        self.logger.warning(f"Circuit breaker open for {source}, rejecting request")
+        return False
+    
+    async def record_success(self, source: str, response_headers: Optional[Dict] = None):
+        """
+        Record successful API request.
+        
+        Args:
+            source: API source
+            response_headers: HTTP response headers for adaptive rate limiting
+        """
+        breaker = self._circuit_breakers[source]
+        
+        if breaker.is_open:
+            breaker.success_count += 1
+            if breaker.success_count >= breaker.success_threshold:
+                breaker.is_open = False
+                breaker.failure_count = 0
+                self.logger.info(f"Circuit breaker closed for {source}")
+        
+        # Update adaptive rate limits from headers
+        if response_headers:
+            await self._update_adaptive_limits(source, response_headers)
+    
+    async def record_failure(self, source: str, error: Exception):
+        """Record failed API request"""
+        breaker = self._circuit_breakers[source]
+        breaker.failure_count += 1
+        breaker.last_failure_time = time.time()
+        
+        if breaker.failure_count >= breaker.failure_threshold:
+            breaker.is_open = True
+            self.logger.error(
+                f"Circuit breaker opened for {source} after "
+                f"{breaker.failure_count} failures: {str(error)}"
+            )
+    
+    async def _update_adaptive_limits(self, source: str, headers: Dict):
+        """Update rate limits based on API response headers"""
+        # Common header patterns
+        remaining_headers = [
+            'x-ratelimit-remaining',
+            'x-rate-limit-remaining',
+            'ratelimit-remaining'
+        ]
+        
+        reset_headers = [
+            'x-ratelimit-reset',
+            'x-rate-limit-reset',
+            'ratelimit-reset'
+        ]
+        
+        remaining = None
+        reset_time = None
+        
+        # Check for rate limit headers (case-insensitive)
+        headers_lower = {k.lower(): v for k, v in headers.items()}
+        
+        for header in remaining_headers:
+            if header in headers_lower:
+                try:
+                    remaining = int(headers_lower[header])
+                    break
+                except (ValueError, TypeError):
+                    pass
+        
+        for header in reset_headers:
+            if header in headers_lower:
+                try:
+                    reset_time = int(headers_lower[header])
+                    break
+                except (ValueError, TypeError):
+                    pass
+        
+        if remaining is not None:
+            self._api_quotas[source] = {
+                'remaining': remaining,
+                'reset_time': reset_time,
+                'updated_at': time.time()
+            }
+            
+            # Log warning if approaching limit
+            if remaining < 10:
+                self.logger.warning(
+                    f"API quota low for {source}: {remaining} requests remaining"
+                )
+    
+    def _generate_cache_key(self, source: str, symbol: str, **kwargs) -> str:
+        """Generate cache key from request parameters"""
+        key_data = {
+            'source': source,
+            'symbol': symbol,
+            **kwargs
+        }
+        key_str = json.dumps(key_data, sort_keys=True)
+        return hashlib.md5(key_str.encode()).hexdigest()
+    
+    async def _get_from_cache(self, cache_key: str) -> Optional[Any]:
+        """Get data from cache if not expired"""
+        async with self._cache_lock:
+            if cache_key in self._cache:
+                entry = self._cache[cache_key]
+                if not entry.is_expired():
+                    return entry.data
+                else:
+                    # Remove expired entry
+                    del self._cache[cache_key]
+        return None
+    
+    async def cache_response(
+        self, 
+        source: str, 
+        symbol: str, 
+        data: Any,
+        **kwargs
+    ):
+        """Cache API response"""
+        cache_key = self._generate_cache_key(source, symbol, **kwargs)
+        ttl = self.CACHE_TTL.get(source, 600)
+        
+        async with self._cache_lock:
+            self._cache[cache_key] = CacheEntry(
+                data=data,
+                timestamp=time.time(),
+                ttl=ttl,
+                hash_key=cache_key
+            )
+            
+            # Cleanup old cache entries (keep cache size manageable)
+            if len(self._cache) > 1000:
+                await self._cleanup_cache()
+    
+    async def _cleanup_cache(self):
+        """Remove expired cache entries"""
+        expired_keys = [
+            key for key, entry in self._cache.items()
+            if entry.is_expired()
+        ]
+        
+        for key in expired_keys:
+            del self._cache[key]
+        
+        self.logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
+    
+    def get_enhanced_status(self) -> Dict[str, Any]:
+        """Get comprehensive status including enhanced features"""
+        base_status = self.get_all_status()
+        
+        return {
+            "base_rate_limits": base_status,
+            "circuit_breakers": {
+                source: {
+                    "is_open": breaker.is_open,
+                    "failure_count": breaker.failure_count,
+                    "success_count": breaker.success_count,
+                    "last_failure": breaker.last_failure_time
+                }
+                for source, breaker in self._circuit_breakers.items()
+            },
+            "cache_stats": {
+                "total_entries": len(self._cache),
+                "entries_by_source": self._count_cache_by_source()
+            },
+            "api_quotas": self._api_quotas,
+            "active_requests": {
+                source: len(events)
+                for source, events in self._active_requests.items()
+                if events
+            }
+        }
+    
+    def _count_cache_by_source(self) -> Dict[str, int]:
+        """Count cache entries by source"""
+        counts = defaultdict(int)
+        for entry in self._cache.values():
+            # Extract source from hash_key (first part before ':')
+            try:
+                source = json.loads(entry.hash_key)['source']
+                counts[source] += 1
+            except:
+                pass
+        return dict(counts)

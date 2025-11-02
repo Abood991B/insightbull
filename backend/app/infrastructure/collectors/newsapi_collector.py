@@ -92,12 +92,17 @@ class NewsAPICollector(BaseCollector):
         return True
     
     def _get_http_client(self) -> httpx.AsyncClient:
-        """Get a fresh HTTP client for each request"""
+        """Get HTTP client with connection pooling for better performance"""
         return httpx.AsyncClient(
             timeout=30.0,
             headers={
                 "User-Agent": "InsightStockDash/1.0 (Financial News Collector)"
-            }
+            },
+            limits=httpx.Limits(
+                max_keepalive_connections=20,  # Keep 20 connections alive
+                max_connections=100,            # Max 100 total connections
+                keepalive_expiry=30.0           # Keep connections alive for 30s
+            )
         )
     
     async def validate_connection(self) -> bool:
@@ -120,7 +125,7 @@ class NewsAPICollector(BaseCollector):
     
     async def collect_data(self, config: CollectionConfig) -> CollectionResult:
         """
-        Collect financial news from NewsAPI.
+        Collect financial news from NewsAPI with parallel symbol processing.
         
         Args:
             config: Collection configuration
@@ -133,19 +138,23 @@ class NewsAPICollector(BaseCollector):
         
         try:
             self._validate_config(config)
-            await self._apply_rate_limit()
             
-            # Collect news for each symbol only - ensures equal distribution
-            for symbol in config.symbols:
-                symbol_data = await self._collect_symbol_news(symbol, config)
-                collected_data.extend(symbol_data)
-                
-                # Apply rate limiting between symbols
-                if self.rate_limiter:
-                    await asyncio.sleep(0.3)  # NewsAPI has stricter limits
+            # Parallelize collection across symbols (rate limiter handles concurrency)
+            tasks = [
+                self._collect_symbol_with_limit(symbol, config)
+                for symbol in config.symbols
+            ]
             
-            # Skip general news collection to focus on target stocks only
-            # This ensures equal distribution across all target symbols
+            # Execute all symbol collections in parallel
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            for result in results:
+                if isinstance(result, Exception):
+                    self.logger.error(f"NewsAPI symbol collection failed: {str(result)}")
+                    continue
+                if isinstance(result, list):
+                    collected_data.extend(result)
             
             execution_time = (utc_now() - start_time).total_seconds()
             
@@ -168,6 +177,11 @@ class NewsAPICollector(BaseCollector):
                 error_message=error_msg,
                 execution_time=execution_time
             )
+    
+    async def _collect_symbol_with_limit(self, symbol: str, config: CollectionConfig) -> List[RawData]:
+        """Collect news for a symbol with rate limiting"""
+        await self._apply_rate_limit()
+        return await self._collect_symbol_news(symbol, config)
     
     async def _collect_symbol_news(self, symbol: str, config: CollectionConfig) -> List[RawData]:
         """Collect news for specific stock symbol"""

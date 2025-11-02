@@ -13,8 +13,9 @@ Following FYP Report specification:
 
 import asyncio
 import os
+import hashlib
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
@@ -27,7 +28,7 @@ from ..infrastructure.collectors.reddit_collector import RedditCollector
 from ..infrastructure.collectors.finnhub_collector import FinHubCollector  
 from ..infrastructure.collectors.newsapi_collector import NewsAPICollector
 from ..infrastructure.collectors.marketaux_collector import MarketauxCollector
-from ..infrastructure.rate_limiter import RateLimitHandler
+from ..infrastructure.rate_limiter import RateLimitHandler, RequestPriority
 from ..data_access.repositories.sentiment_repository import SentimentDataRepository
 from ..data_access.repositories.stock_repository import StockRepository
 from ..infrastructure.security.security_utils import SecurityUtils
@@ -183,7 +184,8 @@ class DataPipeline:
         rate_limiter: Optional[RateLimitHandler] = None,
         sentiment_repository: Optional[SentimentDataRepository] = None,
         stock_repository: Optional[StockRepository] = None,
-        auto_configure_collectors: bool = True
+        auto_configure_collectors: bool = True,
+        use_enhanced_collection: bool = True
     ):
         """
         Initialize the data pipeline.
@@ -193,8 +195,10 @@ class DataPipeline:
             sentiment_repository: Repository for storing sentiment data
             stock_repository: Repository for stock data
             auto_configure_collectors: If True, automatically configure collectors from environment variables
+            use_enhanced_collection: If True, use enhanced parallel collection with caching and batching
         """
         self.rate_limiter = rate_limiter or RateLimitHandler()
+        self.use_enhanced_collection = use_enhanced_collection
         self.text_processor = TextProcessor()
         self.logger = get_logger()  # Use LogSystem singleton logger
         
@@ -227,6 +231,68 @@ class DataPipeline:
         # Auto-configure collectors from environment variables
         if auto_configure_collectors:
             self._auto_configure_collectors()
+        
+        # Content deduplication tracking
+        self._content_hashes: Set[str] = set()
+        self._dedup_stats = {"checked": 0, "duplicates": 0}
+    
+    def _generate_content_hash(self, title: str, description: str, content: str = "") -> str:
+        """
+        Generate a content hash for deduplication.
+        Uses title + description + first 200 chars of content.
+        
+        Args:
+            title: Article/post title
+            description: Article/post description
+            content: Full content (optional)
+            
+        Returns:
+            MD5 hash string
+        """
+        # Normalize text (lowercase, strip whitespace)
+        normalized = f"{title.lower().strip()}|{description.lower().strip()}"
+        if content:
+            normalized += f"|{content[:200].lower().strip()}"
+        
+        # Generate MD5 hash
+        return hashlib.md5(normalized.encode('utf-8')).hexdigest()
+    
+    def _is_duplicate_content(self, content_hash: str) -> bool:
+        """
+        Check if content hash has been seen before.
+        
+        Args:
+            content_hash: MD5 hash of content
+            
+        Returns:
+            True if duplicate, False if new
+        """
+        self._dedup_stats["checked"] += 1
+        if content_hash in self._content_hashes:
+            self._dedup_stats["duplicates"] += 1
+            return True
+        
+        # Add to seen hashes
+        self._content_hashes.add(content_hash)
+        return False
+    
+    def _clear_deduplication_cache(self) -> None:
+        """Clear deduplication cache (call at end of pipeline run)."""
+        cleared_count = len(self._content_hashes)
+        self._content_hashes.clear()
+        self._dedup_stats = {"checked": 0, "duplicates": 0}
+        self.logger.info(f"Cleared deduplication cache: {cleared_count} hashes removed")
+    
+    def get_deduplication_stats(self) -> Dict[str, Any]:
+        """Get deduplication statistics."""
+        return {
+            "total_checked": self._dedup_stats["checked"],
+            "duplicates_found": self._dedup_stats["duplicates"],
+            "unique_content": len(self._content_hashes),
+            "deduplication_rate": (
+                self._dedup_stats["duplicates"] / max(self._dedup_stats["checked"], 1) * 100
+            )
+        }
     
     async def _initialize_repositories(self) -> None:
         """Initialize repositories with async database sessions."""
@@ -627,6 +693,12 @@ class DataPipeline:
             result.status = PipelineStatus.COMPLETED
             result.end_time = utc_now()
             
+            # Get deduplication stats before clearing
+            dedup_stats = self.get_deduplication_stats()
+            
+            # Clear deduplication cache for next run
+            self._clear_deduplication_cache()
+            
             # Log comprehensive completion metrics
             execution_time = (result.end_time - result.start_time).total_seconds()
             self.logger.log_pipeline_operation(
@@ -639,7 +711,9 @@ class DataPipeline:
                     "total_analyzed": result.total_items_analyzed,
                     "total_stored": result.total_items_stored or 0,
                     "overall_success_rate": (result.total_items_stored or 0) / result.total_items_collected if result.total_items_collected > 0 else 0,
-                    "items_per_second": result.total_items_collected / execution_time if execution_time > 0 else 0
+                    "items_per_second": result.total_items_collected / execution_time if execution_time > 0 else 0,
+                    "deduplication_rate": dedup_stats["deduplication_rate"],
+                    "duplicates_skipped": dedup_stats["duplicates_found"]
                 }
             )
             
@@ -673,7 +747,7 @@ class DataPipeline:
         return result
     
     async def _collect_data(self, config: PipelineConfig) -> Dict[str, CollectionResult]:
-        """Collect data from all configured sources"""
+        """Collect data from all configured sources with optional enhanced parallel collection"""
         # Reorder symbols fairly before passing to collectors
         fair_symbols = await self._get_fair_ordered_symbols(config.symbols)
         collection_config = CollectionConfig(
@@ -698,9 +772,9 @@ class DataPipeline:
         if config.include_marketaux and "marketaux" in self._collectors:
             collectors_to_run.append(("marketaux", self._collectors["marketaux"]))
         
-        # Run collectors
+        # Run collectors in parallel or sequential mode
         if config.parallel_collectors:
-            # Run collectors in parallel
+            # Run collectors in parallel (standard mode)
             tasks = []
             for name, collector in collectors_to_run:
                 task = asyncio.create_task(
@@ -1347,7 +1421,7 @@ class DataPipeline:
     
     async def _analyze_sentiment(self, processing_results: List[ProcessingResult], config: PipelineConfig) -> List['SentimentAnalysisResult']:
         """
-        Analyze sentiment for processed text data.
+        Analyze sentiment for processed text data with deduplication.
         
         Args:
             processing_results: Results from text processing step
@@ -1356,7 +1430,7 @@ class DataPipeline:
         Returns:
             List of sentiment analysis results
         """
-        self.logger.info("Starting sentiment analysis...")
+        self.logger.info("Starting sentiment analysis with deduplication...")
         
         # Initialize sentiment engine if not already done
         if not self.sentiment_engine.is_initialized:
@@ -1367,9 +1441,22 @@ class DataPipeline:
         # Convert processing results to TextInput objects for sentiment analysis
         text_inputs = []
         result_mapping = {}  # Map TextInput to ProcessingResult
+        skipped_duplicates = 0
         
         for proc_result in processing_results:
             if not proc_result.success or not proc_result.processed_text:
+                continue
+            
+            # Check for duplicate content
+            title = getattr(proc_result.raw_data, 'title', '')
+            description = getattr(proc_result.raw_data, 'description', '')
+            content = proc_result.processed_text
+            
+            content_hash = self._generate_content_hash(title, description, content)
+            
+            if self._is_duplicate_content(content_hash):
+                skipped_duplicates += 1
+                self.logger.debug(f"Skipping duplicate content: {title[:50]}...")
                 continue
             
             # FIXED: raw_data.source is already a DataSource enum, no mapping needed!
@@ -1391,8 +1478,11 @@ class DataPipeline:
             result_mapping[id(text_input)] = proc_result
         
         if not text_inputs:
-            self.logger.warning("No valid texts found for sentiment analysis")
+            self.logger.warning(f"No valid texts found for sentiment analysis (skipped {skipped_duplicates} duplicates)")
             return sentiment_results
+        
+        if skipped_duplicates > 0:
+            self.logger.info(f"Deduplication: Skipped {skipped_duplicates} duplicate items, processing {len(text_inputs)} unique items")
         
         try:
             # Perform sentiment analysis in batches

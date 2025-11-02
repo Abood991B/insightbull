@@ -76,8 +76,15 @@ class FinHubCollector(BaseCollector):
         return True
     
     def _get_http_client(self) -> httpx.AsyncClient:
-        """Get a fresh HTTP client for each request"""
-        return httpx.AsyncClient(timeout=30.0)
+        """Get HTTP client with connection pooling for better performance"""
+        return httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(
+                max_keepalive_connections=20,  # Keep 20 connections alive
+                max_connections=100,            # Max 100 total connections
+                keepalive_expiry=30.0           # Keep connections alive for 30s
+            )
+        )
     
     async def validate_connection(self) -> bool:
         """Validate FinHub API connection"""
@@ -112,20 +119,15 @@ class FinHubCollector(BaseCollector):
         
         try:
             self._validate_config(config)
-            await self._apply_rate_limit()
             
-            # Collect company news for each symbol individually for equal distribution
-            for symbol in config.symbols:
-                symbol_data = await self._collect_company_news(symbol, config)
-                # Limit to max_items_per_symbol to ensure equal distribution
-                limited_data = symbol_data[:config.max_items_per_symbol]
-                collected_data.extend(limited_data)
-                
-                # Apply rate limiting between symbols
-                if self.rate_limiter:
-                    await asyncio.sleep(0.2)
-            
-            # Skip general market news to focus on target stocks only
+            # Use batch collection if multiple symbols (more efficient)
+            if len(config.symbols) > 1:
+                collected_data = await self._collect_batch(config.symbols, config)
+            else:
+                # Single symbol collection
+                await self._apply_rate_limit()
+                symbol_data = await self._collect_company_news(config.symbols[0], config)
+                collected_data = symbol_data[:config.max_items_per_symbol]
             
             execution_time = (utc_now() - start_time).total_seconds()
             
@@ -148,6 +150,72 @@ class FinHubCollector(BaseCollector):
                 error_message=error_msg,
                 execution_time=execution_time
             )
+    
+    async def _collect_batch(self, symbols: List[str], config: CollectionConfig) -> List[RawData]:
+        """
+        Collect news for multiple symbols in parallel with smart batching.
+        
+        Args:
+            symbols: List of stock symbols
+            config: Collection configuration
+            
+        Returns:
+            List of collected news data
+        """
+        collected_data = []
+        
+        # Process symbols in parallel batches of 5 (FinHub handles this well)
+        batch_size = 5
+        tasks = []
+        
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i + batch_size]
+            
+            # Create parallel tasks for this batch
+            for symbol in batch:
+                tasks.append(self._collect_symbol_with_limit(symbol, config))
+            
+            # Wait for batch to complete before starting next batch (respects rate limits)
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    self.logger.error(f"Batch collection error: {str(result)}")
+                    continue
+                if isinstance(result, list):
+                    collected_data.extend(result)
+            
+            # Clear tasks for next batch
+            tasks = []
+        
+        return collected_data
+    
+    async def _collect_symbol_with_limit(
+        self, 
+        symbol: str, 
+        config: CollectionConfig, 
+        max_retries: int = 3
+    ) -> List[RawData]:
+        """Collect news for a single symbol with rate limiting and retry logic"""
+        for attempt in range(max_retries):
+            try:
+                await self._apply_rate_limit()
+                symbol_data = await self._collect_company_news(symbol, config)
+                return symbol_data[:config.max_items_per_symbol]
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 2^attempt seconds (1s, 2s, 4s)
+                    delay = 2 ** attempt
+                    self.logger.warning(
+                        f"FinHub collection failed for {symbol} (attempt {attempt + 1}/{max_retries}): {str(e)}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    self.logger.error(f"FinHub collection failed for {symbol} after {max_retries} attempts: {str(e)}")
+                    return []  # Return empty list on final failure
+        return []
     
     async def _collect_company_news(self, symbol: str, config: CollectionConfig) -> List[RawData]:
         """Collect company-specific news"""
