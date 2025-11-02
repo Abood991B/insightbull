@@ -15,6 +15,7 @@ from datetime import datetime
 from enum import Enum
 import asyncio
 import logging
+from app.utils.timezone import utc_now
 
 # Import DataSource from the canonical location
 from ....infrastructure.collectors.base_collector import DataSource
@@ -226,9 +227,9 @@ class SentimentModel(ABC):
                 source=self.model_info.supported_sources[0]
             )
             
-            start_time = datetime.now()
+            start_time = utc_now()
             result = await self.analyze([test_input])
-            end_time = datetime.now()
+            end_time = utc_now()
             
             processing_time = (end_time - start_time).total_seconds() * 1000
             

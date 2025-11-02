@@ -22,6 +22,7 @@ from fastapi import status
 from datetime import datetime, timedelta
 import json
 import httpx
+from app.utils.timezone import utc_now
 
 # Import application components
 from main import create_app
@@ -175,8 +176,8 @@ class TestPhase9PipelineTesting:
         config = PipelineConfig(
             symbols=["AAPL", "GOOGL"],
             date_range=DateRange(
-                start_date=datetime.now() - timedelta(days=1),
-                end_date=datetime.now()
+                start_date=utc_now() - timedelta(days=1),
+                end_date=utc_now()
             ),
             max_items_per_symbol=5,
             include_reddit=True,
@@ -249,8 +250,8 @@ class TestPhase9PipelineTesting:
         config = PipelineConfig(
             symbols=["AAPL"],
             date_range=DateRange(
-                start_date=datetime.now() - timedelta(hours=1),
-                end_date=datetime.now()
+                start_date=utc_now() - timedelta(hours=1),
+                end_date=utc_now()
             ),
             max_items_per_symbol=3,  # Small number for performance test
             include_reddit=True,
@@ -281,8 +282,8 @@ class TestPhase9PipelineTesting:
             invalid_config = PipelineConfig(
                 symbols=["AAPL"],
                 date_range=DateRange(
-                    start_date=datetime.now(),
-                    end_date=datetime.now() - timedelta(days=1)  # Invalid date range
+                    start_date=utc_now(),
+                    end_date=utc_now() - timedelta(days=1)  # Invalid date range
                 ),
                 max_items_per_symbol=1,
                 include_reddit=False,
@@ -299,8 +300,8 @@ class TestPhase9PipelineTesting:
             config = PipelineConfig(
                 symbols=[],  # Empty symbols list
                 date_range=DateRange(
-                    start_date=datetime.now() - timedelta(days=1),
-                    end_date=datetime.now()  # Valid date range
+                    start_date=utc_now() - timedelta(days=1),
+                    end_date=utc_now()  # Valid date range
                 ),
                 max_items_per_symbol=0,
                 include_reddit=False,

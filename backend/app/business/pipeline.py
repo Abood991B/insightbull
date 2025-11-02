@@ -45,7 +45,7 @@ from ..data_access.models import StocksWatchlist, SentimentData
 from sqlalchemy import select, func
 # WebSocket imports removed - using direct database storage
 # Timezone utilities
-from ..utils.timezone import malaysia_now
+from ..utils.timezone import utc_now, ensure_utc, to_iso_string, to_naive_utc
 
 # Initialize logger using singleton LogSystem
 logger = get_logger()
@@ -406,8 +406,8 @@ class DataPipeline:
         Returns:
             PipelineResult with execution details
         """
-        pipeline_id = f"pipeline_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-        start_time = datetime.utcnow()
+        pipeline_id = f"pipeline_{utc_now().strftime('%Y%m%d_%H%M%S')}"
+        start_time = utc_now()
         
         # Initialize repositories for database operations
         await self._initialize_repositories()
@@ -424,7 +424,7 @@ class DataPipeline:
                         pipeline_id=pipeline_id,
                         status=PipelineStatus.FAILED,
                         start_time=start_time,
-                        end_time=datetime.now(),
+                        end_time=utc_now(),
                         error="No active stocks in watchlist"
                     )
                     return result
@@ -625,7 +625,7 @@ class DataPipeline:
             result.total_items_collected = sum(stat.items_collected for stat in result.collector_stats)
             result.total_items_processed = len([r for r in processing_results if r.success])
             result.status = PipelineStatus.COMPLETED
-            result.end_time = datetime.utcnow()
+            result.end_time = utc_now()
             
             # Log comprehensive completion metrics
             execution_time = (result.end_time - result.start_time).total_seconds()
@@ -646,7 +646,7 @@ class DataPipeline:
         except Exception as e:
             result.status = PipelineStatus.FAILED
             result.error_message = str(e)
-            result.end_time = datetime.utcnow()
+            result.end_time = utc_now()
             
             # Log comprehensive error information
             execution_time = (result.end_time - result.start_time).total_seconds()
@@ -755,7 +755,7 @@ class DataPipeline:
             priorities = {}
             async with get_db_session() as db:
                 # Recent sentiment counts and last timestamps
-                day_ago = datetime.utcnow() - timedelta(hours=24)
+                day_ago = to_naive_utc(utc_now() - timedelta(hours=24))
                 for symbol in symbols:
                     # Get stock id
                     stock_row = await db.execute(
@@ -779,7 +779,7 @@ class DataPipeline:
                         .where(SentimentData.stock_id == stock_id)
                     )
                     last_ts = ts_row.scalar()
-                    recency_gap_hours = 999 if not last_ts else max(0.0, (datetime.utcnow() - last_ts).total_seconds() / 3600.0)
+                    recency_gap_hours = 999 if not last_ts else max(0.0, (utc_now() - ensure_utc(last_ts)).total_seconds() / 3600.0)
                     deficit = max(0, 20 - cnt)  # target 20 per 24h
                     # Simple score
                     score = 0.6 * recency_gap_hours + 0.4 * deficit
@@ -831,8 +831,8 @@ class DataPipeline:
             "total_items": 0,
             "processed_items": 0,
             "error_count": 0,
-            "processing_start": datetime.utcnow(),
-            "correlation_id": f"process_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            "processing_start": utc_now(),
+            "correlation_id": f"process_{utc_now().strftime('%Y%m%d_%H%M%S')}"
         }
         
         # Calculate total items across all collectors
@@ -862,7 +862,7 @@ class DataPipeline:
                 )
                 continue
             
-            collector_start = datetime.utcnow()
+            collector_start = utc_now()
             collector_items = len(collection_result.data)
             collector_processed = 0
             collector_errors = 0
@@ -891,7 +891,7 @@ class DataPipeline:
                     break
                 
                 batch = collection_result.data[i:i + batch_size]
-                batch_start = datetime.utcnow()
+                batch_start = utc_now()
                 
                 try:
                     batch_results = self.text_processor.process_batch(batch)
@@ -903,7 +903,7 @@ class DataPipeline:
                     processing_metrics["processed_items"] += len(batch)
                     
                     # Log batch processing metrics
-                    batch_time = (datetime.utcnow() - batch_start).total_seconds()
+                    batch_time = (utc_now() - batch_start).total_seconds()
                     self.logger.log_performance_metric(
                         "batch_processed",
                         {
@@ -931,7 +931,7 @@ class DataPipeline:
                     )
             
             # Log collector completion metrics
-            collector_time = (datetime.utcnow() - collector_start).total_seconds()
+            collector_time = (utc_now() - collector_start).total_seconds()
             collector_success_rate = collector_processed / collector_items if collector_items > 0 else 0
             
             self.logger.log_pipeline_operation(
@@ -950,7 +950,7 @@ class DataPipeline:
             processing_metrics["processed_collectors"] += 1
         
         # Calculate and log final processing metrics
-        processing_metrics["processing_end"] = datetime.utcnow()
+        processing_metrics["processing_end"] = utc_now()
         processing_metrics["total_processing_time"] = (
             processing_metrics["processing_end"] - processing_metrics["processing_start"]
         ).total_seconds()
@@ -990,7 +990,7 @@ class DataPipeline:
         
         # Complete data storage implementation using async repositories with proper session management
         try:
-            correlation_id = f"storage_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            correlation_id = f"storage_{utc_now().strftime('%Y%m%d_%H%M%S')}"
             self.logger.log_pipeline_operation(
                 "storage_start", 
                 {"total_results": len(processing_results), "correlation_id": correlation_id}
@@ -1134,7 +1134,8 @@ class DataPipeline:
                                 # Store as news article
                                 published_at = getattr(raw_data, 'published_at', None)
                                 if published_at is None:
-                                    published_at = datetime.now()  # Default to current time
+                                    published_at = utc_now()  # Default to current UTC time
+                                published_at = ensure_utc(published_at)  # Ensure timezone-aware
                                 
                                 news_article = NewsArticle(
                                     stock_id=stock.id,
@@ -1193,7 +1194,8 @@ class DataPipeline:
                                 # Store as Reddit post
                                 created_utc = getattr(raw_data, 'timestamp', None)
                                 if created_utc is None:
-                                    created_utc = malaysia_now()  # Use Malaysia timezone
+                                    created_utc = utc_now()  # Use UTC timezone
+                                created_utc = ensure_utc(created_utc)  # Ensure timezone-aware
                                 
                                 # Extract metadata fields
                                 subreddit = metadata.get('subreddit', '')
@@ -1406,7 +1408,7 @@ class DataPipeline:
                     processing_result=proc_result,
                     sentiment_result=sentiment_score,
                     success=True,
-                    timestamp=malaysia_now()
+                    timestamp=utc_now()
                 )
                 
                 sentiment_results.append(sentiment_result)
@@ -1426,7 +1428,7 @@ class DataPipeline:
                     sentiment_result=None,
                     success=False,
                     error=str(e),
-                    timestamp=malaysia_now()
+                    timestamp=utc_now()
                 )
                 
                 sentiment_results.append(sentiment_result)
@@ -1711,7 +1713,7 @@ class DataPipeline:
             
             processed_count = 0
             sentiment_records = 0
-            cutoff_time = datetime.utcnow() - timedelta(hours=hours_back)
+            cutoff_time = to_naive_utc(utc_now() - timedelta(hours=hours_back))
             
             async with get_db_session() as db:
                 # Use dynamic watchlist if symbols not provided
@@ -1856,7 +1858,7 @@ class DataPipeline:
                                 content_hash=SentimentData.generate_content_hash(
                                     result.text, result.source.value, ""
                                 ),
-                                created_at=malaysia_now()  # Use Malaysian timezone
+                                created_at=utc_now()  # Use UTC timezone
                             )
                             db.add(sentiment_data)
                             sentiment_records += 1

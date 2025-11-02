@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import asyncio
 import logging
+from app.utils.timezone import utc_now
 
 try:
     from newsapi import NewsApiClient
@@ -127,7 +128,7 @@ class NewsAPICollector(BaseCollector):
         Returns:
             CollectionResult with collected news data
         """
-        start_time = datetime.utcnow()
+        start_time = utc_now()
         collected_data = []
         
         try:
@@ -146,7 +147,7 @@ class NewsAPICollector(BaseCollector):
             # Skip general news collection to focus on target stocks only
             # This ensures equal distribution across all target symbols
             
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             
             return CollectionResult(
                 source=self.source,
@@ -156,7 +157,7 @@ class NewsAPICollector(BaseCollector):
             )
             
         except Exception as e:
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             error_msg = f"NewsAPI collection failed: {str(e)}"
             self.logger.error(error_msg)
             
@@ -306,8 +307,7 @@ class NewsAPICollector(BaseCollector):
                     published_at.replace("Z", "+00:00")
                 )
             else:
-                from app.utils.timezone import malaysia_now
-                timestamp = malaysia_now()
+                timestamp = utc_now()
             
             return self._create_raw_data(
                 content_type=content_type,

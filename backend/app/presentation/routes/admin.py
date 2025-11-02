@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, func, desc, and_, or_, delete, inspect
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
+from app.utils.timezone import utc_now, to_naive_utc
 from uuid import uuid4
 from app.data_access.database import get_db
 from app.presentation.dependencies.auth_dependencies import get_current_admin_user as get_current_admin
@@ -104,8 +105,8 @@ async def trigger_manual_collection(
         config = PipelineConfig(
             symbols=symbols,
             date_range=DateRange(
-                start_date=datetime.now() - timedelta(days=1),
-                end_date=datetime.now()
+                start_date=to_naive_utc(utc_now() - timedelta(days=1)),
+                end_date=to_naive_utc(utc_now())
             ),
             max_items_per_symbol=5,  # Smaller batch for testing
             include_reddit=True,
@@ -145,7 +146,7 @@ async def trigger_manual_collection(
                 }
             },
             "execution_time_seconds": result.execution_time,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": utc_now().isoformat()
         }
         
         # Add warning if pipeline didn't complete successfully
@@ -490,7 +491,7 @@ async def update_retention_policy(
                 },
                 "retention_policy": retention_policy_obj.dict(),
                 "backup_enabled": False,
-                "last_cleanup": datetime.utcnow(),
+                "last_cleanup": utc_now(),
                 "next_cleanup": None
             }
         }
@@ -596,7 +597,7 @@ async def get_system_logs(
         end_time = None
         
         if time_period:
-            now = datetime.utcnow()
+            now = utc_now()
             
             time_mappings = {
                 "1h": timedelta(hours=1),
@@ -717,8 +718,8 @@ async def download_system_logs(
         
         output.seek(0)
         
-        # Generate filename with timestamp
-        filename = f"system_logs_{dt.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+        # Generate filename with timestamp using utc_now()
+        filename = f"system_logs_{utc_now().strftime('%Y%m%d_%H%M%S')}.csv"
         
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode('utf-8')),
@@ -779,7 +780,7 @@ async def clear_system_logs(
             "success": True,
             "message": f"Successfully cleared {logs_count} system logs",
             "logs_deleted": logs_count,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": utc_now().isoformat()
         }
         
     except Exception as e:
@@ -1373,7 +1374,7 @@ async def debug_price_service(
             "service_status": service_status,
             "market_status": {
                 "is_open": is_market_open,
-                "current_time_et": datetime.now().isoformat()
+                "current_time_et": utc_now().isoformat()
             },
             "watchlist": {
                 "total_stocks": len(watchlist_stocks),
@@ -1673,7 +1674,7 @@ async def get_database_statistics(
         
         # Get recent activity (last 24 hours)
         from datetime import datetime, timedelta
-        yesterday = datetime.utcnow() - timedelta(days=1)
+        yesterday = to_naive_utc(utc_now() - timedelta(days=1))
         
         recent_sentiment = await db.execute(
             select(func.count()).select_from(SentimentData)

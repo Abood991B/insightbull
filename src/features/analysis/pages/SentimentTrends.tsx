@@ -20,6 +20,9 @@ import {
   getInsufficientDataMessage
 } from "@/shared/utils/dataValidation";
 
+// Import timezone utilities
+import { formatDate, formatDateTime } from "@/shared/utils/timezone";
+
 // Import empty state components
 import { EmptyWatchlistState } from "@/shared/components/states";
 
@@ -91,14 +94,13 @@ const SentimentTrends = () => {
 
   // Prepare chart data with proper date handling and sentiment distribution
   const chartData = sentimentData?.data_points.map(point => {
-    // Handle timestamp - backend returns ISO string
+    // Handle timestamp - backend returns ISO string, format in user's timezone
     const dateObj = new Date(point.timestamp);
     
-    const formattedDate = dateObj.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      ...(timeRange === '1d' && { hour: '2-digit', minute: '2-digit' })
-    });
+    // Use timezone utility for proper user timezone formatting
+    const formattedDate = timeRange === '1d' 
+      ? formatDateTime(point.timestamp, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) // Shows date + time for 1-day view
+      : formatDate(point.timestamp); // Shows only date for longer periods
     
     // Calculate sentiment distribution percentages based on sentiment score
     const sentiment = point.sentiment_score;

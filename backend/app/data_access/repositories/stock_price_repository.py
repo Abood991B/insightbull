@@ -11,6 +11,7 @@ from sqlalchemy import select, func, desc, and_, between
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 import uuid
+from app.utils.timezone import utc_now, to_naive_utc, ensure_utc
 
 from app.data_access.models import StockPrice, Stock
 from .base_repository import BaseRepository
@@ -41,7 +42,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         Returns:
             List of stock prices ordered by timestamp (latest first)
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         result = await self.db_session.execute(
             select(StockPrice)
@@ -55,7 +56,15 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .order_by(desc(StockPrice.timestamp))
             .limit(limit)
         )
-        return result.scalars().all()
+        
+        prices = result.scalars().all()
+        
+        # Ensure all timestamps are timezone-aware
+        for price in prices:
+            if price.timestamp:
+                price.timestamp = ensure_utc(price.timestamp)
+        
+        return prices
     
     async def get_latest_price(self, symbol: str) -> Optional[StockPrice]:
         """
@@ -121,7 +130,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         Returns:
             Dictionary with price statistics
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         result = await self.db_session.execute(
             select(
@@ -189,7 +198,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             'first_price': float(first_price) if first_price else 0.0,
             'last_price': float(last_price) if last_price else 0.0,
             'period_return_percent': period_return,
-            'generated_at': datetime.utcnow()
+            'generated_at': utc_now()
         }
     
     async def get_daily_ohlcv(
@@ -207,7 +216,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         Returns:
             List of daily OHLCV data
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         result = await self.db_session.execute(
             select(
@@ -308,7 +317,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         Returns:
             List of price data points for correlation analysis
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         result = await self.db_session.execute(
             select(
@@ -371,16 +380,26 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         Returns:
             Price record closest to target time or None
         """
+        # Convert to naive UTC for SQLite compatibility
+        target_time_naive = to_naive_utc(target_time)
+        
         result = await self.db_session.execute(
             select(StockPrice)
             .join(Stock)
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    StockPrice.timestamp <= target_time
+                    StockPrice.timestamp <= target_time_naive
                 )
             )
             .order_by(desc(StockPrice.timestamp))
             .limit(1)
         )
-        return result.scalar_one_or_none()
+        
+        price = result.scalar_one_or_none()
+        
+        # Ensure timestamp is timezone-aware
+        if price and price.timestamp:
+            price.timestamp = ensure_utc(price.timestamp)
+        
+        return price

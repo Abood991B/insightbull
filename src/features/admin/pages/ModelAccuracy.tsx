@@ -6,6 +6,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Progress } from "@/shared/components/ui/progress";
 import { Button } from "@/shared/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
+import { formatDateTime, formatDate } from "@/shared/utils/timezone";
 import { adminAPI, ModelAccuracy as ModelAccuracyType } from "../../../api/services/admin.service";
 import { RefreshCw, TrendingUp, AlertCircle, Clock, Database } from "lucide-react";
 
@@ -157,7 +158,7 @@ const ModelAccuracy = () => {
                 {viewType === 'latest' ? 'Latest Pipeline Performance' : 'Overall Performance'}
               </CardTitle>
               <CardDescription>
-                {modelData.evaluation_period} | Last evaluation: {new Date(modelData.last_evaluation).toLocaleString()}
+                {modelData.evaluation_period} | Last evaluation: {formatDateTime(modelData.last_evaluation)}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -339,7 +340,7 @@ const ModelAccuracy = () => {
                   <div>
                     <span className="text-gray-600">Last Evaluation:</span>
                     <span className="ml-2 font-medium">
-                      {new Date(modelData.last_evaluation).toLocaleDateString()}
+                      {formatDate(modelData.last_evaluation)}
                     </span>
                   </div>
                   <div>

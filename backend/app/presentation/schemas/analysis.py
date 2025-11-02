@@ -7,6 +7,7 @@ Pydantic models for analysis API responses implementing U-FR4 and U-FR5 requirem
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
+from app.utils.timezone import utc_now
 
 
 class SentimentTrendPoint(BaseModel):
@@ -33,7 +34,7 @@ class SentimentHistory(BaseModel):
     total_records: int = Field(..., description="Total number of data points")
     data_coverage: float = Field(..., description="Data coverage percentage")
     
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=utc_now)
 
     model_config = ConfigDict()
 
@@ -67,7 +68,7 @@ class CorrelationAnalysis(BaseModel):
     analysis_period: Dict[str, datetime] = Field(..., description="Analysis start and end dates")
     data_quality: float = Field(..., description="Data quality score (0.0 to 1.0)")
     last_updated: datetime = Field(..., description="Last data update")
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=utc_now)
 
     model_config = ConfigDict()
 
@@ -90,6 +91,6 @@ class ComparisonAnalysis(BaseModel):
     correlation_matrix: Dict[str, Dict[str, float]] = Field(..., description="Correlation matrix between stocks")
     performance_metrics: Dict[str, Dict[str, float]] = Field(..., description="Performance metrics per stock")
     
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=utc_now)
 
     model_config = ConfigDict()

@@ -23,6 +23,9 @@ import {
   getInsufficientDataMessage
 } from "@/shared/utils/dataValidation";
 
+// Import timezone utilities
+import { formatDate, formatDateTime } from "@/shared/utils/timezone";
+
 const SentimentVsPrice = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const symbolFromUrl = searchParams.get('symbol');
@@ -111,11 +114,10 @@ const SentimentVsPrice = () => {
       return null;
     }
 
-    const formattedDate = dateObj.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      ...(timeRange === '1d' && { hour: '2-digit', minute: '2-digit' })
-    });
+    // Use timezone utility for proper user timezone formatting
+    const formattedDate = timeRange === '1d'
+      ? formatDateTime(point.timestamp, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) // Shows date + time for 1-day view
+      : formatDate(point.timestamp); // Shows only date for longer periods
 
     return {
       date: formattedDate,

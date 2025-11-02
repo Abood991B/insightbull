@@ -11,6 +11,7 @@ from sqlalchemy import select, func, desc, and_
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 import uuid
+from app.utils.timezone import utc_now, to_naive_utc
 
 from app.data_access.models import Stock, SentimentData, StockPrice
 from .base_repository import BaseRepository
@@ -114,7 +115,7 @@ class StockRepository(BaseRepository[Stock]):
         Returns:
             Stock with loaded price data or None
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         result = await self.db_session.execute(
             select(Stock)
@@ -175,7 +176,7 @@ class StockRepository(BaseRepository[Stock]):
         Returns:
             List of stocks with activity counts
         """
-        cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+        cutoff_time = to_naive_utc(utc_now() - timedelta(hours=hours))
         
         # Query for stocks with recent sentiment data
         sentiment_query = select(
@@ -227,7 +228,7 @@ class StockRepository(BaseRepository[Stock]):
         sectors = {row.sector: row.count for row in sector_result}
         
         # Recent additions (last 7 days)
-        week_ago = datetime.utcnow() - timedelta(days=7)
+        week_ago = to_naive_utc(utc_now() - timedelta(days=7))
         recent_query = select(func.count(Stock.id)).where(
             Stock.created_at >= week_ago
         )
@@ -238,7 +239,7 @@ class StockRepository(BaseRepository[Stock]):
             'total_stocks': total_stocks,
             'sectors': sectors,
             'recent_additions': recent_additions,
-            'generated_at': datetime.utcnow()
+            'generated_at': utc_now()
         }
     
     async def create_stock(self, symbol: str, name: str, sector: str = None) -> Stock:

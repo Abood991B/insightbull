@@ -16,6 +16,7 @@ Following FYP security requirements for admin authentication.
 from typing import Optional, Dict, Any
 from datetime import datetime
 import logging
+from app.utils.timezone import utc_now
 
 from .jwt_handler import JWTHandler
 from .security_utils import SecurityUtils
@@ -96,7 +97,7 @@ class AuthService:
             
             # Create or update admin user
             admin_user = AdminUser(user_id, user_email)
-            admin_user.last_login = datetime.utcnow()
+            admin_user.last_login = utc_now()
             
             logger.info(f"Admin user {user_email} authenticated successfully")
             return admin_user
@@ -229,7 +230,7 @@ class AuthService:
             details: Additional action details
         """
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "admin_id": admin_user.user_id,
             "admin_email": admin_user.email,
             "action": action,

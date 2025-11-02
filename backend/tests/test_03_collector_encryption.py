@@ -14,6 +14,7 @@ import os
 import sys
 import asyncio
 from dotenv import load_dotenv
+from app.utils.timezone import utc_now
 
 # Load environment variables first
 load_dotenv()
@@ -76,10 +77,10 @@ async def test_data_collector_encryption():
         
         # Test that collection methods handle None collectors properly
         test_symbols = ["AAPL", "MSFT"]
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         date_range = {
-            'start': datetime.utcnow() - timedelta(days=1),
-            'end': datetime.utcnow()
+            'start': utc_now() - timedelta(days=1),
+            'end': utc_now()
         }
         
         collection_methods = [

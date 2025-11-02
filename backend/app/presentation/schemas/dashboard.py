@@ -7,6 +7,7 @@ Pydantic models for dashboard API responses implementing U-FR1 requirements.
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
+from app.utils.timezone import utc_now
 
 
 class StockSummary(BaseModel):
@@ -45,6 +46,6 @@ class DashboardSummary(BaseModel):
     top_stocks: List[StockSummary] = Field(..., description="Top performing stocks by sentiment")
     recent_movers: List[StockSummary] = Field(..., description="Stocks with significant recent changes")
     system_status: SystemStatus
-    generated_at: datetime = Field(default_factory=datetime.utcnow, description="Response generation timestamp")
+    generated_at: datetime = Field(default_factory=utc_now, description="Response generation timestamp")
 
     model_config = ConfigDict()

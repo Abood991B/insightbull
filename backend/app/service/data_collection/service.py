@@ -18,6 +18,7 @@ from typing import List, Dict, Any, Optional, Union
 from datetime import datetime, timedelta
 import asyncio
 from dataclasses import dataclass
+from app.utils.timezone import utc_now, to_naive_utc
 
 from app.infrastructure.collectors import (
     BaseCollector,
@@ -145,7 +146,7 @@ class DataCollectionService:
                 result = CollectionResult(
                     source=source,
                     symbol=symbol,
-                    timestamp=datetime.now(),
+                    timestamp=utc_now(),
                     data=data,
                     success=True,
                     metadata={
@@ -160,7 +161,7 @@ class DataCollectionService:
                 error_result = CollectionResult(
                     source=source,
                     symbol=symbol,
-                    timestamp=datetime.now(),
+                    timestamp=utc_now(),
                     data=[],
                     success=False,
                     error=str(e)
@@ -211,7 +212,7 @@ class DataCollectionService:
         """Apply business rules for news data collection"""
         
         # Calculate date range
-        end_date = datetime.now()
+        end_date = to_naive_utc(utc_now())
         start_date = end_date - timedelta(days=days_back)
         
         # Collect news data
@@ -278,7 +279,7 @@ class DataCollectionService:
     async def get_collection_status(self) -> Dict[str, Any]:
         """Get status of all data collection sources"""
         status = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': utc_now().isoformat(),
             'sources': {}
         }
         
@@ -288,7 +289,7 @@ class DataCollectionService:
                 health = await self._test_collector_health(collector)
                 status['sources'][source_name] = {
                     'available': health,
-                    'last_check': datetime.now().isoformat()
+                    'last_check': utc_now().isoformat()
                 }
             except Exception as e:
                 status['sources'][source_name] = {

@@ -8,9 +8,11 @@ for sentiment analysis data management.
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, and_, or_, between
+from app.utils.timezone import ensure_utc, to_naive_utc
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 import uuid
+from app.utils.timezone import utc_now
 
 from app.data_access.models import SentimentData, Stock
 from .base_repository import BaseRepository
@@ -142,7 +144,7 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
         Returns:
             Dictionary with sentiment statistics
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         # Get sentiment data for the period
         result = await self.db_session.execute(
@@ -191,7 +193,7 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
             'max_sentiment': float(row.max_sentiment) if row.max_sentiment else 0.0,
             'sentiment_stddev': float(row.sentiment_stddev) if row.sentiment_stddev else 0.0,
             'sentiment_distribution': distribution,
-            'generated_at': datetime.utcnow()
+            'generated_at': utc_now()
         }
     
     async def get_sentiment_trends(
@@ -211,7 +213,7 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
         Returns:
             List of sentiment trend data points
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         # PostgreSQL-style date truncation (adapt for SQLite if needed)
         result = await self.db_session.execute(
@@ -258,7 +260,7 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
         Returns:
             List of stocks ranked by sentiment
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         # Define sentiment conditions
         sentiment_condition = SentimentData.sentiment_score > 0.1
@@ -391,7 +393,7 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
         Returns:
             List of data points for correlation analysis
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         result = await self.db_session.execute(
             select(
@@ -432,13 +434,23 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
         Returns:
             List of recent sentiment data
         """
+        # Convert to naive UTC for SQLite compatibility
+        since_naive = to_naive_utc(since)
+        
         result = await self.db_session.execute(
             select(SentimentData)
-            .where(SentimentData.created_at >= since)
+            .where(SentimentData.created_at >= since_naive)
             .order_by(desc(SentimentData.created_at))
             .limit(limit)
         )
-        return result.scalars().all()
+        
+        # Ensure all returned timestamps are timezone-aware
+        sentiments = result.scalars().all()
+        for sentiment in sentiments:
+            if sentiment.created_at:
+                sentiment.created_at = ensure_utc(sentiment.created_at)
+        
+        return sentiments
     
     async def get_latest_sentiment_for_stock(self, symbol: str) -> Optional[SentimentData]:
         """

@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from app.business.pipeline import DataPipeline, PipelineConfig, DateRange
 from datetime import datetime, timedelta
+from app.utils.timezone import utc_now
 
 async def test_sentiment_debug():
     print("PIPELINE SENTIMENT DEBUG TEST")
@@ -24,8 +25,8 @@ async def test_sentiment_debug():
     config = PipelineConfig(
         symbols=["AAPL"],
         date_range=DateRange(
-            start_date=datetime.now() - timedelta(days=7),  # Extended to 7 days for Reddit data
-            end_date=datetime.now()
+            start_date=utc_now() - timedelta(days=7),  # Extended to 7 days for Reddit data
+            end_date=utc_now()
         ),
         max_items_per_symbol=5,
         include_reddit=True,

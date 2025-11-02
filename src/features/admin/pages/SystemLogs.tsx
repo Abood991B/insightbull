@@ -8,6 +8,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { useToast } from "@/shared/hooks/use-toast";
+import { formatDateTime } from "@/shared/utils/timezone";
 import { adminAPI, SystemLog, SystemLogsResponse } from "@/api/services/admin.service";
 
 const SystemLogs = () => {
@@ -457,23 +458,15 @@ const SystemLogs = () => {
                                   {log.component || 'Unknown'}
                                 </span>
                                 <span className="text-xs text-gray-500 flex-shrink-0">
-                                  {(() => {
-                                    // Backend sends timestamp with +08:00 timezone (Malaysian time)
-                                    // JavaScript Date will parse it correctly
-                                    const timestamp = new Date(log.timestamp);
-                                    
-                                    // Format in Malaysian timezone
-                                    return timestamp.toLocaleString('en-MY', {
-                                      timeZone: 'Asia/Kuala_Lumpur',
-                                      year: 'numeric',
-                                      month: '2-digit',
-                                      day: '2-digit',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      second: '2-digit',
-                                      hour12: true
-                                    });
-                                  })()}
+                                  {formatDateTime(log.timestamp, {
+                                    year: 'numeric',
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                    hour12: true
+                                  })}
                                 </span>
                               </div>
                               

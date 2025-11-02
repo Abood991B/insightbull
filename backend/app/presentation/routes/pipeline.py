@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from app.utils.timezone import utc_now, to_naive_utc
 
 from ...business.pipeline import DataPipeline, PipelineConfig, PipelineResult, PipelineStatus
 from ...business.processor import ProcessingConfig
@@ -163,7 +164,7 @@ async def run_pipeline(
             )
         
         # Build date range
-        end_date = datetime.utcnow()
+        end_date = to_naive_utc(utc_now())
         start_date = end_date - timedelta(days=config.days_back)
         date_range = DateRange(start_date=start_date, end_date=end_date)
         
@@ -307,7 +308,7 @@ async def pipeline_health_check(pipeline: DataPipeline = Depends(get_pipeline)):
         return {
             "pipeline": "unhealthy",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": utc_now().isoformat()
         }
 
 

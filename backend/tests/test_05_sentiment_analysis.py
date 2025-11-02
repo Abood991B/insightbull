@@ -15,6 +15,7 @@ from datetime import datetime
 from app.service.sentiment_processing import (
     SentimentResult, SentimentLabel, TextInput, DataSource, VADERModel, FinBERTModel, SentimentEngine, EngineConfig
 )
+from app.utils.timezone import utc_now
 
 
 class TestSentimentAnalysis:
@@ -42,7 +43,7 @@ class TestSentimentAnalysis:
             text="Great stock performance! 📈",
             source=DataSource.REDDIT,
             stock_symbol="AAPL",
-            timestamp=datetime.now()
+            timestamp=utc_now()
         )
         
         assert text_input.text == "Great stock performance! 📈"

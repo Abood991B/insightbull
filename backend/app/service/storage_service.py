@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, text, select
 import asyncio
 import structlog
+from app.utils.timezone import utc_now, to_naive_utc
 
 from app.data_access.models import StocksWatchlist, SentimentData, StockPrice, SystemLog, NewsArticle, RedditPost
 from app.infrastructure.log_system import get_logger
@@ -136,7 +137,7 @@ class StorageManager:
                 self.logger.info("Running data cleanup", policy=policy.dict())
                 
                 # Clean up old sentiment data
-                sentiment_cutoff = datetime.utcnow() - timedelta(days=policy.sentiment_data_days)
+                sentiment_cutoff = to_naive_utc(utc_now() - timedelta(days=policy.sentiment_data_days))
                 sentiment_delete_result = await self.db.execute(
                     delete(SentimentData).where(SentimentData.created_at < sentiment_cutoff)
                 )
@@ -144,7 +145,7 @@ class StorageManager:
                 self.logger.info(f"Deleted {sentiment_delete_result.rowcount} sentiment records older than {sentiment_cutoff}")
                 
                 # Clean up old price data
-                price_cutoff = datetime.utcnow() - timedelta(days=policy.price_data_days)
+                price_cutoff = to_naive_utc(utc_now() - timedelta(days=policy.price_data_days))
                 price_delete_result = await self.db.execute(
                     delete(StockPrice).where(StockPrice.created_at < price_cutoff)
                 )
@@ -152,7 +153,7 @@ class StorageManager:
                 self.logger.info(f"Deleted {price_delete_result.rowcount} price records older than {price_cutoff}")
                 
                 # Clean up old log data
-                log_cutoff = datetime.utcnow() - timedelta(days=policy.log_data_days)
+                log_cutoff = to_naive_utc(utc_now() - timedelta(days=policy.log_data_days))
                 log_delete_result = await self.db.execute(
                     delete(SystemLog).where(SystemLog.timestamp < log_cutoff)
                 )
@@ -194,7 +195,7 @@ class StorageManager:
         try:
             self.logger.info("Creating data backup")
             
-            backup_timestamp = datetime.utcnow()
+            backup_timestamp = utc_now()
             # Format backup ID with date for better readability
             date_str = backup_timestamp.strftime("%Y%m%d_%H%M%S")
             backup_id = f"Insight_stock_backup_{date_str}"
@@ -303,7 +304,7 @@ class StorageManager:
                 "space_reclaimed_mb": 0
             }
             
-            start_time = datetime.utcnow()
+            start_time = utc_now()
             
             # Implement actual database optimization operations
             operations_performed = []
@@ -323,7 +324,7 @@ class StorageManager:
             
             optimization_results["operations_performed"] = operations_performed
             
-            end_time = datetime.utcnow()
+            end_time = utc_now()
             optimization_results["time_taken_seconds"] = (end_time - start_time).total_seconds()
             optimization_results["space_reclaimed_mb"] = round(space_reclaimed_mb, 2)
             

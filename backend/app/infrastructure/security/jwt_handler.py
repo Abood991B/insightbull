@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import os
 import base64
+from app.utils.timezone import utc_now
 
 from app.infrastructure.config.settings import Settings
 
@@ -42,7 +43,7 @@ class JWTHandler:
             Encoded JWT token string
         """
         to_encode = data.copy()
-        expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
+        expire = utc_now() + timedelta(minutes=self.access_token_expire_minutes)
         to_encode.update({"exp": expire, "type": "access"})
         
         encoded_jwt = jwt.encode(
@@ -63,7 +64,7 @@ class JWTHandler:
             Encoded JWT refresh token string
         """
         to_encode = data.copy()
-        expire = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
+        expire = utc_now() + timedelta(days=self.refresh_token_expire_days)
         to_encode.update({"exp": expire, "type": "refresh"})
         
         encoded_jwt = jwt.encode(
@@ -114,7 +115,7 @@ class JWTHandler:
             )
             exp = payload.get("exp")
             if exp:
-                return datetime.utcnow() > datetime.fromtimestamp(exp)
+                return utc_now() > datetime.fromtimestamp(exp)
             return True
         except jwt.JWTError:
             return True

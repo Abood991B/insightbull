@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc, or_
 import structlog
+from app.utils.timezone import utc_now, to_naive_utc
 
 from app.data_access.models import Stock, SentimentData, NewsArticle, RedditPost
 from app.infrastructure.log_system import get_logger
@@ -57,7 +58,7 @@ class SentimentService:
             
             # Parse time period
             days = self._parse_time_period(time_period)
-            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
             
             # Get sentiment trends
             sentiment_data = await self._get_stock_sentiment_trends(stock.id, cutoff_date, days)
@@ -102,7 +103,7 @@ class SentimentService:
                 }
             
             # Get recent data (last 7 days)
-            cutoff_date = datetime.utcnow() - timedelta(days=7)
+            cutoff_date = to_naive_utc(utc_now() - timedelta(days=7))
             
             # Get overall metrics
             overall_metrics = await self._get_overall_sentiment_metrics(stock.id, cutoff_date)
@@ -121,7 +122,7 @@ class SentimentService:
                 "total_data_points": overall_metrics["total_count"],
                 "source_breakdown": source_breakdown,
                 "recent_mentions": recent_mentions,
-                "last_updated": datetime.utcnow().isoformat()
+                "last_updated": utc_now().isoformat()
             }
             
         except Exception as e:

@@ -6,6 +6,7 @@ import { Button } from '../../../shared/components/ui/button';
 import { Badge } from '../../../shared/components/ui/badge';
 import { Alert, AlertDescription } from '../../../shared/components/ui/alert';
 import { useToast } from '../../../shared/hooks/use-toast';
+import { formatDateTime } from '@/shared/utils/timezone';
 import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus } from '../../../api/services/admin.service';
 import SystemHealthAlerts from '../components/SystemHealthAlerts';
 import {
@@ -527,8 +528,7 @@ const AdminDashboard: React.FC = () => {
                               <div className="flex justify-between text-sm">
                                 <span className="text-gray-600">Next Market Open:</span>
                                 <span className="font-medium text-blue-600">
-                                  {new Date(priceServiceStatus.service_status.next_market_open).toLocaleString('en-MY', {
-                                    timeZone: 'Asia/Kuala_Lumpur',
+                                  {formatDateTime(priceServiceStatus.service_status.next_market_open, {
                                     month: 'short',
                                     day: 'numeric',
                                     hour: '2-digit',
@@ -588,8 +588,7 @@ const AdminDashboard: React.FC = () => {
                             <span className="text-gray-600">Last Collection:</span>
                             <span className="font-medium">
                               {systemStatus?.metrics.last_collection ?
-                                new Date(systemStatus.metrics.last_collection).toLocaleString('en-MY', {
-                                  timeZone: 'Asia/Kuala_Lumpur',
+                                formatDateTime(systemStatus.metrics.last_collection, {
                                   month: 'short',
                                   day: 'numeric',
                                   hour: '2-digit',
@@ -784,7 +783,7 @@ const AdminDashboard: React.FC = () => {
                       </div>
                       <div className="text-sm font-semibold text-gray-800">
                         {systemStatus?.metrics.last_collection ?
-                          new Date(systemStatus.metrics.last_collection).toLocaleString('en-US', {
+                          formatDateTime(systemStatus.metrics.last_collection, {
                             month: 'short',
                             day: 'numeric',
                             hour: '2-digit',
@@ -802,7 +801,7 @@ const AdminDashboard: React.FC = () => {
                       </div>
                       <div className="text-sm font-semibold text-gray-800">
                         {systemStatus?.metrics.last_price_update ?
-                          new Date(systemStatus.metrics.last_price_update).toLocaleString('en-US', {
+                          formatDateTime(systemStatus.metrics.last_price_update, {
                             month: 'short',
                             day: 'numeric',
                             hour: '2-digit',

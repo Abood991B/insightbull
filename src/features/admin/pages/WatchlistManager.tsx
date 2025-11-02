@@ -6,6 +6,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Badge } from "@/shared/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
+import { formatDateTime, formatDate } from "@/shared/utils/timezone";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -348,7 +349,7 @@ const WatchlistManager = () => {
                   Stocks currently being monitored for sentiment analysis
                   {watchlistData?.last_updated && (
                     <span className="block text-xs mt-1">
-                      Last updated: {new Date(watchlistData.last_updated).toLocaleString()}
+                      Last updated: {formatDateTime(watchlistData.last_updated)}
                     </span>
                   )}
                 </CardDescription>
@@ -460,7 +461,7 @@ const WatchlistManager = () => {
                           "text-xs",
                           stock.is_active ? "text-gray-400" : "text-gray-300"
                         )}>
-                          Added: {new Date(stock.added_date).toLocaleDateString()}
+                          Added: {formatDate(stock.added_date)}
                         </p>
                       </div>
                     </div>

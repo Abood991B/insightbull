@@ -8,7 +8,7 @@ import { Label } from "@/shared/components/ui/label";
 import { Badge } from "@/shared/components/ui/badge";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useToast } from "@/shared/hooks/use-toast";
-import { formatMalaysiaTime, formatMalaysiaDate } from "@/shared/utils/timezone";
+import { formatDateTime, formatDate } from "@/shared/utils/timezone";
 import { adminAPI, APIConfiguration } from "../../../api/services/admin.service";
 import { RefreshCw, Eye, EyeOff, CheckCircle, XCircle, AlertTriangle, Settings } from "lucide-react";
 
@@ -190,7 +190,7 @@ const ApiConfig = () => {
                       <div>
                         <h3 className="font-medium capitalize">{apiName}</h3>
                         <p className="text-xs text-gray-500">
-                          Last test: {formatMalaysiaDate(config.last_test)}
+                          Last test: {formatDate(config.last_test)}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

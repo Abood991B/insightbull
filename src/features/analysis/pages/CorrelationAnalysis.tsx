@@ -20,6 +20,9 @@ import {
   getInsufficientDataMessage
 } from "@/shared/utils/dataValidation";
 
+// Import timezone utilities
+import { formatDate } from "@/shared/utils/timezone";
+
 // Import empty state components
 import { EmptyWatchlistState } from "@/shared/components/states";
 
@@ -326,7 +329,7 @@ const CorrelationAnalysis = () => {
                 </Badge>
               </CardTitle>
               <CardDescription>
-                Relationship between sentiment scores and stock prices | {new Date(correlationData.analysis_period.start).toLocaleDateString()} to {new Date(correlationData.analysis_period.end).toLocaleDateString()}
+                Relationship between sentiment scores and stock prices | {formatDate(correlationData.analysis_period.start)} to {formatDate(correlationData.analysis_period.end)}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -571,7 +574,7 @@ const CorrelationAnalysis = () => {
             <CardHeader>
               <CardTitle>Analysis Summary</CardTitle>
               <CardDescription>
-                Analysis period: {new Date(correlationData.analysis_period.start).toLocaleDateString()} to {new Date(correlationData.analysis_period.end).toLocaleDateString()} | 
+                Analysis period: {formatDate(correlationData.analysis_period.start)} to {formatDate(correlationData.analysis_period.end)} | 
                 Data quality: {(correlationData.data_quality * 100).toFixed(0)}%
               </CardDescription>
             </CardHeader>

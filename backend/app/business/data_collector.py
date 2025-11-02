@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import time
+from ..utils.timezone import utc_now, to_naive_utc
 
 from app.infrastructure.collectors import (
     RedditCollector,
@@ -156,7 +157,7 @@ class DataCollector:
             symbols=symbols,
             sources=["reddit", "finnhub", "marketaux", "newsapi"],
             date_range=date_range,
-            started_at=datetime.utcnow()
+            started_at=utc_now()
         )
         
         self.active_jobs[job_id] = job
@@ -197,7 +198,7 @@ class DataCollector:
                     )
             
             job.status = "completed" if job.results else "failed"
-            job.completed_at = datetime.utcnow()
+            job.completed_at = utc_now()
             
             duration = (job.completed_at - job.started_at).total_seconds()
             total_records = sum(len(data) if data else 0 for data in job.results.values())
@@ -215,7 +216,7 @@ class DataCollector:
         except Exception as e:
             job.status = "error"
             job.errors.append(f"Collection job failed: {str(e)}")
-            job.completed_at = datetime.utcnow()
+            job.completed_at = utc_now()
             
             self.logger.error(
                 f"Data collection job {job_id} failed",
@@ -412,7 +413,7 @@ class DataCollector:
     
     def cleanup_completed_jobs(self, max_age_hours: int = 24):
         """Remove completed jobs older than specified hours"""
-        cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
+        cutoff_time = to_naive_utc(utc_now() - timedelta(hours=max_age_hours))
         
         jobs_to_remove = []
         for job_id, job in self.active_jobs.items():

@@ -14,6 +14,7 @@ import asyncio
 import os
 import structlog
 import time
+from app.utils.timezone import utc_now, ensure_utc, to_iso_string, to_naive_utc
 
 # System metrics will use basic Python capabilities without psutil dependency
 SYSTEM_START_TIME = time.time()
@@ -68,7 +69,7 @@ class SystemService:
                 "status": overall_status,
                 "services": services,
                 "metrics": metrics,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": utc_now().isoformat()
             }
             
         except Exception as e:
@@ -100,7 +101,7 @@ class SystemService:
             pipeline = DataPipeline()
             
             # Create job ID for tracking
-            job_id = f"manual_job_{int(datetime.utcnow().timestamp())}"
+            job_id = f"manual_job_{int(utc_now().timestamp())}"
             
             # Start pipeline execution as background task
             asyncio.create_task(
@@ -112,7 +113,7 @@ class SystemService:
                 "job_id": job_id,
                 "stock_symbols": symbols,
                 "estimated_completion": f"{len(symbols) * 2} minutes",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": utc_now().isoformat()
             }
             
         except Exception as e:
@@ -225,8 +226,6 @@ class SystemService:
             total_records = db_metrics.get("total_sentiment_data", 0)
             
             # Get last collection and price update times for top-level display
-            from app.utils.timezone import utc_to_malaysia
-            
             last_sentiment = await self.db.scalar(
                 select(func.max(SentimentData.created_at)).select_from(SentimentData)
             )
@@ -236,9 +235,9 @@ class SystemService:
                 select(func.max(StockPrice.timestamp)).select_from(StockPrice)
             )
             
-            # Convert to Malaysia timezone for display
-            last_collection_display = utc_to_malaysia(last_sentiment).isoformat() if last_sentiment else None
-            last_price_update_display = utc_to_malaysia(last_price).isoformat() if last_price else None
+            # Return UTC timestamps in ISO format
+            last_collection_display = to_iso_string(last_sentiment)
+            last_price_update_display = to_iso_string(last_price)
             
             # Get rate limiting information
             rate_limit_info = {}
@@ -306,9 +305,7 @@ class SystemService:
             from app.data_access.models import StockPrice
             price_count = await self.db.scalar(select(func.count()).select_from(StockPrice))
             
-            # Get last collection and price update times
-            from app.utils.timezone import utc_to_malaysia
-            
+            # Get last collection and price update times (return UTC)
             last_sentiment = await self.db.scalar(
                 select(func.max(SentimentData.created_at)).select_from(SentimentData)
             )
@@ -316,14 +313,14 @@ class SystemService:
                 select(func.max(StockPrice.timestamp)).select_from(StockPrice)
             )
             
-            # Convert UTC timestamps to Malaysia timezone for display
+            # Ensure timestamps are UTC
             if last_sentiment:
-                last_sentiment = utc_to_malaysia(last_sentiment)
+                last_sentiment = ensure_utc(last_sentiment)
             if last_price:
-                last_price = utc_to_malaysia(last_price)
+                last_price = ensure_utc(last_price)
             
             # Get recent activity (last 24 hours)
-            yesterday = datetime.utcnow() - timedelta(days=1)
+            yesterday = to_naive_utc(utc_now() - timedelta(days=1))
             recent_sentiment = await self.db.scalar(
                 select(func.count()).select_from(SentimentData)
                 .where(SentimentData.created_at >= yesterday)
@@ -372,7 +369,7 @@ class SystemService:
             )
             
             # Calculate processing rates (last 24 hours)
-            yesterday = datetime.utcnow() - timedelta(days=1)
+            yesterday = to_naive_utc(utc_now() - timedelta(days=1))
             
             sentiment_rate = await self.db.scalar(
                 select(func.count()).select_from(SentimentData)
@@ -442,7 +439,7 @@ class SystemService:
                 component="system_service",
                 function="_log_system_event",
                 extra_data=extra_data or {},
-                timestamp=malaysia_now()  # Use Malaysian timezone
+                timestamp=utc_now()  # Use UTC timezone
             )
             
             self.db.add(system_log)

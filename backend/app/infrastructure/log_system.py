@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from uuid import uuid4
 import structlog
+from app.utils.timezone import utc_now
 from pathlib import Path
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -152,7 +153,7 @@ class LogSystem:
     def _add_context(self, **kwargs) -> Dict[str, Any]:
         """Add contextual information to log entry"""
         context = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "correlation_id": self.get_correlation_id(),
             **kwargs
         }
@@ -199,7 +200,7 @@ class LogSystem:
         context_key = f"{level}:{message}:{kwargs.get('component', '')}:{kwargs.get('function', '')}"
         message_hash = hashlib.md5(context_key.encode()).hexdigest()
         
-        current_time = datetime.now().timestamp()
+        current_time = utc_now().timestamp()
         
         with self._cache_lock:
             # Clean old entries from cache (proactive cleanup)
@@ -330,7 +331,7 @@ class LogSystem:
                     function=function,
                     line_number=line_number,
                     extra_data=extra_data or {},
-                    timestamp=malaysia_now()  # Use Malaysian timezone
+                    timestamp=utc_now()
                 )
                 db.add(log_entry)
                 await db.commit()

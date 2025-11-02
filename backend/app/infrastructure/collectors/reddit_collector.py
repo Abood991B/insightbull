@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 import asyncio
 import logging
+from app.utils.timezone import utc_now
 
 try:
     import asyncpraw
@@ -142,7 +143,7 @@ class RedditCollector(BaseCollector):
         Returns:
             CollectionResult with collected data
         """
-        start_time = datetime.utcnow()
+        start_time = utc_now()
         collected_data = []
         
         try:
@@ -160,7 +161,7 @@ class RedditCollector(BaseCollector):
                 if self.rate_limiter:
                     await asyncio.sleep(0.3)
             
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             
             return CollectionResult(
                 source=self.source,
@@ -170,7 +171,7 @@ class RedditCollector(BaseCollector):
             )
             
         except Exception as e:
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             error_msg = f"Reddit collection failed: {str(e)}"
             self.logger.error(error_msg)
             

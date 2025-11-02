@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import statistics
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
+from app.utils.timezone import utc_now, to_naive_utc, ensure_utc
 
 from app.presentation.schemas import (
     SentimentHistory,
@@ -71,11 +72,12 @@ async def get_sentiment_history(
         # Calculate date range
         days_map = {"1d": 1, "7d": 7, "14d": 14}
         days = days_map[timeframe]
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = to_naive_utc(utc_now() - timedelta(days=days))
+        end_date = to_naive_utc(utc_now())
         
         # Get sentiment and price data
         sentiment_data = await sentiment_repo.get_sentiment_by_date_range(
-            symbol, start_date, datetime.utcnow()
+            symbol, start_date, end_date
         )
         
         # Build time series data points
@@ -156,8 +158,8 @@ async def get_correlation_analysis(
         # Calculate date range
         days_map = {"1d": 1, "7d": 7, "14d": 14}
         days = days_map[timeframe]
-        start_date = datetime.utcnow() - timedelta(days=days)
-        end_date = datetime.utcnow()
+        start_date = to_naive_utc(utc_now() - timedelta(days=days))
+        end_date = to_naive_utc(utc_now())
         
         # Get data for correlation analysis
         correlation_data = await _get_correlation_data(
@@ -196,6 +198,10 @@ async def get_correlation_analysis(
         expected_points = days * 24  # Hourly data expected
         data_quality = min(1.0, len(correlation_data) / expected_points)
         
+        # Convert naive datetime to aware UTC for proper API serialization
+        start_date_utc = ensure_utc(start_date)
+        end_date_utc = ensure_utc(end_date)
+        
         return CorrelationAnalysis(
             symbol=symbol,
             timeframe=timeframe,
@@ -205,11 +211,11 @@ async def get_correlation_analysis(
             scatter_data=scatter_data,
             trend_line=trend_line,
             analysis_period={
-                "start": start_date,
-                "end": end_date
+                "start": start_date_utc,
+                "end": end_date_utc
             },
             data_quality=round(data_quality, 3),
-            last_updated=datetime.utcnow()
+            last_updated=utc_now()
         )
         
     except HTTPException:
@@ -235,8 +241,11 @@ async def _build_sentiment_trend_points(
         # Get price data closest to sentiment timestamp
         price_record = await price_repo.get_price_at_time(symbol, sentiment_record.created_at)
         
+        # Convert naive datetime from DB to aware UTC for proper API serialization
+        timestamp_utc = ensure_utc(sentiment_record.created_at)
+        
         trend_points.append(SentimentTrendPoint(
-            timestamp=sentiment_record.created_at,
+            timestamp=timestamp_utc,
             sentiment_score=sentiment_record.sentiment_score,
             price=price_record.close_price if price_record else None,
             volume=price_record.volume if price_record else None,

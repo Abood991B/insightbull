@@ -5,6 +5,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useToast } from "@/shared/hooks/use-toast";
+import { formatDateTime } from "@/shared/utils/timezone";
 import { 
   adminAPI, 
   SchedulerResponse, 
@@ -453,7 +454,7 @@ const SchedulerManager = () => {
                               <div>
                                 <span className="font-medium">Last Run:</span>
                                 <span className="ml-1">
-                                  {job.last_run ? new Date(job.last_run).toLocaleString() : 'Never'}
+                                  {formatDateTime(job.last_run)}
                                 </span>
                               </div>
                             </div>

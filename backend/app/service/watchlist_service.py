@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete, and_
 import structlog
+from app.utils.timezone import utc_now
 import aiohttp
 import asyncio
 
@@ -246,7 +247,7 @@ class WatchlistService:
                 {
                     "symbol": symbol,
                     "name": f"{symbol} Corporation",
-                    "added_date": malaysia_now(),
+                    "added_date": utc_now(),
                     "is_active": True,
                     "priority": 0
                 }
@@ -290,9 +291,8 @@ class WatchlistService:
                 
                 if inactive_stock:
                     # Reactivate the stock
-                    from app.utils.timezone import malaysia_now
                     inactive_stock.is_active = True
-                    inactive_stock.added_to_watchlist = malaysia_now()
+                    inactive_stock.added_to_watchlist = utc_now()
                     added_stocks.append(symbol)
                 else:
                     # Create new stock entry
@@ -301,7 +301,7 @@ class WatchlistService:
                         name=self.get_company_name(symbol),
                         sector=self.get_sector(symbol),
                         is_active=True,
-                        added_to_watchlist=malaysia_now(),
+                        added_to_watchlist=utc_now(),
                         priority=0
                     )
                     self.db.add(new_stock)
@@ -414,20 +414,20 @@ class WatchlistService:
         # Check cache first
         if symbol in _company_cache:
             cached_name, cached_time = _company_cache[symbol]
-            if datetime.utcnow() - cached_time < _cache_duration:
+            if utc_now() - cached_time < _cache_duration:
                 return True, cached_name
         
         # Try static mapping first
         if symbol in COMPANY_NAMES:
             company_name = COMPANY_NAMES[symbol]
-            _company_cache[symbol] = (company_name, datetime.utcnow())
+            _company_cache[symbol] = (company_name, utc_now())
             return True, company_name
         
         # Try to validate using a free API (Alpha Vantage, Yahoo Finance, etc.)
         try:
             company_name = await WatchlistService._fetch_from_api(symbol)
             if company_name:
-                _company_cache[symbol] = (company_name, datetime.utcnow())
+                _company_cache[symbol] = (company_name, utc_now())
                 return True, company_name
         except Exception as e:
             logger.warning(f"Failed to validate symbol {symbol} via API: {e}")

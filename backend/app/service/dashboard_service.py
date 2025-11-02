@@ -11,10 +11,10 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, and_, desc
 import structlog
+from app.utils.timezone import utc_now, to_iso_string, to_naive_utc
 
 from app.data_access.models import Stock, SentimentData, StockPrice, NewsArticle, RedditPost
 from app.infrastructure.log_system import get_logger
-from app.utils.timezone import malaysia_now, malaysia_isoformat, utc_to_malaysia
 
 
 logger = get_logger()
@@ -46,7 +46,7 @@ class DashboardService:
             
             # Parse time period
             days = self._parse_time_period(time_period)
-            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            cutoff_date = to_naive_utc(utc_now() - timedelta(days=days))
             
             self.logger.info("Dashboard overview request", 
                            time_period=time_period, 
@@ -71,7 +71,7 @@ class DashboardService:
                 "stock_data": stock_data,
                 "sentiment_trends": sentiment_trends,
                 "news_summary": news_summary,
-                "last_updated": malaysia_isoformat()
+                "last_updated": to_iso_string(utc_now())
             }
             
         except Exception as e:

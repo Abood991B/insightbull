@@ -12,8 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 import structlog
+from app.utils.timezone import utc_now, to_naive_utc
 
 from app.data_access.database import get_db
+from app.data_access.models import StocksWatchlist
 from app.presentation.dependencies import (
     get_current_admin_user,
     get_optional_admin_user,
@@ -233,7 +235,7 @@ async def get_model_accuracy(
                 recall=0.85,
                 f1_score=0.82,
                 total_predictions=sentiment_engine.stats.model_usage.get("VADER", 0),
-                last_evaluated=datetime.utcnow()
+                last_evaluated=utc_now()
             ))
         
         if "FinBERT" in sentiment_engine.models:
@@ -245,7 +247,7 @@ async def get_model_accuracy(
                 recall=0.87,
                 f1_score=0.89,
                 total_predictions=sentiment_engine.stats.model_usage.get("FinBERT", 0),
-                last_evaluated=datetime.utcnow()
+                last_evaluated=utc_now()
             ))
         
         # Calculate overall accuracy
@@ -261,7 +263,7 @@ async def get_model_accuracy(
             overall_accuracy=round(overall_accuracy, 3),
             evaluation_period="Last 30 days",
             total_data_points=total_predictions,
-            last_updated=datetime.utcnow()
+            last_updated=utc_now()
         )
         
     except Exception as e:
@@ -295,28 +297,28 @@ async def get_api_configuration(
                 is_configured=bool(settings.reddit_client_id and settings.reddit_client_secret),
                 status=APIKeyStatus.ACTIVE if settings.reddit_client_id else APIKeyStatus.INACTIVE,
                 rate_limit=100,  # Reddit rate limit
-                last_tested=datetime.utcnow()
+                last_tested=utc_now()
             ),
             APIServiceConfig(
                 service_name="FinHub",
                 is_configured=bool(settings.finnhub_api_key),
                 status=APIKeyStatus.ACTIVE if settings.finnhub_api_key else APIKeyStatus.INACTIVE,
                 rate_limit=60,  # FinHub rate limit
-                last_tested=datetime.utcnow()
+                last_tested=utc_now()
             ),
             APIServiceConfig(
                 service_name="NewsAPI",
                 is_configured=bool(settings.newsapi_key),
                 status=APIKeyStatus.ACTIVE if settings.newsapi_key else APIKeyStatus.INACTIVE,
                 rate_limit=1000,  # NewsAPI rate limit
-                last_tested=datetime.utcnow()
+                last_tested=utc_now()
             ),
             APIServiceConfig(
                 service_name="Marketaux",
                 is_configured=bool(settings.marketaux_api_key),
                 status=APIKeyStatus.ACTIVE if settings.marketaux_api_key else APIKeyStatus.INACTIVE,
                 rate_limit=200,  # Marketaux rate limit
-                last_tested=datetime.utcnow()
+                last_tested=utc_now()
             )
         ]
         
@@ -327,7 +329,7 @@ async def get_api_configuration(
             services=services,
             total_configured=configured_count,
             total_active=active_count,
-            last_updated=datetime.utcnow()
+            last_updated=utc_now()
         )
         
     except Exception as e:
@@ -420,7 +422,7 @@ async def get_stock_watchlist(
                     company_name=f"{symbol} Inc.",  # Default company name
                     sector="Technology",
                     is_active=True,
-                    added_date=__import__('app.utils.timezone', fromlist=['malaysia_now']).malaysia_now()
+                    added_date=utc_now()
                 ) for symbol in watchlist_symbols
             ]
         else:
@@ -438,7 +440,7 @@ async def get_stock_watchlist(
             stocks=stocks,
             total_stocks=len(stocks),
             active_stocks=len([s for s in stocks if s.is_active]),
-            last_updated=datetime.utcnow()
+            last_updated=utc_now()
         )
         
     except Exception as e:
@@ -537,8 +539,8 @@ async def get_storage_settings(
             metrics=metrics,
             retention_policy=retention_policy,
             backup_enabled=True,
-            last_cleanup=datetime.utcnow().replace(hour=2, minute=0, second=0),
-            next_cleanup=datetime.utcnow().replace(hour=2, minute=0, second=0, day=datetime.utcnow().day + 1)
+            last_cleanup=utc_now().replace(hour=2, minute=0, second=0),
+            next_cleanup=utc_now().replace(hour=2, minute=0, second=0, day=utc_now().day + 1)
         )
         
     except Exception as e:
@@ -717,8 +719,8 @@ async def trigger_manual_data_collection(
         config = PipelineConfig(
             symbols=symbols,
             date_range=DateRange(
-                start_date=datetime.utcnow() - timedelta(hours=24),  # Last 24 hours
-                end_date=datetime.utcnow()
+                start_date=to_naive_utc(utc_now() - timedelta(hours=24)),  # Last 24 hours
+                end_date=to_naive_utc(utc_now())
             ),
             max_items_per_symbol=50,
             include_reddit=True,
@@ -729,7 +731,7 @@ async def trigger_manual_data_collection(
         )
         
         # Generate job ID
-        job_id = f"manual_collection_{int(datetime.utcnow().timestamp())}"
+        job_id = f"manual_collection_{int(utc_now().timestamp())}"
         
         # Use AdminService for background execution
         admin_service = AdminService(db)

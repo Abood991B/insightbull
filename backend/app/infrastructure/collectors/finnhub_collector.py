@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import asyncio
 import logging
+from app.utils.timezone import utc_now
 
 try:
     import finnhub
@@ -106,7 +107,7 @@ class FinHubCollector(BaseCollector):
         Returns:
             CollectionResult with collected news data
         """
-        start_time = datetime.utcnow()
+        start_time = utc_now()
         collected_data = []
         
         try:
@@ -126,7 +127,7 @@ class FinHubCollector(BaseCollector):
             
             # Skip general market news to focus on target stocks only
             
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             
             return CollectionResult(
                 source=self.source,
@@ -136,7 +137,7 @@ class FinHubCollector(BaseCollector):
             )
             
         except Exception as e:
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             error_msg = f"FinHub collection failed: {str(e)}"
             self.logger.error(error_msg)
             
@@ -313,7 +314,7 @@ class FinHubCollector(BaseCollector):
                     "low": quote_data.get("l"),
                     "open": quote_data.get("o"),
                     "previous_close": quote_data.get("pc"),
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": utc_now().isoformat()
                 }
                 
         except Exception as e:

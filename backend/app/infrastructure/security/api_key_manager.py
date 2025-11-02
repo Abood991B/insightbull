@@ -372,7 +372,8 @@ def create_encrypted_env_template():
     
     print("\n📄 Encrypted .env template:")
     print("# Encrypted API Keys for Phase 5 Pipeline")
-    print("# Generated on:", datetime.utcnow().isoformat())
+    from app.utils.timezone import utc_now
+    print("# Generated on:", utc_now().isoformat())
     print()
     
     for key_name, encrypted_value in encrypted_keys.items():

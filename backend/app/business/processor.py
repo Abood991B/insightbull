@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Set
 from dataclasses import dataclass
 import logging
+from ..utils.timezone import utc_now
 
 try:
     from bs4 import BeautifulSoup
@@ -190,11 +191,11 @@ class TextProcessor:
         Returns:
             ProcessingResult with processed text
         """
-        start_time = datetime.utcnow()
+        start_time = utc_now()
         
         try:
             processed_text, removed_elements = self.process_text_with_tracking(raw_data.text)
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             
             return ProcessingResult(
                 original_text=raw_data.text,
@@ -205,7 +206,7 @@ class TextProcessor:
             )
             
         except Exception as e:
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             return ProcessingResult(
                 original_text=raw_data.text,
                 processed_text="",

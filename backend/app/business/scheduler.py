@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from ..utils.timezone import utc_now, to_naive_utc
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -51,7 +52,7 @@ class ScheduledJob:
     trigger_config: Dict[str, Any]
     parameters: Dict[str, Any]
     status: JobStatus = JobStatus.PENDING
-    created_at: datetime = field(default_factory=lambda: __import__('app.utils.timezone', fromlist=['malaysia_now']).malaysia_now())
+    created_at: datetime = field(default_factory=utc_now)
     last_run: Optional[datetime] = None
     next_run: Optional[datetime] = None
     run_count: int = 0
@@ -349,7 +350,7 @@ class Scheduler:
             return
         
         job.status = JobStatus.RUNNING
-        job.last_run = datetime.utcnow()
+        job.last_run = utc_now()
         
         try:
             self.logger.info(f"EXECUTING SCHEDULED JOB: Data Collection",
@@ -359,7 +360,7 @@ class Scheduler:
                            lookback_days=job.parameters["lookback_days"])
             
             # Calculate date range
-            end_date = datetime.utcnow()
+            end_date = to_naive_utc(utc_now())
             start_date = end_date - timedelta(days=job.parameters["lookback_days"])
             
             # Execute data collection using pipeline
@@ -394,7 +395,7 @@ class Scheduler:
             return
         
         job.status = JobStatus.RUNNING
-        job.last_run = datetime.utcnow()
+        job.last_run = utc_now()
         
         try:
             self.logger.info(f"Starting scheduled sentiment analysis job {job_id}")
@@ -428,7 +429,7 @@ class Scheduler:
             return
         
         job.status = JobStatus.RUNNING
-        job.last_run = datetime.utcnow()
+        job.last_run = utc_now()
         
         try:
             self.logger.info(f"Starting scheduled full pipeline job {job_id}")

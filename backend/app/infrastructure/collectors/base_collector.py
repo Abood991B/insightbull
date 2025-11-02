@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 import asyncio
 import logging
+from app.utils.timezone import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -171,9 +172,9 @@ class BaseCollector(ABC):
             Dictionary with health status and diagnostics
         """
         try:
-            start_time = datetime.utcnow()
+            start_time = utc_now()
             is_healthy = await self.validate_connection()
-            response_time = (datetime.utcnow() - start_time).total_seconds()
+            response_time = (utc_now() - start_time).total_seconds()
             
             return {
                 "source": self.source.value,
@@ -189,7 +190,7 @@ class BaseCollector(ABC):
                 "source": self.source.value,
                 "healthy": False,
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": utc_now().isoformat()
             }
     
     def _validate_config(self, config: CollectionConfig) -> None:

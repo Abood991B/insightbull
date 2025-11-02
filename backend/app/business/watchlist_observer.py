@@ -50,8 +50,8 @@ class WatchlistEvent:
         self.event_type = event_type
         self.stocks_affected = stocks_affected or []
         self.metadata = metadata or {}
-        from app.utils.timezone import malaysia_now
-        self.timestamp = timestamp or malaysia_now()
+        from app.utils.timezone import utc_now
+        self.timestamp = timestamp or utc_now()
         
     def to_dict(self) -> Dict[str, Any]:
         """Convert event to dictionary for serialization"""

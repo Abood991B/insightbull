@@ -13,7 +13,7 @@ from sqlalchemy import select, func, text
 import asyncio
 import structlog
 
-from app.utils.timezone import malaysia_now, malaysia_isoformat, format_malaysia_time
+from app.utils.timezone import utc_now, ensure_utc, to_iso_string, to_naive_utc
 from app.data_access.models import StocksWatchlist, SentimentData, StockPrice, SystemLog
 from app.infrastructure.log_system import get_logger
 from app.presentation.schemas.admin_schemas import *
@@ -64,7 +64,7 @@ class AdminService(WatchlistSubject):
             self.logger.info("Calculating model accuracy metrics")
             
             # Get sentiment data from last 30 days for evaluation
-            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            thirty_days_ago = to_naive_utc(utc_now() - timedelta(days=30))
             
             # Query sentiment data for accuracy calculation
             result = await self.db.execute(
@@ -91,7 +91,7 @@ class AdminService(WatchlistSubject):
                 recall=vader_metrics['recall'],
                 f1_score=vader_metrics['f1_score'],
                 total_predictions=len(vader_data),
-                last_evaluated=datetime.utcnow()
+                last_evaluated=utc_now()
             ))
             
             # FinBERT model metrics - based on confidence scores and distribution
@@ -103,7 +103,7 @@ class AdminService(WatchlistSubject):
                 recall=finbert_metrics['recall'],
                 f1_score=finbert_metrics['f1_score'],
                 total_predictions=len(finbert_data),
-                last_evaluated=datetime.utcnow()
+                last_evaluated=utc_now()
             ))
             
             total_predictions = sum(m.total_predictions for m in models)
@@ -137,7 +137,7 @@ class AdminService(WatchlistSubject):
                 "overall_accuracy": overall_accuracy,
                 "evaluation_period": "Overall Performance (Last 30 Days)",
                 "evaluation_samples": total_predictions,
-                "last_evaluation": datetime.utcnow().isoformat(),
+                "last_evaluation": utc_now().isoformat(),
                 "data_source": "overall_database"
             }
             
@@ -181,11 +181,11 @@ class AdminService(WatchlistSubject):
                     newsapi_collector = NewsAPICollector(api_key=newsapi_key)
                     is_valid = await newsapi_collector.validate_connection()
                     newsapi_status = "active" if is_valid else "error"
-                    newsapi_last_test = datetime.utcnow().isoformat()
+                    newsapi_last_test = utc_now().isoformat()
                     self.logger.info(f"NewsAPI connection test: {'success' if is_valid else 'failed'}", component="admin_service")
                 except Exception as e:
                     newsapi_status = "error"
-                    newsapi_last_test = datetime.utcnow().isoformat()
+                    newsapi_last_test = utc_now().isoformat()
                     self.logger.warning(f"NewsAPI connection test failed: {e}", component="admin_service")
 
             
@@ -194,14 +194,14 @@ class AdminService(WatchlistSubject):
                 "apis": {
                     "reddit": {
                         "status": "active" if reddit_client_id and reddit_client_secret else "inactive",
-                        "last_test": datetime.utcnow().isoformat() if reddit_client_id else None,
+                        "last_test": utc_now().isoformat() if reddit_client_id else None,
                         "client_id": reddit_client_id,
                         "client_secret": reddit_client_secret,
                         "user_agent": reddit_user_agent
                     },
                     "finnhub": {
                         "status": "active" if finnhub_key else "inactive", 
-                        "last_test": datetime.utcnow().isoformat() if finnhub_key else None,
+                        "last_test": utc_now().isoformat() if finnhub_key else None,
                         "api_key": finnhub_key
                     },
                     "newsapi": {
@@ -211,7 +211,7 @@ class AdminService(WatchlistSubject):
                     },
                     "marketaux": {
                         "status": "active" if marketaux_key else "inactive",
-                        "last_test": datetime.utcnow().isoformat() if marketaux_key else None,
+                        "last_test": utc_now().isoformat() if marketaux_key else None,
                         "api_key": marketaux_key
                     }
                 },
@@ -294,7 +294,7 @@ class AdminService(WatchlistSubject):
                 "success": True,
                 "updated_keys": updated_keys,
                 "configuration": updated_config,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": utc_now().isoformat()
             }
             
         except Exception as e:
@@ -349,7 +349,7 @@ class AdminService(WatchlistSubject):
                 stocks=stocks,
                 total_stocks=len(stocks),
                 active_stocks=len([s for s in stocks if s.is_active]),
-                last_updated=malaysia_now()
+                last_updated=utc_now()
             )
             
         except Exception as e:
@@ -382,7 +382,7 @@ class AdminService(WatchlistSubject):
                     else:
                         # Reactivate the stock
                         existing_stock.is_active = True
-                        existing_stock.added_to_watchlist = malaysia_now()
+                        existing_stock.added_to_watchlist = utc_now()
                         await self.db.commit()
                         success = True
                         message = f"Successfully reactivated {request.symbol} in watchlist"
@@ -402,7 +402,7 @@ class AdminService(WatchlistSubject):
                             name=company_name,
                             sector=sector,
                             is_active=True,
-                            added_to_watchlist=malaysia_now(),
+                            added_to_watchlist=utc_now(),
                             priority=0
                         )
                         self.db.add(new_stock)
@@ -438,7 +438,7 @@ class AdminService(WatchlistSubject):
                 if stock:
                     stock.is_active = (request.action == "activate")
                     if request.action == "activate":
-                        stock.added_to_watchlist = malaysia_now()
+                        stock.added_to_watchlist = utc_now()
                     await self.db.commit()
                     success = True
                     message = f"Successfully {request.action}d {request.symbol}"
@@ -456,7 +456,7 @@ class AdminService(WatchlistSubject):
                     # Toggle the is_active status
                     stock.is_active = not stock.is_active
                     if stock.is_active:
-                        stock.added_to_watchlist = malaysia_now()
+                        stock.added_to_watchlist = utc_now()
                     await self.db.commit()
                     success = True
                     status = "activated" if stock.is_active else "deactivated"
@@ -507,7 +507,7 @@ class AdminService(WatchlistSubject):
                 metadata={
                     "action": action,
                     "admin_triggered": True,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": utc_now().isoformat()
                 }
             )
             
@@ -582,8 +582,8 @@ class AdminService(WatchlistSubject):
                 metrics=metrics,
                 retention_policy=retention_policy,
                 backup_enabled=True,
-                last_cleanup=datetime.utcnow().replace(hour=2, minute=0, second=0),
-                next_cleanup=datetime.utcnow().replace(hour=2, minute=0, second=0) + timedelta(days=1)
+                last_cleanup=utc_now().replace(hour=2, minute=0, second=0),
+                next_cleanup=utc_now().replace(hour=2, minute=0, second=0) + timedelta(days=1)
             )
             
         except Exception as e:
@@ -653,18 +653,10 @@ class AdminService(WatchlistSubject):
                 safe_message = log.message or ""
                 safe_component = log.component or "system"
                 
-                # Convert timestamp to Malaysian timezone
-                import pytz
-                malaysia_tz = pytz.timezone('Asia/Kuala_Lumpur')
-                
-                log_timestamp = log.timestamp or malaysia_now()
-                if log_timestamp.tzinfo is None:
-                    # Naive datetime from database is ALREADY in Malaysian time
-                    # Just mark it with the timezone, don't convert
-                    log_timestamp = malaysia_tz.localize(log_timestamp)
-                else:
-                    # If aware datetime, convert to Malaysian timezone
-                    log_timestamp = log_timestamp.astimezone(malaysia_tz)
+                # Use UTC timestamp
+                log_timestamp = log.timestamp or utc_now()
+                # Ensure timezone-aware UTC
+                log_timestamp = ensure_utc(log_timestamp)
 
                 log_entries.append(LogEntry(
                     timestamp=log_timestamp,
@@ -718,7 +710,7 @@ class AdminService(WatchlistSubject):
             pipeline = DataPipeline()
             
             # Create job ID for tracking
-            job_id = f"manual_job_{int(datetime.utcnow().timestamp())}"
+            job_id = f"manual_job_{int(utc_now().timestamp())}"
             
             # Start pipeline execution as background task
             asyncio.create_task(
@@ -750,7 +742,7 @@ class AdminService(WatchlistSubject):
             self.logger.info("Retrieving latest pipeline accuracy metrics")
             
             # Get the most recent pipeline run data (last 24 hours)
-            last_24_hours = datetime.utcnow() - timedelta(hours=24)
+            last_24_hours = to_naive_utc(utc_now() - timedelta(hours=24))
             self.logger.info(f"Querying for data since: {last_24_hours}")
             
             result = await self.db.execute(
@@ -780,7 +772,7 @@ class AdminService(WatchlistSubject):
                             "f1_score": 0.0
                         }
                     },
-                    "last_evaluation": datetime.utcnow().isoformat(),
+                    "last_evaluation": utc_now().isoformat(),
                     "evaluation_samples": 0,
                     "evaluation_period": "Latest Pipeline Run (Last 24 Hours)",
                     "data_source": "latest_pipeline"
@@ -802,7 +794,7 @@ class AdminService(WatchlistSubject):
                 recall=vader_metrics['recall'],
                 f1_score=vader_metrics['f1_score'],
                 total_predictions=len(vader_data),
-                last_evaluated=datetime.utcnow()
+                last_evaluated=utc_now()
             ))
             
             # FinBERT model metrics for latest run
@@ -814,7 +806,7 @@ class AdminService(WatchlistSubject):
                 recall=finbert_metrics['recall'],
                 f1_score=finbert_metrics['f1_score'],
                 total_predictions=len(finbert_data),
-                last_evaluated=datetime.utcnow()
+                last_evaluated=utc_now()
             ))
             
             total_predictions = sum(m.total_predictions for m in models)
@@ -841,7 +833,7 @@ class AdminService(WatchlistSubject):
             return {
                 "overall_accuracy": overall_accuracy,
                 "model_metrics": model_metrics,
-                "last_evaluation": datetime.utcnow().isoformat(),
+                "last_evaluation": utc_now().isoformat(),
                 "evaluation_samples": len(latest_sentiment_data),
                 "evaluation_period": "Latest Pipeline Run (Last 24 Hours)",
                 "data_source": "latest_pipeline"
@@ -868,7 +860,7 @@ class AdminService(WatchlistSubject):
                         "f1_score": 0.0
                     }
                 },
-                "last_evaluation": datetime.utcnow().isoformat(),
+                "last_evaluation": utc_now().isoformat(),
                 "evaluation_samples": 0,
                 "evaluation_period": "Latest Pipeline Run (Error - No Data Available)",
                 "data_source": "latest_pipeline_error"

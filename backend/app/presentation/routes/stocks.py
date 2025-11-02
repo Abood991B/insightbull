@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 import pytz
+from app.utils.timezone import utc_now, to_naive_utc, ensure_utc
 
 from app.presentation.schemas import (
     StockDetail,
@@ -66,7 +67,7 @@ async def get_stock_analysis_dashboard(
         # Calculate date range
         days_map = {"1d": 1, "7d": 7, "14d": 14, "30d": 30}
         days = days_map.get(timeframe, 7)
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         # Get stock overview data
         stock_overview = await _get_stock_overview(stock, sentiment_repo, price_repo, start_date)
@@ -87,7 +88,7 @@ async def get_stock_analysis_dashboard(
             "sentiment_distribution": sentiment_distribution,
             "top_performers": top_performers,
             "watchlist_overview": watchlist_overview,
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": utc_now().isoformat()
         }
         
     except HTTPException:
@@ -131,6 +132,10 @@ async def get_all_stocks(
             latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
             latest_price = await price_repo.get_latest_price_for_stock(stock.symbol)
             
+            # Convert timestamp to aware UTC for proper API serialization
+            last_updated_timestamp = latest_sentiment.created_at if latest_sentiment else stock.updated_at
+            last_updated_utc = ensure_utc(last_updated_timestamp)
+            
             stock_items.append(StockListItem(
                 symbol=stock.symbol,
                 company_name=stock.name,  # Fixed: model uses 'name' not 'company_name'
@@ -138,7 +143,7 @@ async def get_all_stocks(
                 is_active=stock.is_active,
                 latest_sentiment=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
                 latest_price=latest_price.close_price if latest_price else None,
-                last_updated=latest_sentiment.created_at if latest_sentiment else stock.updated_at
+                last_updated=last_updated_utc
             ))
         
         return StockList(
@@ -192,7 +197,7 @@ async def get_stock_detail(
         # Calculate date range based on timeframe
         days_map = {"1d": 1, "7d": 7, "14d": 14}
         days = days_map[timeframe]
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = to_naive_utc(utc_now() - timedelta(days=days))
         
         # Get price history
         price_history = await _get_price_history(price_repo, symbol, days)
@@ -213,7 +218,7 @@ async def get_stock_detail(
             sentiment_history=sentiment_history,
             metrics=metrics,
             timeframe=timeframe,
-            last_updated=stock.updated_at
+            last_updated=ensure_utc(stock.updated_at)
         )
         
     except HTTPException:
@@ -236,7 +241,7 @@ async def _get_price_history(
     
     return [
         PriceDataPoint(
-            timestamp=record.timestamp,
+            timestamp=ensure_utc(record.timestamp),  # Convert to aware UTC
             open_price=record.open_price,
             close_price=record.close_price,
             high_price=record.high_price,
@@ -255,12 +260,12 @@ async def _get_sentiment_history(
     """Get formatted sentiment history for the stock"""
     
     sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
-        symbol, start_date, datetime.utcnow()
+        symbol, start_date, to_naive_utc(utc_now())
     )
     
     return [
         SentimentDataPoint(
-            timestamp=record.created_at,
+            timestamp=ensure_utc(record.created_at),  # Convert to aware UTC
             score=record.sentiment_score,
             label=record.sentiment_label,
             confidence=record.confidence,
@@ -297,7 +302,7 @@ async def _calculate_stock_metrics(
         price_change_percent = ((latest_price - oldest_price) / oldest_price) * 100
     
     # Calculate data quality score (simplified)
-    expected_records = max(1, (datetime.utcnow() - start_date).days * 24)  # Hourly expected
+    expected_records = max(1, (utc_now() - start_date).days * 24)  # Hourly expected
     actual_records = len(sentiment_history)
     data_quality_score = min(1.0, actual_records / expected_records)
     
@@ -328,7 +333,7 @@ async def _get_stock_overview(stock, sentiment_repo, price_repo, start_date):
     current_price = float(latest_price.close_price) if latest_price else 0.0
     
     # Get 24h price change
-    yesterday = datetime.utcnow() - timedelta(days=1)
+    yesterday = to_naive_utc(utc_now() - timedelta(days=1))
     yesterday_price = await price_repo.get_price_at_time(stock.symbol, yesterday)
     
     price_change_24h = 0.0
@@ -337,7 +342,7 @@ async def _get_stock_overview(stock, sentiment_repo, price_repo, start_date):
     
     # Get average sentiment score
     sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
-        stock.symbol, start_date, datetime.utcnow()
+        stock.symbol, start_date, to_naive_utc(utc_now())
     )
     
     avg_sentiment = 0.0
@@ -367,7 +372,7 @@ async def _get_sentiment_distribution(sentiment_repo, symbol, start_date):
     """Get sentiment distribution for pie chart"""
     
     sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
-        symbol, start_date, datetime.utcnow()
+        symbol, start_date, to_naive_utc(utc_now())
     )
     
     positive_count = 0
@@ -414,7 +419,7 @@ async def _get_top_sentiment_performers(stock_repo, sentiment_repo, start_date):
     
     for stock in active_stocks[:10]:  # Limit to top 10 for performance
         sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
-            stock.symbol, start_date, datetime.utcnow()
+            stock.symbol, start_date, to_naive_utc(utc_now())
         )
         
         if sentiment_records:
@@ -448,7 +453,7 @@ async def _get_watchlist_overview(stock_repo, sentiment_repo, price_repo, start_
         current_price = float(latest_price.close_price) if latest_price else 0.0
         
         # Get 24h price change
-        yesterday = datetime.utcnow() - timedelta(days=1)
+        yesterday = to_naive_utc(utc_now() - timedelta(days=1))
         yesterday_price = await price_repo.get_price_at_time(stock.symbol, yesterday)
         
         price_change = 0.0
@@ -457,7 +462,7 @@ async def _get_watchlist_overview(stock_repo, sentiment_repo, price_repo, start_
         
         # Get sentiment
         sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
-            stock.symbol, start_date, datetime.utcnow()
+            stock.symbol, start_date, to_naive_utc(utc_now())
         )
         
         avg_sentiment = 0.0

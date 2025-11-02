@@ -20,6 +20,7 @@ import sys
 import os
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, AsyncMock
+from app.utils.timezone import utc_now
 
 # Add the backend directory to sys.path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -64,8 +65,8 @@ class TestPhase7PipelineOrchestration:
         config = PipelineConfig(
             symbols=["AAPL"],
             date_range=DateRange(
-                start_date=datetime.now() - timedelta(days=1),
-                end_date=datetime.now()
+                start_date=utc_now() - timedelta(days=1),
+                end_date=utc_now()
             ),
             max_items_per_symbol=5,
             include_reddit=False,  # Skip external APIs for testing
@@ -213,8 +214,8 @@ class TestPhase7EndToEndIntegration:
         config = PipelineConfig(
             symbols=["AAPL"],
             date_range=DateRange(
-                start_date=datetime.now() - timedelta(hours=1),
-                end_date=datetime.now()
+                start_date=utc_now() - timedelta(hours=1),
+                end_date=utc_now()
             ),
             max_items_per_symbol=1,
             include_reddit=False,  # Skip external APIs

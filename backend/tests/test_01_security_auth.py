@@ -18,6 +18,7 @@ from app.infrastructure.config.settings import get_settings
 from app.infrastructure.security.auth_service import AuthService
 from app.infrastructure.security.jwt_handler import JWTHandler
 from app.infrastructure.security.security_utils import SecurityUtils
+from app.utils.timezone import utc_now
 
 
 async def test_auth_service():
@@ -50,7 +51,7 @@ async def test_auth_service():
         await auth_service.log_admin_activity(
             admin_user, 
             "test_login", 
-            {"timestamp": datetime.utcnow().isoformat()}
+            {"timestamp": utc_now().isoformat()}
         )
         print("✅ Activity logging successful")
     else:

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import asyncio
 import logging
+from app.utils.timezone import utc_now
 
 import httpx
 
@@ -93,7 +94,7 @@ class MarketauxCollector(BaseCollector):
         Returns:
             CollectionResult with collected news data
         """
-        start_time = datetime.utcnow()
+        start_time = utc_now()
         collected_data = []
         
         try:
@@ -113,7 +114,7 @@ class MarketauxCollector(BaseCollector):
             
             # Skip general market news to focus on target stocks only
             
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             
             return CollectionResult(
                 source=self.source,
@@ -123,7 +124,7 @@ class MarketauxCollector(BaseCollector):
             )
             
         except Exception as e:
-            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            execution_time = (utc_now() - start_time).total_seconds()
             error_msg = f"MarketAux collection failed: {str(e)}"
             self.logger.error(error_msg)
             
@@ -270,8 +271,7 @@ class MarketauxCollector(BaseCollector):
                     published_at.replace("Z", "+00:00")
                 )
             else:
-                from app.utils.timezone import malaysia_now
-                timestamp = malaysia_now()
+                timestamp = utc_now()
             
             return self._create_raw_data(
                 content_type=content_type,

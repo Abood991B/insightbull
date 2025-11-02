@@ -48,6 +48,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 from dataclasses import replace
+from app.utils.timezone import utc_now
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -75,7 +76,7 @@ class Phase5TestSuite:
     
     def __init__(self):
         self.test_results = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': utc_now().isoformat(),
             'tests_run': 0,
             'tests_passed': 0,
             'tests_failed': 0,
@@ -365,7 +366,7 @@ class Phase5TestSuite:
                 if hasattr(item, 'timestamp') and item.timestamp:
                     # Check if timestamp is recent (within last 7 days)
                     if isinstance(item.timestamp, datetime):
-                        age = datetime.utcnow().replace(tzinfo=item.timestamp.tzinfo) - item.timestamp
+                        age = utc_now().replace(tzinfo=item.timestamp.tzinfo) - item.timestamp
                         if age.days <= 7:
                             valid_timestamps += 1
             
@@ -430,7 +431,7 @@ class Phase5TestSuite:
         print("🚀 PHASE 5 COMPREHENSIVE TEST SUITE")
         print("=" * 60)
         print(f"Target Stocks: {', '.join(self.test_symbols)}")
-        print(f"Test Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        print(f"Test Date: {utc_now().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print()
         
         # Run test sequence

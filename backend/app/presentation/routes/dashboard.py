@@ -7,7 +7,7 @@ Provides dashboard overview with key metrics, top stocks, and system status.
 
 import logging
 from datetime import datetime, timedelta
-from app.utils.timezone import malaysia_now, utc_to_malaysia
+from app.utils.timezone import utc_now, to_naive_utc, ensure_utc
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -77,15 +77,19 @@ async def get_dashboard_summary(
     """
     try:
         # Get market sentiment overview
+        logger.info("Getting market sentiment overview...")
         market_overview = await _get_market_sentiment_overview(sentiment_repo, stock_repo)
         
         # Get top stocks by sentiment
+        logger.info("Getting top stocks...")
         top_stocks = await _get_top_stocks_by_sentiment(stock_repo, sentiment_repo, price_repo, limit=10)
         
         # Get recent movers (stocks with significant price changes)
+        logger.info("Getting recent movers...")
         recent_movers = await _get_recent_price_movers(stock_repo, price_repo, sentiment_repo, limit=5)
         
         # Get system status
+        logger.info("Getting system status...")
         system_status = await _get_system_status(sentiment_repo, stock_repo)
         
         return DashboardSummary(
@@ -96,6 +100,8 @@ async def get_dashboard_summary(
         )
         
     except Exception as e:
+        import traceback
+        logger.error(f"Dashboard summary error: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate dashboard summary: {str(e)}"
@@ -109,7 +115,7 @@ async def _get_market_sentiment_overview(
     """Calculate market-wide sentiment metrics"""
     
     # Get recent sentiment data (last 24 hours)
-    cutoff_time = malaysia_now() - timedelta(hours=24)
+    cutoff_time = to_naive_utc(utc_now() - timedelta(hours=24))
     
     # Calculate average sentiment across ACTIVE stocks only
     all_recent_sentiments = await sentiment_repo.get_recent_sentiment_scores(
@@ -134,7 +140,7 @@ async def _get_market_sentiment_overview(
             neutral_stocks=0,
             negative_stocks=0,
             total_stocks=total_stocks,
-            last_updated=malaysia_now()
+            last_updated=utc_now()
         )
     
     # Calculate sentiment distribution (only from ACTIVE stocks)
@@ -155,7 +161,7 @@ async def _get_market_sentiment_overview(
         neutral_stocks=neutral_count,
         negative_stocks=negative_count,
         total_stocks=total_stocks,
-        last_updated=malaysia_now()
+        last_updated=utc_now()
     )
 
 
@@ -231,11 +237,14 @@ async def _get_top_stocks_by_sentiment(
                 current_price = float(latest_price_record.close_price) if latest_price_record.close_price else None
                 yesterday_price = await price_repo.get_price_at_time(
                     stock.symbol,
-                    malaysia_now() - timedelta(hours=24)
+                    to_naive_utc(utc_now() - timedelta(hours=24))
                 )
                 if yesterday_price and yesterday_price.close_price and current_price:
                     price_change_24h = ((current_price - float(yesterday_price.close_price)) / float(yesterday_price.close_price)) * 100
                     price_change_24h = round(price_change_24h, 2)
+        
+        # Convert timestamp to aware UTC for proper API serialization
+        last_updated_utc = ensure_utc(latest_sentiment.created_at) if latest_sentiment else None
         
         stock_summaries.append(StockSummary(
             symbol=stock.symbol,
@@ -245,7 +254,7 @@ async def _get_top_stocks_by_sentiment(
             market_cap=market_cap,  # Real-time market cap from Yahoo Finance
             sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
             sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
-            last_updated=latest_sentiment.created_at if latest_sentiment else None
+            last_updated=last_updated_utc
         ))
     
     # Sort by sentiment score (descending)
@@ -312,6 +321,9 @@ async def _get_recent_price_movers(
                 
                 logger.debug(f"{stock.symbol}: MOVER! ${current_price:.2f} ({price_change:+.2f}%), MarketCap={market_cap}")
                 
+                # Convert timestamp to aware UTC for proper API serialization
+                last_updated_utc = ensure_utc(latest_sentiment.created_at) if latest_sentiment else None
+                
                 movers.append(StockSummary(
                     symbol=stock.symbol,
                     company_name=stock.name,
@@ -320,7 +332,7 @@ async def _get_recent_price_movers(
                     market_cap=market_cap,  # Real-time market cap from Yahoo Finance
                     sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
                     sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
-                    last_updated=latest_sentiment.created_at if latest_sentiment else None
+                    last_updated=last_updated_utc
                 ))
         
         except Exception as e:
@@ -333,7 +345,7 @@ async def _get_recent_price_movers(
                 
                 yesterday_price = await price_repo.get_price_at_time(
                     stock.symbol,
-                    malaysia_now() - timedelta(hours=24)
+                    to_naive_utc(utc_now() - timedelta(hours=24))
                 )
                 
                 if not yesterday_price:
@@ -346,6 +358,9 @@ async def _get_recent_price_movers(
                 if abs(price_change) > 2.0:
                     latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
                     
+                    # Convert timestamp to aware UTC for proper API serialization
+                    last_updated_utc = ensure_utc(latest_price.timestamp)
+                    
                     movers.append(StockSummary(
                         symbol=stock.symbol,
                         company_name=stock.name,
@@ -354,7 +369,7 @@ async def _get_recent_price_movers(
                         market_cap=None,  # Market cap unavailable in database fallback
                         sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
                         sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
-                        last_updated=latest_price.timestamp
+                        last_updated=last_updated_utc
                     ))
             except Exception as db_e:
                 logger.error(f"Database fallback failed for {stock.symbol}: {db_e}")
@@ -378,17 +393,11 @@ async def _get_system_status(
     
     # Determine pipeline status
     if last_collection:
-        # Use Malaysia timezone for comparison
-        now_malaysia = malaysia_now()
-        # Convert last_collection to Malaysia timezone if needed
-        if last_collection.tzinfo is None:
-            # Assume naive datetime is UTC, convert to Malaysia
-            last_collection = utc_to_malaysia(last_collection)
-        elif last_collection.tzinfo != malaysia_now().tzinfo:
-            # Convert to Malaysia timezone
-            last_collection = last_collection.astimezone(malaysia_now().tzinfo)
+        # Convert naive datetime from DB to aware UTC for comparison
+        now_utc = utc_now()
+        last_collection_utc = ensure_utc(last_collection)
         
-        hours_since_update = (now_malaysia - last_collection).total_seconds() / 3600
+        hours_since_update = (now_utc - last_collection_utc).total_seconds() / 3600
         if hours_since_update < 2:
             pipeline_status = "operational"
         elif hours_since_update < 6:
@@ -404,9 +413,12 @@ async def _get_system_status(
     # Active data sources - all 4 sources
     active_sources = ["Reddit", "NewsAPI", "FinHub", "Marketaux"]
     
+    # Convert last_collection to aware UTC for proper API serialization
+    last_collection_aware = ensure_utc(last_collection) if last_collection else None
+    
     return SystemStatus(
         pipeline_status=pipeline_status,
-        last_collection=last_collection,
+        last_collection=last_collection_aware,
         active_data_sources=active_sources,
         total_sentiment_records=total_records
     )
