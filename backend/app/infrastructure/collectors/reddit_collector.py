@@ -268,6 +268,7 @@ class RedditCollector(BaseCollector):
                                 stock_symbol=target_symbol,
                                 url=f"https://reddit.com{post.permalink}",
                                 metadata={
+                                    "title": post.title,  # Store title for database insertion
                                     "subreddit": subreddit_name,
                                     "author": str(post.author) if post.author else "[deleted]",
                                     "score": post.score,
@@ -347,6 +348,7 @@ class RedditCollector(BaseCollector):
                             stock_symbol=list(matching_symbols)[0],  # Use first matching symbol
                             url=f"https://reddit.com{post.permalink}",
                             metadata={
+                                "title": post.title,  # Store title for database insertion
                                 "subreddit": subreddit_name,
                                 "author": str(post.author) if post.author else "[deleted]",
                                 "score": post.score,

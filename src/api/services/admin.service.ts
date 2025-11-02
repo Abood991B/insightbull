@@ -104,16 +104,16 @@ export interface APIKeyUpdate {
 export interface StorageSettings {
   current_usage: {
     total_size_gb: number;
+    total_size_mb: number;
     available_space_gb: number;
     usage_percentage: number;
   };
-  retention_policy: {
-    sentiment_data_days: number;
-    stock_price_days: number;
-    log_files_days: number;
-    backup_retention_days: number;
-  };
-  auto_cleanup: boolean;
+  total_records: number;
+  sentiment_records: number;
+  stock_price_records: number;
+  oldest_record: string | null;
+  newest_record: string | null;
+  storage_health: 'healthy' | 'warning' | 'critical';
 }
 
 export interface SystemLog {
@@ -555,23 +555,6 @@ class AdminAPIService {
   
   async getStorageSettings(): Promise<StorageSettings> {
     const response = await fetch(`${API_BASE_URL}/api/admin/storage`, {
-      headers: getAuthHeaders(),
-    });
-    return handleApiResponse(response);
-  }
-
-  async updateStorageSettings(settings: Partial<StorageSettings>): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/api/admin/storage`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(settings),
-    });
-    return handleApiResponse(response);
-  }
-
-  async triggerCleanup(): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/api/admin/storage/optimize`, {
-      method: 'POST',
       headers: getAuthHeaders(),
     });
     return handleApiResponse(response);

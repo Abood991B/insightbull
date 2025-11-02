@@ -85,9 +85,14 @@ const AdminDashboard: React.FC = () => {
       const result = await adminAPI.triggerManualCollection();
 
       if (result.status === 'success') {
+        const collected = result.execution_summary?.data_collection?.total_items_collected || 0;
+        const stored = result.execution_summary?.data_storage?.items_stored || 0;
+        const analyzed = result.execution_summary?.sentiment_analysis?.items_analyzed || 0;
+        const skipped = analyzed - stored;
+        
         toast({
           title: "Full Pipeline Completed",
-          description: `Successfully processed ${result.execution_summary?.data_collection?.total_items_collected || 0} items through complete pipeline (collection → processing → sentiment → storage)`,
+          description: `Analyzed ${analyzed} items: ${stored} new records stored, ${skipped} duplicates skipped`,
         });
       } else if (result.status === 'partial') {
         toast({

@@ -416,13 +416,16 @@ class MarketauxCollector(BaseCollector):
                 stock_symbol=symbol.upper(),
                 url=article.get("url", ""),
                 metadata={
+                    "title": title,  # Store title for database insertion
+                    "author": article.get("source", ""),  # Use source as author (e.g. "Yahoo Finance")
                     "source": article.get("source", ""),
                     "image_url": article.get("image_url", ""),
                     "entities": article.get("entities", []),
                     "keywords": article.get("keywords", []),
                     "marketaux_uuid": article.get("uuid", ""),
                     "sentiment": article.get("sentiment", {}),
-                    "similar": article.get("similar", [])
+                    "similar": article.get("similar", []),
+                    "all_symbols": [symbol.upper()]  # Store symbols for stock_mentions column
                 }
             )
             

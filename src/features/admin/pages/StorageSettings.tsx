@@ -3,10 +3,8 @@ import React, { useState, useEffect } from "react";
 import AdminLayout from "@/shared/components/layouts/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select";
 import { Badge } from "@/shared/components/ui/badge";
 import { Progress } from "@/shared/components/ui/progress";
-import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useToast } from "@/shared/hooks/use-toast";
 import { 
   adminAPI, 
@@ -19,9 +17,7 @@ import {
   RefreshCw, 
   Database, 
   HardDrive, 
-  Archive, 
-  Trash2, 
-  Download,
+  Archive,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -59,7 +55,6 @@ const StorageSettings = () => {
   const [selectedTableData, setSelectedTableData] = useState<TableData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [updating, setUpdating] = useState(false);
   const [operationLoading, setOperationLoading] = useState<{[key: string]: boolean}>({});
   const [expandedTables, setExpandedTables] = useState<{[key: string]: boolean}>({});
   const [showTableDialog, setShowTableDialog] = useState(false);
@@ -99,31 +94,6 @@ const StorageSettings = () => {
     }
   };
 
-  // Update storage configuration
-  const updateStorageConfiguration = async (config: Partial<StorageSettingsType>) => {
-    try {
-      setUpdating(true);
-      await adminAPI.updateStorageSettings(config);
-      
-      toast({
-        title: "Configuration Updated",
-        description: "Storage configuration has been updated successfully.",
-      });
-      
-      // Refresh settings
-      await loadStorageSettings();
-    } catch (error) {
-      console.error('Failed to update storage configuration:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update storage configuration. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setUpdating(false);
-    }
-  };
-
   // Storage operations
   const performStorageOperation = async (operation: string) => {
     try {
@@ -135,13 +105,6 @@ const StorageSettings = () => {
           toast({
             title: "Backup Created",
             description: "Manual backup has been created successfully.",
-          });
-          break;
-        case 'cleanup':
-          await adminAPI.triggerCleanup();
-          toast({
-            title: "Cleanup Complete",
-            description: "Storage cleanup has been completed successfully.",
           });
           break;
         default:
@@ -251,7 +214,7 @@ const StorageSettings = () => {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Storage Settings</h1>
-            <p className="text-gray-600 mt-2">Configure data storage and backup options</p>
+            <p className="text-gray-600 mt-2">View storage metrics, manage backups, and clean old data</p>
           </div>
           
           <div className="flex gap-3">
@@ -270,7 +233,7 @@ const StorageSettings = () => {
         {storageSettings && (
           <>
             {/* Storage Overview Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Storage Usage</CardTitle>
@@ -281,14 +244,18 @@ const StorageSettings = () => {
                     <div className="flex justify-between">
                       <span className="text-sm">Used</span>
                       <span className="text-sm font-medium">
-                        {formatBytes(storageSettings.current_usage.total_size_gb * 1024 * 1024 * 1024)}
+                        {storageSettings.current_usage.total_size_mb 
+                          ? `${storageSettings.current_usage.total_size_mb.toFixed(2)} MB`
+                          : '0 MB'}
                       </span>
                     </div>
-                    <Progress value={storageSettings.current_usage.usage_percentage} />
+                    <Progress value={storageSettings.current_usage.usage_percentage || 0} />
                     <div className="flex justify-between text-xs text-gray-500">
-                      <span>{storageSettings.current_usage.usage_percentage.toFixed(1)}% used</span>
+                      <span>{(storageSettings.current_usage.usage_percentage || 0).toFixed(1)}% used</span>
                       <span>
-                        {formatBytes(storageSettings.current_usage.available_space_gb * 1024 * 1024 * 1024)} available
+                        {storageSettings.current_usage.available_space_gb 
+                          ? `${storageSettings.current_usage.available_space_gb.toFixed(2)} GB`
+                          : '5.00 GB'} available
                       </span>
                     </div>
                   </div>
@@ -297,123 +264,81 @@ const StorageSettings = () => {
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Auto Cleanup</CardTitle>
+                  <CardTitle className="text-sm font-medium">Total Records</CardTitle>
                   <Database className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
+                  <div className="text-2xl font-bold">{storageSettings.total_records?.toLocaleString() || 0}</div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Sentiment: {storageSettings.sentiment_records?.toLocaleString() || 0} | 
+                    Prices: {storageSettings.stock_price_records?.toLocaleString() || 0}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Storage Health</CardTitle>
+                  {getStatusIcon(storageSettings.storage_health || 'healthy')}
+                </CardHeader>
+                <CardContent>
                   <div className="flex items-center gap-2">
-                    {getStatusIcon(storageSettings.auto_cleanup ? 'healthy' : 'warning')}
-                    {getStatusBadge(storageSettings.auto_cleanup ? 'healthy' : 'warning')}
+                    {getStatusBadge(storageSettings.storage_health || 'healthy')}
                   </div>
-                  <p className="text-sm text-gray-600 mt-2">
-                    {storageSettings.auto_cleanup ? 'Enabled' : 'Disabled'}
+                  <p className="text-xs text-gray-500 mt-2">
+                    {storageSettings.oldest_record && storageSettings.newest_record
+                      ? `Data from ${new Date(storageSettings.oldest_record).toLocaleDateString()} to ${new Date(storageSettings.newest_record).toLocaleDateString()}`
+                      : 'No data available'}
                   </p>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Retention Policy */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Data Retention Policy</CardTitle>
-                <CardDescription>Configure how long different types of data are stored</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Sentiment Data</label>
-                    <div className="text-2xl font-bold">
-                      {storageSettings.retention_policy.sentiment_data_days}
-                    </div>
-                    <p className="text-xs text-gray-500">days retention</p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Stock Price Data</label>
-                    <div className="text-2xl font-bold">
-                      {storageSettings.retention_policy.stock_price_days}
-                    </div>
-                    <p className="text-xs text-gray-500">days retention</p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Log Files</label>
-                    <div className="text-2xl font-bold">
-                      {storageSettings.retention_policy.log_files_days}
-                    </div>
-                    <p className="text-xs text-gray-500">days retention</p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Backup Files</label>
-                    <div className="text-2xl font-bold">
-                      {storageSettings.retention_policy.backup_retention_days}
-                    </div>
-                    <p className="text-xs text-gray-500">days retention</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
             {/* Storage Operations */}
             <Card>
               <CardHeader>
                 <CardTitle>Storage Operations</CardTitle>
-                <CardDescription>Backup and maintenance operations</CardDescription>
+                <CardDescription>Manage database backups</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Button 
-                    variant="outline" 
-                    className="justify-start h-16 flex flex-col gap-1"
-                    onClick={() => performStorageOperation('backup')}
-                    disabled={operationLoading.backup}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Archive className="h-4 w-4" />
-                      <span>{operationLoading.backup ? 'Creating Backup...' : 'Create Manual Backup'}</span>
-                    </div>
-                    <span className="text-xs text-gray-500">Create a backup of all data</span>
-                  </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    className="justify-start h-16 flex flex-col gap-1"
-                    onClick={() => performStorageOperation('cleanup')}
-                    disabled={operationLoading.cleanup}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Trash2 className="h-4 w-4" />
-                      <span>{operationLoading.cleanup ? 'Cleaning Up...' : 'Clean Old Data'}</span>
-                    </div>
-                    <span className="text-xs text-gray-500">Remove old data per retention policy</span>
-                  </Button>
-                </div>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start h-20 flex flex-col items-start gap-1 p-4"
+                  onClick={() => performStorageOperation('backup')}
+                  disabled={operationLoading.backup}
+                >
+                  <div className="flex items-center gap-2">
+                    <Archive className="h-5 w-5" />
+                    <span className="font-semibold">{operationLoading.backup ? 'Creating Backup...' : 'Create Manual Backup'}</span>
+                  </div>
+                  <span className="text-xs text-gray-500 text-left">Create a backup of the entire database</span>
+                </Button>
               </CardContent>
             </Card>
 
-            {/* Configuration Settings */}
+            {/* Database Type Information */}
             <Card>
               <CardHeader>
-                <CardTitle>Configuration Settings</CardTitle>
-                <CardDescription>Adjust storage behavior and performance</CardDescription>
+                <CardTitle>Database Configuration</CardTitle>
+                <CardDescription>Current database storage solution</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Database className="h-5 w-5 text-blue-600" />
                       <div>
-                        <label className="text-sm font-medium">Auto Cleanup</label>
-                        <p className="text-xs text-gray-500">Automatically clean old data</p>
+                        <div className="font-medium">SQLite Database</div>
+                        <div className="text-sm text-gray-500">Local file-based database storage</div>
                       </div>
-                      <Button
-                        variant={storageSettings.auto_cleanup ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => updateStorageConfiguration({ 
-                          auto_cleanup: !storageSettings.auto_cleanup 
-                        })}
-                        disabled={updating}
-                      >
-                        {storageSettings.auto_cleanup ? 'Enabled' : 'Disabled'}
-                      </Button>
                     </div>
+                    <Badge className="bg-green-100 text-green-800">Active</Badge>
+                  </div>
+                  
+                  <div className="text-sm text-gray-600">
+                    <div className="mb-1"><strong>Storage Location:</strong></div>
+                    <code className="text-xs bg-gray-100 px-2 py-1 rounded">backend/data/insight_stock.db</code>
+                    <p className="mt-2 text-xs">All sentiment data, stock prices, and system logs are stored in the SQLite database file.</p>
                   </div>
                 </div>
               </CardContent>
@@ -525,7 +450,7 @@ const StorageSettings = () => {
                                         {tableInfo.foreign_keys.map((fk, index) => (
                                           <div key={index} className="text-sm p-2 bg-blue-50 rounded">
                                             <span className="font-medium">{fk.constrained_columns.join(', ')}</span>
-                                            <span className="text-gray-500"> -> </span>
+                                            <span className="text-gray-500"> → </span>
                                             <span>{fk.referred_table}.{fk.referred_columns.join(', ')}</span>
                                           </div>
                                         ))}
@@ -653,13 +578,20 @@ const StorageSettings = () => {
 
             {/* Storage Usage Warning */}
             {storageSettings.current_usage.usage_percentage > 80 && (
-              <Alert>
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  Storage usage is high ({storageSettings.current_usage.usage_percentage.toFixed(1)}%). 
-                  Consider running cleanup operations or increasing storage capacity.
-                </AlertDescription>
-              </Alert>
+              <Card className="border-yellow-200 bg-yellow-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-yellow-900">High Storage Usage</p>
+                      <p className="text-sm text-yellow-800 mt-1">
+                        Storage usage is at {storageSettings.current_usage.usage_percentage.toFixed(1)}%. 
+                        Consider increasing storage capacity or archiving old data.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </>
         )}

@@ -338,11 +338,14 @@ class FinHubCollector(BaseCollector):
                 stock_symbol=symbol.upper(),
                 url=item.get("url", ""),
                 metadata={
+                    "title": headline,  # Store headline as title for database insertion
+                    "author": item.get("source", ""),  # Use source as author (e.g., "Reuters")
                     "source": item.get("source", ""),
                     "category": item.get("category", ""),
                     "related": item.get("related", ""),
                     "image": item.get("image", ""),
-                    "finnhub_id": item.get("id", "")
+                    "finnhub_id": item.get("id", ""),
+                    "all_symbols": [symbol.upper()]  # Store symbols for stock_mentions column
                 }
             )
             

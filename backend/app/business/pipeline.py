@@ -19,6 +19,7 @@ from typing import List, Dict, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .processor import TextProcessor, ProcessingConfig, ProcessingResult
 from ..infrastructure.collectors.base_collector import (
@@ -1211,16 +1212,26 @@ class DataPipeline:
                                     published_at = utc_now()  # Default to current UTC time
                                 published_at = ensure_utc(published_at)  # Ensure timezone-aware
                                 
+                                # Extract metadata
+                                metadata = getattr(raw_data, 'metadata', {}) or {}
+                                
+                                # Use raw_data.text as content, extract title from metadata or first line
+                                full_text = raw_data.text
+                                title = metadata.get('title', '')
+                                if not title:
+                                    # Extract from first line of text
+                                    title = full_text.split('\n')[0][:500]
+                                
                                 news_article = NewsArticle(
                                     stock_id=stock.id,
-                                    title=getattr(raw_data, 'title', '')[:500],  # Limit title length
-                                    content=getattr(raw_data, 'content', '')[:10000],  # Limit content length
+                                    title=title[:500],
+                                    content=full_text[:10000],  # Use full text as content
                                     url=url,
                                     source=source_name.lower(),
                                     published_at=published_at,
-                                    author=getattr(raw_data, 'author', ''),
-                                    # Map any mentions to stock_mentions JSON if available
-                                    stock_mentions=getattr(raw_data, 'stock_mentions', None)
+                                    author=metadata.get('author', ''),
+                                    # sentiment_score and confidence will be updated later after sentiment analysis
+                                    stock_mentions=metadata.get('all_symbols', None)
                                 )
                                 session.add(news_article)
                                 
@@ -1277,10 +1288,15 @@ class DataPipeline:
                                 score = metadata.get('score', 0)
                                 num_comments = metadata.get('num_comments', 0)
                                 
-                                # Extract title from text (first line) if not in metadata
-                                text_lines = raw_data.text.split('\n', 1)
-                                title = text_lines[0] if text_lines else ''
-                                content = text_lines[1] if len(text_lines) > 1 else raw_data.text
+                                # Extract title from metadata or first line
+                                title = metadata.get('title', '')
+                                if not title:
+                                    # Extract from first line of text
+                                    text_lines = raw_data.text.split('\n', 1)
+                                    title = text_lines[0] if text_lines else ''
+                                
+                                # Content is the full text
+                                content = raw_data.text
                                 
                                 reddit_post = RedditPost(
                                     stock_id=stock.id,
@@ -1293,7 +1309,7 @@ class DataPipeline:
                                     score=score,
                                     num_comments=num_comments,
                                     created_utc=created_utc,
-                                    # Store mentioned symbols if present
+                                    # sentiment_score and confidence will be updated later after sentiment analysis
                                     stock_mentions=metadata.get('all_symbols', None)
                                 )
                                 session.add(reddit_post)
@@ -1630,6 +1646,14 @@ class DataPipeline:
                         # Store using repository with proper session management
                         await sentiment_repository.create(sentiment_data)
                         stored_count += 1
+                        
+                        # ALSO update the corresponding news_articles or reddit_posts record with sentiment
+                        await self._update_raw_data_with_sentiment(
+                            session,
+                            sentiment_result,
+                            stock
+                        )
+                        
                         # Session automatically commits and closes due to context manager
                         
                 except Exception as e:
@@ -1643,6 +1667,85 @@ class DataPipeline:
             raise
         
         return stored_count
+    
+    async def _update_raw_data_with_sentiment(
+        self, 
+        session: AsyncSession,
+        sentiment_result: 'SentimentAnalysisResult',
+        stock: 'StocksWatchlist'
+    ) -> None:
+        """
+        Update news_articles or reddit_posts with sentiment scores.
+        
+        Args:
+            session: Database session
+            sentiment_result: Sentiment analysis result
+            stock: Stock object
+        """
+        try:
+            from sqlalchemy import update, select
+            from ..data_access.models import NewsArticle, RedditPost
+            
+            # Get source information
+            source_str = str(sentiment_result.raw_data.source.value) if hasattr(sentiment_result.raw_data.source, 'value') else str(sentiment_result.raw_data.source)
+            source_lower = source_str.lower()
+            
+            # Get URL from raw data
+            url = getattr(sentiment_result.raw_data, 'url', None)
+            
+            if not url:
+                return  # Can't update without URL to identify the record
+            
+            # Extract sentiment values
+            sentiment_score = sentiment_result.sentiment_result.score
+            confidence = sentiment_result.sentiment_result.confidence
+            
+            # Get stock mentions from metadata if available
+            metadata = getattr(sentiment_result.raw_data, 'metadata', {}) or {}
+            stock_mentions = metadata.get('all_symbols', None)
+            
+            # Update the appropriate table based on source
+            if source_lower == 'reddit':
+                # Update reddit_posts
+                stmt = (
+                    update(RedditPost)
+                    .where(RedditPost.url == url)
+                    .where(RedditPost.stock_id == stock.id)
+                    .values(
+                        sentiment_score=sentiment_score,
+                        confidence=confidence,
+                        stock_mentions=stock_mentions
+                    )
+                )
+                result = await session.execute(stmt)
+                
+                if result.rowcount > 0:
+                    self.logger.debug(f"Updated {result.rowcount} Reddit post(s) with sentiment")
+                else:
+                    self.logger.warning(f"Reddit post not found for update - URL: {url}, Stock ID: {stock.id}")
+                    
+            elif source_lower in ['newsapi', 'finnhub', 'marketaux']:
+                # Update news_articles
+                stmt = (
+                    update(NewsArticle)
+                    .where(NewsArticle.url == url)
+                    .where(NewsArticle.stock_id == stock.id)
+                    .values(
+                        sentiment_score=sentiment_score,
+                        confidence=confidence,
+                        stock_mentions=stock_mentions
+                    )
+                )
+                result = await session.execute(stmt)
+                
+                if result.rowcount > 0:
+                    self.logger.debug(f"Updated {result.rowcount} news article(s) with sentiment")
+                else:
+                    self.logger.warning(f"News article not found for update - URL: {url}, Stock ID: {stock.id}, Source: {source_lower}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to update raw data with sentiment: {e}")
+            # Don't raise - this is a non-critical update
     
     def _build_sentiment_stats(self, sentiment_results: List['SentimentAnalysisResult']) -> Dict[str, Any]:
         """Build sentiment analysis statistics."""

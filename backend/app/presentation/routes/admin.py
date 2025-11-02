@@ -397,41 +397,42 @@ async def get_storage_metrics(
         import os
         
         try:
-            # Get actual database file size
-            db_file_path = "./data/insight_stock.db"
+            # Get actual database file size - backend/data/insight_stock.db
+            db_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "insight_stock.db")
             if os.path.exists(db_file_path):
                 db_size_bytes = os.path.getsize(db_file_path)
                 db_size_gb = db_size_bytes / (1024 ** 3)
+                db_size_mb = db_size_bytes / (1024 ** 2)
             else:
                 db_size_gb = 0.0
+                db_size_mb = 0.0
             
             # Set reasonable limits for database growth (configurable in production)
             max_db_size_gb = 5.0  # 5GB limit for database
             available_space_gb = max_db_size_gb - db_size_gb
-            usage_percentage = (db_size_gb / max_db_size_gb) * 100
+            usage_percentage = (db_size_gb / max_db_size_gb) * 100 if max_db_size_gb > 0 else 0
             
         except Exception as e:
             logger.warning(f"Could not get database file size: {e}, using estimates")
             # Fallback to estimates based on record counts
-            db_size_gb = metrics.storage_size_mb / 1024
+            db_size_mb = metrics.storage_size_mb
+            db_size_gb = db_size_mb / 1024
             max_db_size_gb = 5.0
             available_space_gb = max_db_size_gb - db_size_gb
-            usage_percentage = (db_size_gb / max_db_size_gb) * 100
+            usage_percentage = (db_size_gb / max_db_size_gb) * 100 if max_db_size_gb > 0 else 0
         
         return {
             "current_usage": {
                 "total_size_gb": round(db_size_gb, 2),
+                "total_size_mb": round(db_size_mb, 2),
                 "available_space_gb": round(available_space_gb, 2),
                 "usage_percentage": round(usage_percentage, 2)
             },
-            "retention_policy": {
-                "sentiment_data_days": default_retention.sentiment_data_days,
-                "stock_price_days": default_retention.price_data_days,
-                "log_files_days": default_retention.log_data_days,
-                "backup_retention_days": 30
-            },
-            "auto_cleanup": default_retention.auto_cleanup_enabled,
             "total_records": metrics.total_records,
+            "sentiment_records": metrics.sentiment_records,
+            "stock_price_records": metrics.stock_price_records,
+            "oldest_record": metrics.oldest_record.isoformat() if metrics.oldest_record else None,
+            "newest_record": metrics.newest_record.isoformat() if metrics.newest_record else None,
             "storage_health": "healthy" if usage_percentage < 80 else "warning" if usage_percentage < 95 else "critical"
         }
         
@@ -440,67 +441,6 @@ async def get_storage_metrics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve storage metrics"
-        )
-
-
-@router.put("/storage", response_model=RetentionPolicyResponse)
-async def update_retention_policy(
-    retention_policy: RetentionPolicyRequest,
-    db: AsyncSession = Depends(get_db),
-    current_admin: AdminUser = Depends(get_current_admin)
-) -> RetentionPolicyResponse:
-    """
-    Update data retention policy.
-    Implements U-FR9: Manage Data Storage
-    
-    Configure automatic data cleanup and retention policies.
-    """
-    try:
-        logger.info("Admin updating retention policy", 
-                   admin_user=current_admin.email,
-                   policy=retention_policy.dict())
-        
-        # Convert StorageSettingsUpdateRequest to RetentionPolicy
-        from app.presentation.schemas.admin_schemas import RetentionPolicy
-        retention_policy_obj = RetentionPolicy(
-            sentiment_data_days=retention_policy.sentiment_data_days or 30,
-            price_data_days=retention_policy.price_data_days or 90,
-            log_data_days=retention_policy.log_data_days or 30,
-            auto_cleanup_enabled=retention_policy.auto_cleanup_enabled or True
-        )
-        
-        logger.info("Converted retention policy", policy=retention_policy_obj.dict())
-        
-        storage_manager = StorageManager(db)
-        cleanup_stats = await storage_manager.apply_retention_policy(retention_policy_obj, force_cleanup=True)
-        
-        logger.info("Retention policy applied", cleanup_stats=cleanup_stats)
-        
-        return {
-            "success": True,
-            "message": "Retention policy applied successfully",
-            "cleanup_statistics": cleanup_stats,
-            "updated_settings": {
-                "metrics": {
-                    "total_records": cleanup_stats.get("total_records_remaining", 0),
-                    "storage_size_mb": 0.0,
-                    "sentiment_records": cleanup_stats.get("sentiment_records_remaining", 0),
-                    "stock_price_records": cleanup_stats.get("price_records_remaining", 0),
-                    "oldest_record": None,
-                    "newest_record": None
-                },
-                "retention_policy": retention_policy_obj.dict(),
-                "backup_enabled": False,
-                "last_cleanup": utc_now(),
-                "next_cleanup": None
-            }
-        }
-        
-    except Exception as e:
-        logger.error("Error updating retention policy", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update retention policy"
         )
 
 

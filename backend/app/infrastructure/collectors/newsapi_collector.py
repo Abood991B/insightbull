@@ -330,10 +330,12 @@ class NewsAPICollector(BaseCollector):
                 stock_symbol=symbol.upper(),
                 url=article.get("url", ""),
                 metadata={
+                    "title": title,  # Store title for database insertion
                     "source_name": article.get("source", {}).get("name", ""),
                     "author": article.get("author", ""),
                     "url_to_image": article.get("urlToImage", ""),
-                    "newsapi_source_id": article.get("source", {}).get("id", "")
+                    "newsapi_source_id": article.get("source", {}).get("id", ""),
+                    "all_symbols": [symbol.upper()]  # Store symbols for stock_mentions column
                 }
             )
             
