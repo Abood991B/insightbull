@@ -175,6 +175,8 @@ class RealTimeStockPriceService:
                 
         except Exception as e:
             logger.error(f"Error fetching and updating stock prices: {e}", exc_info=True)
+            # Sleep to prevent rapid error looping
+            await asyncio.sleep(self.update_interval)
             
     async def _get_yahoo_prices(self, symbols: List[str]) -> dict:
         """
@@ -341,7 +343,7 @@ class RealTimeStockPriceService:
                     volume=data['volume'],
                     change=change,  # Add calculated change
                     change_percent=change_percent,  # Add calculated change percentage
-                    timestamp=datetime.now(timezone.utc)
+                    price_timestamp=datetime.now(timezone.utc)
                 )
                 
                 db.add(stock_price)
@@ -361,12 +363,12 @@ class RealTimeStockPriceService:
             
             # Log the latest prices for verification
             latest_prices_result = await db.execute(
-                select(StockPrice.symbol, StockPrice.price, StockPrice.timestamp)
-                .order_by(StockPrice.timestamp.desc())
+                select(StockPrice.symbol, StockPrice.price, StockPrice.price_timestamp)
+                .order_by(StockPrice.price_timestamp.desc())
                 .limit(5)
             )
             latest_prices = latest_prices_result.all()
-            logger.info(f"Latest 5 price records: {[(p.symbol, float(p.price), p.timestamp) for p in latest_prices]}")
+            logger.info(f"Latest 5 price records: {[(p.symbol, float(p.price), p.price_timestamp) for p in latest_prices]}")
             
         except Exception as e:
             logger.error(f"Error updating stock prices in database: {e}", exc_info=True)
@@ -389,6 +391,106 @@ class RealTimeStockPriceService:
         except Exception as e:
             logger.error(f"Error fetching single stock price for {symbol}: {e}")
             return None
+    
+    async def fetch_and_update_market_caps(self) -> dict:
+        """
+        Fetch and update market cap information for all watchlist stocks.
+        
+        Returns:
+            Dictionary with update results
+        """
+        try:
+            logger.info("Starting market cap fetch and update for all watchlist stocks...")
+            async with get_db_session() as db:
+                # Get all active stocks
+                from sqlalchemy import select
+                result = await db.execute(
+                    select(StocksWatchlist).filter(StocksWatchlist.is_active == True)
+                )
+                active_stocks = result.scalars().all()
+                
+                if not active_stocks:
+                    logger.warning("No active stocks in watchlist")
+                    return {"success": False, "message": "No active stocks found"}
+                
+                updated_count = 0
+                failed_symbols = []
+                
+                # Fetch market cap for each stock
+                loop = asyncio.get_event_loop()
+                
+                def fetch_market_cap(symbol: str) -> Optional[dict]:
+                    """Fetch market cap and related info for a symbol."""
+                    try:
+                        self._check_request_rate()
+                        ticker = yf.Ticker(symbol)
+                        info = ticker.info
+                        
+                        market_cap_value = info.get('marketCap')
+                        if not market_cap_value:
+                            return None
+                        
+                        # Categorize market cap
+                        if market_cap_value >= 200_000_000_000:  # $200B+
+                            market_cap_category = "Mega Cap"
+                        elif market_cap_value >= 10_000_000_000:  # $10B - $200B
+                            market_cap_category = "Large Cap"
+                        elif market_cap_value >= 2_000_000_000:  # $2B - $10B
+                            market_cap_category = "Mid Cap"
+                        else:  # < $2B
+                            market_cap_category = "Small Cap"
+                        
+                        self.request_count += 1
+                        self.hourly_request_count += 1
+                        
+                        return {
+                            'market_cap': market_cap_category,
+                            'market_cap_value': market_cap_value,
+                            'sector': info.get('sector', 'Unknown'),
+                            'exchange': info.get('exchange', 'NASDAQ')
+                        }
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch market cap for {symbol}: {e}")
+                        return None
+                
+                for stock in active_stocks:
+                    try:
+                        logger.info(f"Fetching market cap for {stock.symbol}")
+                        
+                        # Run in thread pool
+                        info_data = await loop.run_in_executor(
+                            None, fetch_market_cap, stock.symbol
+                        )
+                        
+                        if info_data:
+                            stock.market_cap = info_data['market_cap']
+                            stock.sector = info_data.get('sector', stock.sector)
+                            stock.exchange = info_data.get('exchange', stock.exchange)
+                            updated_count += 1
+                            logger.info(f"Updated {stock.symbol}: {info_data['market_cap']} (${info_data['market_cap_value']:,.0f})")
+                        else:
+                            failed_symbols.append(stock.symbol)
+                            
+                        # Small delay to avoid rate limiting
+                        await asyncio.sleep(0.5)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing market cap for {stock.symbol}: {e}")
+                        failed_symbols.append(stock.symbol)
+                
+                await db.commit()
+                logger.info(f"Market cap update completed: {updated_count}/{len(active_stocks)} successful")
+                
+                return {
+                    "success": True,
+                    "updated_count": updated_count,
+                    "total_stocks": len(active_stocks),
+                    "failed_symbols": failed_symbols
+                }
+                
+        except Exception as e:
+            logger.error(f"Error fetching market caps: {e}", exc_info=True)
+            return {"success": False, "message": str(e)}
     
     def get_service_status(self) -> dict:
         """

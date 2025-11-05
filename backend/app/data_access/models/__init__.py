@@ -63,9 +63,9 @@ class SentimentData(Base):
     sentiment_label = Column(String(20), nullable=False, index=True, default="Neutral")  # Positive, Negative, Neutral
     model_used = Column(String(50), nullable=True)  # VADER, FinBERT (nullable for migration compatibility)
     raw_text = Column(Text)
-    extra_data = Column(JSON)  # Additional source-specific data
+    additional_metadata = Column(JSON)  # Additional metadata: source_url, content_type, original_timestamp, label
     content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())  # When sentiment analysis was performed
     
     # Relationships
     stock = relationship("StocksWatchlist", back_populates="sentiment_data")
@@ -94,8 +94,7 @@ class StockPrice(Base):
     volume = Column(Integer)
     change = Column(Numeric(precision=8, scale=2))  # Max 999999.99 (positive or negative)
     change_percent = Column(Numeric(precision=6, scale=2))  # Max 9999.99% 
-    timestamp = Column(DateTime(timezone=True), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    price_timestamp = Column(DateTime(timezone=True), nullable=False)  # When the price data is from (market time)
     
     # Additional price fields for better tracking (2 decimal places)
     open_price = Column(Numeric(precision=10, scale=2))
@@ -118,11 +117,10 @@ class NewsArticle(Base):
     url = Column(String(1000), unique=True)
     source = Column(String(100), nullable=False)
     author = Column(String(255))
-    published_at = Column(DateTime(timezone=True), nullable=False)
+    published_at = Column(DateTime(timezone=True), nullable=False)  # When article was published by source
     sentiment_score = Column(Numeric(precision=5, scale=4))  # Range -1.0000 to 1.0000
     confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
     stock_mentions = Column(JSON)  # Array of stock symbols mentioned
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
     # Relationship back to stock for joins
     stock = relationship("StocksWatchlist")
 
@@ -141,11 +139,10 @@ class RedditPost(Base):
     score = Column(Integer, default=0)
     num_comments = Column(Integer, default=0)
     url = Column(String(1000))
-    created_utc = Column(DateTime(timezone=True), nullable=False)
+    created_utc = Column(DateTime(timezone=True), nullable=False)  # When post was created on Reddit
     sentiment_score = Column(Numeric(precision=5, scale=4))  # Range -1.0000 to 1.0000
     confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
     stock_mentions = Column(JSON)  # Array of stock symbols mentioned
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
     # Relationship back to stock for joins
     stock = relationship("StocksWatchlist")
 

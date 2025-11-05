@@ -117,10 +117,42 @@ class NewsAPICollector(BaseCollector):
             
             async with self._get_http_client() as client:
                 response = await client.get(url, params=params)
-                return response.status_code == 200
+                
+                if response.status_code == 200:
+                    self.logger.debug("NewsAPI connection validated successfully")
+                    return True
+                elif response.status_code == 401:
+                    error_msg = "Invalid API key - Please check your NewsAPI key in settings"
+                    self.logger.error(f"NewsAPI validation failed: {error_msg} (401 Unauthorized)")
+                    raise ValueError(error_msg)
+                elif response.status_code == 426:
+                    error_msg = "Upgrade required - Your NewsAPI plan doesn't support this endpoint"
+                    self.logger.error(f"NewsAPI validation failed: {error_msg} (426 Upgrade Required)")
+                    raise ValueError(error_msg)
+                elif response.status_code == 429:
+                    error_msg = "Rate limit exceeded - You've reached your daily request limit. Try again tomorrow or upgrade your NewsAPI plan"
+                    self.logger.error(f"NewsAPI validation failed: {error_msg} (429 Too Many Requests)")
+                    raise ValueError(error_msg)
+                elif response.status_code == 500:
+                    error_msg = "NewsAPI server error - Service temporarily unavailable"
+                    self.logger.error(f"NewsAPI validation failed: {error_msg} (500 Internal Server Error)")
+                    raise ValueError(error_msg)
+                else:
+                    error_msg = f"Unexpected error (HTTP {response.status_code})"
+                    try:
+                        error_data = response.json()
+                        api_message = error_data.get('message', 'Unknown error')
+                        error_msg = f"{error_msg}: {api_message}"
+                    except:
+                        pass
+                    self.logger.error(f"NewsAPI validation failed: {error_msg}")
+                    raise ValueError(error_msg)
                 
         except Exception as e:
-            self.logger.error(f"NewsAPI connection validation failed: {str(e)}")
+            self.logger.error(
+                f"NewsAPI connection validation exception: {str(e)}",
+                extra={"error_type": type(e).__name__, "operation": "validate_connection"}
+            )
             return False
     
     async def collect_data(self, config: CollectionConfig) -> CollectionResult:

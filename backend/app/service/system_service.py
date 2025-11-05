@@ -232,7 +232,7 @@ class SystemService:
             
             from app.data_access.models import StockPrice
             last_price = await self.db.scalar(
-                select(func.max(StockPrice.timestamp)).select_from(StockPrice)
+                select(func.max(StockPrice.price_timestamp)).select_from(StockPrice)
             )
             
             # Return UTC timestamps in ISO format
@@ -310,7 +310,7 @@ class SystemService:
                 select(func.max(SentimentData.created_at)).select_from(SentimentData)
             )
             last_price = await self.db.scalar(
-                select(func.max(StockPrice.timestamp)).select_from(StockPrice)
+                select(func.max(StockPrice.price_timestamp)).select_from(StockPrice)
             )
             
             # Ensure timestamps are UTC
@@ -328,7 +328,7 @@ class SystemService:
             
             recent_news = await self.db.scalar(
                 select(func.count()).select_from(NewsArticle)
-                .where(NewsArticle.created_at >= yesterday)
+                .where(NewsArticle.published_at >= yesterday)
             )
             
             return {
@@ -365,7 +365,7 @@ class SystemService:
             )
             
             last_news = await self.db.scalar(
-                select(func.max(NewsArticle.created_at)).select_from(NewsArticle)
+                select(func.max(NewsArticle.published_at)).select_from(NewsArticle)
             )
             
             # Calculate processing rates (last 24 hours)

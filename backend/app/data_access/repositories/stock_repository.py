@@ -128,10 +128,10 @@ class StockRepository(BaseRepository[Stock]):
             # Filter price data to only include recent data
             stock.price_data = [
                 price for price in stock.price_data 
-                if price.timestamp >= cutoff_date
+                if price.price_timestamp >= cutoff_date
             ]
-            # Sort by timestamp (latest first)
-            stock.price_data.sort(key=lambda x: x.timestamp, reverse=True)
+            # Sort by price_timestamp (latest first)
+            stock.price_data.sort(key=lambda x: x.price_timestamp, reverse=True)
         
         return stock
     

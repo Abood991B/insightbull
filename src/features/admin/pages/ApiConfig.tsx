@@ -186,17 +186,25 @@ const ApiConfig = () => {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {Object.entries(apiConfig.apis).map(([apiName, config]) => (
-                    <div key={apiName} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <h3 className="font-medium capitalize">{apiName}</h3>
-                        <p className="text-xs text-gray-500">
-                          Last test: {formatDate(config.last_test)}
-                        </p>
+                    <div key={apiName} className="flex flex-col p-3 border rounded-lg space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-medium capitalize">{apiName}</h3>
+                          <p className="text-xs text-gray-500">
+                            Last test: {formatDate(config.last_test)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(config.status)}
+                          {getStatusBadge(config.status)}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(config.status)}
-                        {getStatusBadge(config.status)}
-                      </div>
+                      {/* Show error message if present */}
+                      {config.status === 'error' && (config as any).error && (
+                        <div className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
+                          {(config as any).error}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -230,6 +238,15 @@ const ApiConfig = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {/* Display error message if API has error status */}
+                    {config.status === 'error' && (config as any).error && (
+                      <Alert variant="destructive" className="mb-4">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          <strong>Connection Error:</strong> {(config as any).error}
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     {apiName === 'reddit' ? (
                       // Special layout for Reddit with separate Client ID and Secret fields
                       <>

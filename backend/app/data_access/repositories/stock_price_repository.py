@@ -50,10 +50,10 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    StockPrice.timestamp >= cutoff_date
+                    StockPrice.price_timestamp >= cutoff_date
                 )
             )
-            .order_by(desc(StockPrice.timestamp))
+            .order_by(desc(StockPrice.price_timestamp))
             .limit(limit)
         )
         
@@ -61,8 +61,8 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         
         # Ensure all timestamps are timezone-aware
         for price in prices:
-            if price.timestamp:
-                price.timestamp = ensure_utc(price.timestamp)
+            if price.price_timestamp:
+                price.price_timestamp = ensure_utc(price.price_timestamp)
         
         return prices
     
@@ -80,7 +80,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             select(StockPrice)
             .join(Stock)
             .where(Stock.symbol == symbol.upper())
-            .order_by(desc(StockPrice.timestamp))
+            .order_by(desc(StockPrice.price_timestamp))
             .limit(1)
         )
         return result.scalar_one_or_none()
@@ -108,10 +108,10 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    between(StockPrice.timestamp, start_date, end_date)
+                    between(StockPrice.price_timestamp, start_date, end_date)
                 )
             )
-            .order_by(StockPrice.timestamp)
+            .order_by(StockPrice.price_timestamp)
         )
         return result.scalars().all()
     
@@ -145,7 +145,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    StockPrice.timestamp >= cutoff_date
+                    StockPrice.price_timestamp >= cutoff_date
                 )
             )
         )
@@ -159,10 +159,10 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    StockPrice.timestamp >= cutoff_date
+                    StockPrice.price_timestamp >= cutoff_date
                 )
             )
-            .order_by(StockPrice.timestamp)
+            .order_by(StockPrice.price_timestamp)
             .limit(1)
         )
         first_price = first_price_result.scalar()
@@ -173,10 +173,10 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    StockPrice.timestamp >= cutoff_date
+                    StockPrice.price_timestamp >= cutoff_date
                 )
             )
-            .order_by(desc(StockPrice.timestamp))
+            .order_by(desc(StockPrice.price_timestamp))
             .limit(1)
         )
         last_price = last_price_result.scalar()
@@ -220,16 +220,16 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         
         result = await self.db_session.execute(
             select(
-                func.date(StockPrice.timestamp).label('date'),
+                func.date(StockPrice.price_timestamp).label('date'),
                 func.first_value(StockPrice.open_price).over(
-                    partition_by=func.date(StockPrice.timestamp),
-                    order_by=StockPrice.timestamp
+                    partition_by=func.date(StockPrice.price_timestamp),
+                    order_by=StockPrice.price_timestamp
                 ).label('open_price'),
                 func.max(StockPrice.high_price).label('high_price'),
                 func.min(StockPrice.low_price).label('low_price'),
                 func.last_value(StockPrice.close_price).over(
-                    partition_by=func.date(StockPrice.timestamp),
-                    order_by=StockPrice.timestamp
+                    partition_by=func.date(StockPrice.price_timestamp),
+                    order_by=StockPrice.price_timestamp
                 ).label('close_price'),
                 func.sum(StockPrice.volume).label('volume')
             )
@@ -237,11 +237,11 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    StockPrice.timestamp >= cutoff_date
+                    StockPrice.price_timestamp >= cutoff_date
                 )
             )
-            .group_by(func.date(StockPrice.timestamp))
-            .order_by(func.date(StockPrice.timestamp))
+            .group_by(func.date(StockPrice.price_timestamp))
+            .order_by(func.date(StockPrice.price_timestamp))
         )
         
         ohlcv_data = []
@@ -292,7 +292,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         
         price_data = {
             'stock_id': stock_id,
-            'timestamp': timestamp,
+            'price_timestamp': timestamp,
             'open_price': open_price,
             'high_price': high_price,
             'low_price': low_price,
@@ -321,7 +321,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
         
         result = await self.db_session.execute(
             select(
-                StockPrice.timestamp,
+                StockPrice.price_timestamp,
                 StockPrice.close_price,
                 StockPrice.volume,
                 StockPrice.high_price,
@@ -331,16 +331,16 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    StockPrice.timestamp >= cutoff_date
+                    StockPrice.price_timestamp >= cutoff_date
                 )
             )
-            .order_by(StockPrice.timestamp)
+            .order_by(StockPrice.price_timestamp)
         )
         
         correlation_data = []
         for row in result:
             correlation_data.append({
-                'timestamp': row.timestamp,
+                'timestamp': row.price_timestamp,
                 'close_price': float(row.close_price),
                 'volume': int(row.volume),
                 'high_price': float(row.high_price),
@@ -364,7 +364,7 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             select(StockPrice)
             .join(Stock)
             .where(Stock.symbol == symbol.upper())
-            .order_by(desc(StockPrice.timestamp))
+            .order_by(desc(StockPrice.price_timestamp))
             .limit(1)
         )
         return result.scalar_one_or_none()
@@ -389,17 +389,17 @@ class StockPriceRepository(BaseRepository[StockPrice]):
             .where(
                 and_(
                     Stock.symbol == symbol.upper(),
-                    StockPrice.timestamp <= target_time_naive
+                    StockPrice.price_timestamp <= target_time_naive
                 )
             )
-            .order_by(desc(StockPrice.timestamp))
+            .order_by(desc(StockPrice.price_timestamp))
             .limit(1)
         )
         
         price = result.scalar_one_or_none()
         
         # Ensure timestamp is timezone-aware
-        if price and price.timestamp:
-            price.timestamp = ensure_utc(price.timestamp)
+        if price and price.price_timestamp:
+            price.price_timestamp = ensure_utc(price.price_timestamp)
         
         return price

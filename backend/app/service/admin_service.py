@@ -172,9 +172,78 @@ class AdminService(WatchlistSubject):
             newsapi_key = keys.get('news_api_key', '')
             marketaux_key = keys.get('marketaux_api_key', '')
 
+            # Test Reddit connection if credentials are available
+            reddit_status = "inactive"
+            reddit_last_test = None
+            reddit_error = None
+            if reddit_client_id and reddit_client_secret:
+                try:
+                    from app.infrastructure.collectors.reddit_collector import RedditCollector
+                    reddit_collector = RedditCollector(
+                        client_id=reddit_client_id,
+                        client_secret=reddit_client_secret,
+                        user_agent=reddit_user_agent
+                    )
+                    is_valid = await reddit_collector.validate_connection()
+                    reddit_status = "active" if is_valid else "error"
+                    reddit_last_test = utc_now().isoformat()
+                    
+                    if is_valid:
+                        self.logger.info(
+                            "Reddit connection validated successfully",
+                            extra={"operation": "api_validation", "service": "reddit", "status": "success"}
+                        )
+                    else:
+                        reddit_error = "API validation returned false - check credentials"
+                        self.logger.warning(
+                            f"Reddit validation failed: {reddit_error}",
+                            extra={"operation": "api_validation", "service": "reddit", "status": "failed"}
+                        )
+                except Exception as e:
+                    reddit_status = "error"
+                    reddit_last_test = utc_now().isoformat()
+                    reddit_error = str(e)
+                    self.logger.error(
+                        f"Reddit connection test exception: {reddit_error}",
+                        extra={"operation": "api_validation", "service": "reddit", "status": "error", "error_type": type(e).__name__}
+                    )
+
+            # Test FinHub connection if key is available
+            finnhub_status = "inactive"
+            finnhub_last_test = None
+            finnhub_error = None
+            if finnhub_key:
+                try:
+                    from app.infrastructure.collectors.finnhub_collector import FinHubCollector
+                    finnhub_collector = FinHubCollector(api_key=finnhub_key)
+                    is_valid = await finnhub_collector.validate_connection()
+                    finnhub_status = "active" if is_valid else "error"
+                    finnhub_last_test = utc_now().isoformat()
+                    
+                    if is_valid:
+                        self.logger.info(
+                            "FinHub connection validated successfully",
+                            extra={"operation": "api_validation", "service": "finnhub", "status": "success"}
+                        )
+                    else:
+                        finnhub_error = "API validation returned false - check API key"
+                        self.logger.warning(
+                            f"FinHub validation failed: {finnhub_error}",
+                            extra={"operation": "api_validation", "service": "finnhub", "status": "failed"}
+                        )
+                except Exception as e:
+                    finnhub_status = "error"
+                    finnhub_last_test = utc_now().isoformat()
+                    finnhub_error = str(e)
+                    self.logger.error(
+                        f"FinHub connection test exception: {finnhub_error}",
+                        extra={"operation": "api_validation", "service": "finnhub", "status": "error", "error_type": type(e).__name__}
+                    )
+
             # Test NewsAPI connection if key is available
             newsapi_status = "inactive"
             newsapi_last_test = None
+            newsapi_error = None
             if newsapi_key:
                 try:
                     from app.infrastructure.collectors.newsapi_collector import NewsAPICollector
@@ -182,37 +251,87 @@ class AdminService(WatchlistSubject):
                     is_valid = await newsapi_collector.validate_connection()
                     newsapi_status = "active" if is_valid else "error"
                     newsapi_last_test = utc_now().isoformat()
-                    self.logger.info(f"NewsAPI connection test: {'success' if is_valid else 'failed'}", component="admin_service")
+                    
+                    if is_valid:
+                        self.logger.info(
+                            "NewsAPI connection validated successfully",
+                            extra={"operation": "api_validation", "service": "newsapi", "status": "success"}
+                        )
+                    else:
+                        newsapi_error = "API validation returned false - check API key or rate limits"
+                        self.logger.warning(
+                            f"NewsAPI validation failed: {newsapi_error}",
+                            extra={"operation": "api_validation", "service": "newsapi", "status": "failed"}
+                        )
                 except Exception as e:
                     newsapi_status = "error"
                     newsapi_last_test = utc_now().isoformat()
-                    self.logger.warning(f"NewsAPI connection test failed: {e}", component="admin_service")
+                    newsapi_error = str(e)
+                    self.logger.error(
+                        f"NewsAPI connection test exception: {newsapi_error}",
+                        extra={"operation": "api_validation", "service": "newsapi", "status": "error", "error_type": type(e).__name__}
+                    )
 
+            # Test Marketaux connection if key is available
+            marketaux_status = "inactive"
+            marketaux_last_test = None
+            marketaux_error = None
+            if marketaux_key:
+                try:
+                    from app.infrastructure.collectors.marketaux_collector import MarketauxCollector
+                    marketaux_collector = MarketauxCollector(api_key=marketaux_key)
+                    is_valid = await marketaux_collector.validate_connection()
+                    marketaux_status = "active" if is_valid else "error"
+                    marketaux_last_test = utc_now().isoformat()
+                    
+                    if is_valid:
+                        self.logger.info(
+                            "Marketaux connection validated successfully",
+                            extra={"operation": "api_validation", "service": "marketaux", "status": "success"}
+                        )
+                    else:
+                        marketaux_error = "API validation returned false - check API key"
+                        self.logger.warning(
+                            f"Marketaux validation failed: {marketaux_error}",
+                            extra={"operation": "api_validation", "service": "marketaux", "status": "failed"}
+                        )
+                except Exception as e:
+                    marketaux_status = "error"
+                    marketaux_last_test = utc_now().isoformat()
+                    marketaux_error = str(e)
+                    self.logger.error(
+                        f"Marketaux connection test exception: {marketaux_error}",
+                        extra={"operation": "api_validation", "service": "marketaux", "status": "error", "error_type": type(e).__name__}
+                    )
             
             # Build API configuration structure expected by frontend
             return {
                 "apis": {
                     "reddit": {
-                        "status": "active" if reddit_client_id and reddit_client_secret else "inactive",
-                        "last_test": utc_now().isoformat() if reddit_client_id else None,
+                        "status": reddit_status,
+                        "last_test": reddit_last_test,
                         "client_id": reddit_client_id,
                         "client_secret": reddit_client_secret,
-                        "user_agent": reddit_user_agent
+                        "user_agent": reddit_user_agent,
+                        "error": reddit_error if reddit_status == "error" else None
                     },
                     "finnhub": {
-                        "status": "active" if finnhub_key else "inactive", 
-                        "last_test": utc_now().isoformat() if finnhub_key else None,
-                        "api_key": finnhub_key
+                        "status": finnhub_status,
+                        "last_test": finnhub_last_test,
+                        "api_key": finnhub_key,
+                        "error": finnhub_error if finnhub_status == "error" else None
                     },
                     "newsapi": {
                         "status": newsapi_status,
                         "last_test": newsapi_last_test,
-                        "api_key": newsapi_key
+                        "api_key": newsapi_key,
+                        "error": newsapi_error if newsapi_status == "error" else None
                     },
                     "marketaux": {
-                        "status": "active" if marketaux_key else "inactive",
-                        "last_test": utc_now().isoformat() if marketaux_key else None,
-                        "api_key": marketaux_key
+                        "status": marketaux_status,
+                        "last_test": marketaux_last_test,
+                        "api_key": marketaux_key,
+                        "error": marketaux_error if marketaux_status == "error" else None
                     }
                 },
                 "summary": {

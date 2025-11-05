@@ -1263,6 +1263,46 @@ async def test_price_fetch(
         )
 
 
+@router.post("/realtime-price-service/update-market-caps")
+async def update_market_caps(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Fetch and update market cap information for all watchlist stocks.
+    This should be run once to populate market cap data.
+    """
+    try:
+        logger.info("Admin triggering market cap update", admin_user=current_admin.email)
+        
+        from app.service.price_service import price_service
+        
+        # Trigger market cap update
+        result = await price_service.fetch_and_update_market_caps()
+        
+        if result.get('success'):
+            return {
+                "success": True,
+                "message": f"Market cap update completed: {result['updated_count']}/{result['total_stocks']} stocks updated",
+                "data": {
+                    "updated_count": result['updated_count'],
+                    "total_stocks": result['total_stocks'],
+                    "failed_symbols": result.get('failed_symbols', [])
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": result.get('message', 'Failed to update market caps')
+            }
+        
+    except Exception as e:
+        logger.error("Error updating market caps", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update market caps: {str(e)}"
+        )
+
+
 @router.get("/realtime-price-service/debug")
 async def debug_price_service(
     current_admin: AdminUser = Depends(get_current_admin),
@@ -1289,8 +1329,8 @@ async def debug_price_service(
         
         # Get latest price records
         latest_prices_result = await db.execute(
-            select(StockPrice.symbol, StockPrice.price, StockPrice.timestamp)
-            .order_by(StockPrice.timestamp.desc())
+            select(StockPrice.symbol, StockPrice.price, StockPrice.price_timestamp)
+            .order_by(StockPrice.price_timestamp.desc())
             .limit(10)
         )
         latest_prices = latest_prices_result.all()
@@ -1326,7 +1366,7 @@ async def debug_price_service(
                     {
                         "symbol": p.symbol,
                         "price": float(p.price),
-                        "timestamp": p.timestamp.isoformat()
+                        "timestamp": p.price_timestamp.isoformat()
                     }
                     for p in latest_prices
                 ]

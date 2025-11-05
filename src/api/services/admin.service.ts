@@ -67,26 +67,30 @@ export interface ModelAccuracy {
 export interface APIConfiguration {
   apis: {
     reddit: {
-      status: 'active' | 'inactive' | 'unknown';
+      status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
       client_id: string;
       client_secret: string;
       user_agent: string;
+      error?: string | null;
     };
     finnhub: {
-      status: 'active' | 'inactive' | 'unknown';
+      status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
       api_key: string;
+      error?: string | null;
     };
     newsapi: {
-      status: 'active' | 'inactive' | 'unknown';
+      status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
       api_key: string;
+      error?: string | null;
     };
     marketaux: {
-      status: 'active' | 'inactive' | 'unknown';
+      status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
       api_key: string;
+      error?: string | null;
     };
   };
   summary: {

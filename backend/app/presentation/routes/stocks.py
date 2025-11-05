@@ -241,7 +241,7 @@ async def _get_price_history(
     
     return [
         PriceDataPoint(
-            timestamp=ensure_utc(record.timestamp),  # Convert to aware UTC
+            timestamp=ensure_utc(record.price_timestamp),  # Convert to aware UTC
             open_price=record.open_price,
             close_price=record.close_price,
             high_price=record.high_price,

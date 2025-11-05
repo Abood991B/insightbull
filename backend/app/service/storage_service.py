@@ -162,13 +162,13 @@ class StorageManager:
                 
                 # Clean up old news articles (optional - same retention as sentiment)
                 news_delete_result = await self.db.execute(
-                    delete(NewsArticle).where(NewsArticle.created_at < sentiment_cutoff)
+                    delete(NewsArticle).where(NewsArticle.published_at < sentiment_cutoff)
                 )
                 cleanup_stats["news_records_deleted"] = news_delete_result.rowcount
                 
                 # Clean up old reddit posts (optional - same retention as sentiment)
                 reddit_delete_result = await self.db.execute(
-                    delete(RedditPost).where(RedditPost.created_at < sentiment_cutoff)
+                    delete(RedditPost).where(RedditPost.created_utc < sentiment_cutoff)
                 )
                 cleanup_stats["reddit_records_deleted"] = reddit_delete_result.rowcount
                 

@@ -261,6 +261,21 @@ class RedditCollector(BaseCollector):
                             end_date = end_date.replace(tzinfo=timezone.utc)
                         
                         if start_date <= post_time <= end_date:
+                            # Extract symbols and filter to only those in our watchlist
+                            post_text = f"{post.title} {post.selftext or ''}"
+                            extracted_symbols = self._extract_stock_symbols(post_text)
+                            
+                            # Create set of watchlist symbols (from config)
+                            watchlist_symbols = {s.upper() for s in config.symbols}
+                            
+                            # Only keep symbols that are in our watchlist
+                            valid_symbols = extracted_symbols.intersection(watchlist_symbols)
+                            
+                            # Always include the target symbol we searched for
+                            all_symbols = valid_symbols if valid_symbols else {target_symbol.upper()}
+                            if target_symbol.upper() not in all_symbols:
+                                all_symbols.add(target_symbol.upper())
+                            
                             post_raw_data = self._create_raw_data(
                                 content_type="post",
                                 text=f"{post.title}\\n\\n{post.selftext or ''}",
@@ -272,7 +287,8 @@ class RedditCollector(BaseCollector):
                                     "subreddit": subreddit_name,
                                     "author": str(post.author) if post.author else "[deleted]",
                                     "score": post.score,
-                                    "num_comments": post.num_comments
+                                    "num_comments": post.num_comments,
+                                    "all_symbols": list(all_symbols)  # Add stock symbols for stock_mentions column
                                 }
                             )
                             collected_data.append(post_raw_data)

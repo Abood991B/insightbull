@@ -40,7 +40,7 @@ class BaseRepository(Generic[ModelType], ABC):
         """Create a new record"""
         db_obj = self.model(**obj_data)
         self.db_session.add(db_obj)
-        await self.db_session.commit()
+        await self.db_session.flush()  # Let context manager handle commit
         await self.db_session.refresh(db_obj)
         return db_obj
     
@@ -62,7 +62,7 @@ class BaseRepository(Generic[ModelType], ABC):
         if db_obj:
             for field, value in obj_data.items():
                 setattr(db_obj, field, value)
-            await self.db_session.commit()
+            await self.db_session.flush()  # Let context manager handle commit
             await self.db_session.refresh(db_obj)
         return db_obj
     

@@ -359,7 +359,7 @@ async def _get_recent_price_movers(
                     latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
                     
                     # Convert timestamp to aware UTC for proper API serialization
-                    last_updated_utc = ensure_utc(latest_price.timestamp)
+                    last_updated_utc = ensure_utc(latest_price.price_timestamp)
                     
                     movers.append(StockSummary(
                         symbol=stock.symbol,

@@ -14,7 +14,7 @@ Following FYP Report specification:
 import asyncio
 import os
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
@@ -1109,7 +1109,8 @@ class DataPipeline:
                             "sentiment_label": get_sentiment_label(result.sentiment_score),
                             "model_used": getattr(result, 'model_used', 'unknown'),
                             "raw_text": result.raw_text[:5000] if result.raw_text else None,  # Limit text size
-                            "extra_data": {
+                            "created_at": datetime.now(timezone.utc),  # When sentiment analysis was performed
+                            "additional_metadata": {
                                 "processed_at": result.timestamp.isoformat() if result.timestamp else None,
                                 "processor_version": "1.0",
                                 "correlation_id": correlation_id,
@@ -1203,16 +1204,15 @@ class DataPipeline:
                                     existing_article = await session.execute(
                                         select(NewsArticle).where(NewsArticle.url == url)
                                     )
-                                    if existing_article.scalar_one_or_none():
-                                        continue  # Skip duplicate
+                                if existing_article.scalar_one_or_none():
+                                    continue  # Skip duplicate
                                 
                                 # Store as news article
-                                published_at = getattr(raw_data, 'published_at', None)
+                                # FIX: Collectors store timestamp in 'timestamp' field, not 'published_at'
+                                published_at = getattr(raw_data, 'timestamp', None)
                                 if published_at is None:
                                     published_at = utc_now()  # Default to current UTC time
-                                published_at = ensure_utc(published_at)  # Ensure timezone-aware
-                                
-                                # Extract metadata
+                                published_at = ensure_utc(published_at)  # Ensure timezone-aware                                # Extract metadata
                                 metadata = getattr(raw_data, 'metadata', {}) or {}
                                 
                                 # Use raw_data.text as content, extract title from metadata or first line
@@ -1228,7 +1228,7 @@ class DataPipeline:
                                     content=full_text[:10000],  # Use full text as content
                                     url=url,
                                     source=source_name.lower(),
-                                    published_at=published_at,
+                                    published_at=published_at,  # When article was published by source
                                     author=metadata.get('author', ''),
                                     # sentiment_score and confidence will be updated later after sentiment analysis
                                     stock_mentions=metadata.get('all_symbols', None)
@@ -1238,6 +1238,12 @@ class DataPipeline:
                             elif source_name.lower() == 'reddit':
                                 # Extract reddit_id from metadata (where Reddit collector stores it)
                                 metadata = getattr(raw_data, 'metadata', {}) or {}
+                                
+                                # DEBUG: Log metadata to check if all_symbols is present
+                                self.logger.debug(
+                                    f"Reddit post metadata keys: {list(metadata.keys())}",
+                                    extra={"all_symbols_present": 'all_symbols' in metadata, "all_symbols_value": metadata.get('all_symbols')}
+                                )
                                 
                                 # Try multiple sources for reddit_id
                                 reddit_id = (
@@ -1298,6 +1304,20 @@ class DataPipeline:
                                 # Content is the full text
                                 content = raw_data.text
                                 
+                                # Extract all_symbols from metadata for stock_mentions
+                                all_symbols_value = metadata.get('all_symbols', None)
+                                
+                                # Convert empty list to None to avoid storing empty JSON arrays
+                                if all_symbols_value is not None and len(all_symbols_value) == 0:
+                                    all_symbols_value = None
+                                
+                                # DEBUG: Log what we're about to store
+                                self.logger.info(
+                                    f"Creating RedditPost - Title: {title[:50]}, stock_mentions: {all_symbols_value}, "
+                                    f"metadata has all_symbols: {'all_symbols' in metadata}",
+                                    extra={"reddit_id": reddit_id, "url": url[:80] if url else "N/A"}
+                                )
+                                
                                 reddit_post = RedditPost(
                                     stock_id=stock.id,
                                     reddit_id=reddit_id,
@@ -1308,9 +1328,9 @@ class DataPipeline:
                                     author=author,
                                     score=score,
                                     num_comments=num_comments,
-                                    created_utc=created_utc,
+                                    created_utc=created_utc,  # When post was created on Reddit
                                     # sentiment_score and confidence will be updated later after sentiment analysis
-                                    stock_mentions=metadata.get('all_symbols', None)
+                                    stock_mentions=all_symbols_value
                                 )
                                 session.add(reddit_post)
                             
@@ -1634,8 +1654,9 @@ class DataPipeline:
                             'sentiment_label': get_sentiment_label(sentiment_result.sentiment_result.score),
                             'model_used': sentiment_result.sentiment_result.model_name,  # Use actual model name from result
                             'raw_text': sentiment_result.processing_result.processed_text[:1000],  # First 1000 chars
-                            'content_hash': content_hash,  # Add content hash for duplicate prevention
-                            'extra_data': {
+                            'content_hash': content_hash,  # SHA-256 hash for duplicate prevention
+                            'created_at': datetime.now(timezone.utc),  # When sentiment analysis was performed
+                            'additional_metadata': {
                                 'label': sentiment_result.sentiment_result.label.value if hasattr(sentiment_result.sentiment_result.label, 'value') else str(sentiment_result.sentiment_result.label),
                                 'source_url': getattr(sentiment_result.raw_data, 'url', None),
                                 'content_type': getattr(sentiment_result.raw_data, 'content_type', 'text'),
@@ -1720,9 +1741,16 @@ class DataPipeline:
                 result = await session.execute(stmt)
                 
                 if result.rowcount > 0:
-                    self.logger.debug(f"Updated {result.rowcount} Reddit post(s) with sentiment")
+                    self.logger.debug(
+                        f"Updated Reddit post with sentiment: URL={url[:80]}, sentiment={sentiment_score:.4f}",
+                        extra={"operation": "sentiment_update", "source": "reddit", "stock_id": str(stock.id)}
+                    )
                 else:
-                    self.logger.warning(f"Reddit post not found for update - URL: {url}, Stock ID: {stock.id}")
+                    # Post was skipped as duplicate during raw storage phase - this is expected
+                    self.logger.debug(
+                        f"Skipped sentiment update - Reddit post not in database (duplicate filtered): URL={url[:80]}",
+                        extra={"operation": "duplicate_skip", "source": "reddit", "stock_id": str(stock.id)}
+                    )
                     
             elif source_lower in ['newsapi', 'finnhub', 'marketaux']:
                 # Update news_articles
@@ -1739,9 +1767,16 @@ class DataPipeline:
                 result = await session.execute(stmt)
                 
                 if result.rowcount > 0:
-                    self.logger.debug(f"Updated {result.rowcount} news article(s) with sentiment")
+                    self.logger.debug(
+                        f"Updated news article with sentiment: URL={url[:80]}, sentiment={sentiment_score:.4f}, source={source_lower}",
+                        extra={"operation": "sentiment_update", "source": source_lower, "stock_id": str(stock.id)}
+                    )
                 else:
-                    self.logger.warning(f"News article not found for update - URL: {url}, Stock ID: {stock.id}, Source: {source_lower}")
+                    # Article was skipped as duplicate during raw storage phase - this is expected
+                    self.logger.debug(
+                        f"Skipped sentiment update - News article not in database (duplicate filtered): URL={url[:80]}, source={source_lower}",
+                        extra={"operation": "duplicate_skip", "source": source_lower, "stock_id": str(stock.id)}
+                    )
             
         except Exception as e:
             self.logger.warning(f"Failed to update raw data with sentiment: {e}")
