@@ -131,17 +131,35 @@ async def _get_market_sentiment_overview(
     recent_sentiments = [s for s in all_recent_sentiments if s.stock_id in active_stock_ids]
     
     if not recent_sentiments:
-        # Return default values if no recent data
-        # Only count ACTIVE stocks (not deactivated ones)
-        total_stocks = len([s for s in all_stocks if s.is_active])
-        return MarketSentimentOverview(
-            average_sentiment=0.0,
-            positive_stocks=0,
-            neutral_stocks=0,
-            negative_stocks=0,
-            total_stocks=total_stocks,
-            last_updated=utc_now()
+        # If no data in last 24 hours, try to get latest available sentiment data
+        # This handles the case when pipeline hasn't run yet today after overnight shutdown
+        logger.info("No sentiment data in last 24 hours, fetching latest available data...")
+        
+        # Try fetching sentiment from last 7 days as fallback
+        fallback_cutoff = to_naive_utc(utc_now() - timedelta(days=7))
+        fallback_sentiments = await sentiment_repo.get_recent_sentiment_scores(
+            since=fallback_cutoff,
+            limit=1000
         )
+        
+        # Filter to active stocks only
+        recent_sentiments = [s for s in fallback_sentiments if s.stock_id in active_stock_ids]
+        
+        if not recent_sentiments:
+            # Still no data - return default values
+            # Only count ACTIVE stocks (not deactivated ones)
+            total_stocks = len([s for s in all_stocks if s.is_active])
+            logger.warning("No sentiment data available in last 7 days")
+            return MarketSentimentOverview(
+                average_sentiment=0.0,
+                positive_stocks=0,
+                neutral_stocks=0,
+                negative_stocks=0,
+                total_stocks=total_stocks,
+                last_updated=utc_now()
+            )
+        
+        logger.info(f"Using fallback sentiment data: {len(recent_sentiments)} records found")
     
     # Calculate sentiment distribution (only from ACTIVE stocks)
     sentiment_scores = [float(s.sentiment_score) for s in recent_sentiments]

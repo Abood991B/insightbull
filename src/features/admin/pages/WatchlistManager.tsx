@@ -507,8 +507,8 @@ const WatchlistManager = () => {
                                   <ul className="list-disc pl-5 space-y-1 text-sm">
                                     <li>Hide it from user dashboard stock selectors</li>
                                     <li>Stop collecting new sentiment data</li>
-                                    <li><strong className="text-green-600">✓ Preserve all historical sentiment data</strong></li>
-                                    <li><strong className="text-green-600">✓ Can be reactivated anytime</strong></li>
+                                    <li><strong className="text-green-600">Preserve all historical sentiment data</strong></li>
+                                    <li><strong className="text-green-600">Can be reactivated anytime</strong></li>
                                   </ul>
                                 </>
                               ) : (
@@ -519,7 +519,7 @@ const WatchlistManager = () => {
                                   <ul className="list-disc pl-5 space-y-1 text-sm">
                                     <li>Make it visible in user dashboard</li>
                                     <li>Resume sentiment data collection</li>
-                                    <li><strong className="text-green-600">✓ All historical data is intact</strong></li>
+                                    <li><strong className="text-green-600">All historical data is intact</strong></li>
                                   </ul>
                                 </>
                               )}

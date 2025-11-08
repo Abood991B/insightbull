@@ -247,39 +247,56 @@ class Scheduler:
         return interval
     
     async def _setup_default_jobs(self):
-        """Setup default scheduled jobs for the pipeline with smart scheduling"""
+        """Setup default scheduled jobs with smart preset schedules aligned with market hours"""
         
         # Get current symbols from dynamic watchlist
         current_symbols = await self.get_current_symbols()
         
-        # Market hours data collection (every 15 minutes during trading hours)
-        # More frequent during market hours (9:30 AM - 4:00 PM ET = 14:30 - 21:00 UTC)
-        await self.schedule_data_collection(
-            name="Market Hours Data Collection",
-            cron_expression="*/15 14-20 * * 1-5",  # Every 15 min, 9:30 AM-4:00 PM ET weekdays
-            symbols=current_symbols,
-            lookback_days=1
-        )
-        
-        # Off-hours data collection (every 2 hours overnight)
-        await self.schedule_data_collection(
-            name="Off-Hours Data Collection",
-            cron_expression="0 */2 * * *",  # Every 2 hours
-            symbols=current_symbols,
-            lookback_days=1
-        )
-        
-        # Market hours sentiment analysis (more frequent during trading)
-        await self.schedule_sentiment_analysis(
-            name="Market Hours Sentiment", 
-            cron_expression="0 9-16 * * 1-5",  # Hourly 9AM-4PM weekdays
-            symbols=current_symbols
-        )
-        
-        # Weekly full pipeline run on Sundays
+        # Pre-Market Preparation: 8:00 AM ET daily (Mon-Fri)
+        # Collects fresh overnight news and social sentiment before market opens
         await self.schedule_full_pipeline(
-            name="Weekly Full Pipeline",
-            cron_expression="0 2 * * 0",  # Sundays at 2 AM
+            name="Pre-Market Preparation",
+            cron_expression="0 13 * * 1-5",  # 8:00 AM ET = 13:00 UTC
+            symbols=current_symbols,
+            lookback_days=1
+        )
+        
+        # Active Trading Updates: Every 30 minutes during market hours (9:30 AM - 4:00 PM ET)
+        # Real-time sentiment tracking during active trading
+        # Note: 9:30 AM ET = 14:30 UTC, 4:00 PM ET = 21:00 UTC
+        await self.schedule_full_pipeline(
+            name="Active Trading Updates",
+            cron_expression="*/30 14-20 * * 1-5",  # Every 30 min, 9:30 AM-4:00 PM ET
+            symbols=current_symbols,
+            lookback_days=1
+        )
+        
+        # After-Hours Analysis: 5:00 PM ET (Mon-Fri)
+        # Captures post-market news, earnings reports, and extended hours sentiment
+        # Note: We only schedule 5 PM ET run here. The 8 PM ET run requires
+        # a separate job due to UTC midnight crossing (8 PM ET = 1 AM UTC next day)
+        await self.schedule_full_pipeline(
+            name="After-Hours Analysis",
+            cron_expression="0 22 * * 1-5",  # 5 PM ET (22:00 UTC Mon-Fri)
+            symbols=current_symbols,
+            lookback_days=1
+        )
+        
+        # After-Hours Late Evening: 8:00 PM ET (Mon-Fri)
+        # Second evening run to catch late breaking news
+        # Note: 8 PM ET crosses midnight in UTC (Mon 8PM ET = Tue 1AM UTC)
+        await self.schedule_full_pipeline(
+            name="After-Hours Late Evening",
+            cron_expression="0 1 * * 2-6",  # 8 PM ET Mon-Fri = 1:00 UTC Tue-Sat
+            symbols=current_symbols,
+            lookback_days=1
+        )
+        
+        # Weekend Deep Analysis: Saturday 10:00 AM ET
+        # Comprehensive weekly analysis when markets are closed
+        await self.schedule_full_pipeline(
+            name="Weekend Deep Analysis",
+            cron_expression="0 15 * * 6",  # Saturday 10 AM ET = 15:00 UTC
             symbols=current_symbols,
             lookback_days=7
         )

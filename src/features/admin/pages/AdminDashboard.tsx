@@ -28,6 +28,16 @@ import {
   Clock
 } from 'lucide-react';
 
+// Collector Status Interface
+interface CollectorStatus {
+  name: string;
+  status: 'operational' | 'error' | 'warning' | 'not_configured';
+  articles?: number;
+  posts?: number;
+  error?: string;
+  lastRun?: string;
+}
+
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -36,6 +46,7 @@ const AdminDashboard: React.FC = () => {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [modelAccuracy, setModelAccuracy] = useState<ModelAccuracy | null>(null);
   const [priceServiceStatus, setPriceServiceStatus] = useState<RealTimePriceServiceStatus | null>(null);
+  const [collectorHealth, setCollectorHealth] = useState<CollectorStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [collectingData, setCollectingData] = useState(false);
@@ -74,6 +85,29 @@ const AdminDashboard: React.FC = () => {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  // Update collector health status
+  const updateCollectorHealth = async () => {
+    try {
+      const response = await adminAPI.getCollectorHealth();
+      
+      // Transform backend response to match our UI format
+      const collectors = response.collectors.map(collector => ({
+        name: collector.name,
+        status: collector.status,
+        articles: collector.source === 'news' ? collector.items_collected : undefined,
+        posts: collector.source === 'reddit' ? collector.items_collected : undefined,
+        error: collector.error,
+        lastRun: collector.last_run,
+      }));
+      
+      setCollectorHealth(collectors);
+    } catch (error) {
+      console.error('Failed to fetch collector health:', error);
+      // Fallback to empty array on error
+      setCollectorHealth([]);
     }
   };
 
@@ -200,6 +234,7 @@ const AdminDashboard: React.FC = () => {
   // Load data on component mount
   useEffect(() => {
     loadDashboardData();
+    updateCollectorHealth();
   }, []);
 
   // Helper functions
@@ -384,6 +419,147 @@ const AdminDashboard: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Data Collector Health */}
+        <Card className="border-2 border-gray-200 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-gray-50 to-slate-50 border-b">
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Database className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Data Collector Health</h3>
+                  <p className="text-sm text-gray-600">Multi-source data aggregation status</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    updateCollectorHealth();
+                    toast({
+                      title: "Collector Status Updated",
+                      description: "Refreshed collector health information.",
+                    });
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Refresh
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            {/* Warning Alert for MarketAux */}
+            {collectorHealth.some(c => c.status === 'error') && (
+              <Alert className="mb-4 bg-red-50 border-red-200">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  <strong>Collector Issue Detected:</strong> {collectorHealth.find(c => c.status === 'error')?.name} is currently unavailable. 
+                  Pipeline will continue with remaining {collectorHealth.filter(c => c.status === 'operational').length} collectors.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Collector Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {collectorHealth.map((collector) => (
+                <div
+                  key={collector.name}
+                  className={`p-4 rounded-lg border-2 transition-all ${
+                    collector.status === 'operational'
+                      ? 'bg-green-50 border-green-200 hover:shadow-md'
+                      : collector.status === 'warning'
+                      ? 'bg-yellow-50 border-yellow-200 hover:shadow-md'
+                      : 'bg-red-50 border-red-200 hover:shadow-md'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-semibold text-gray-900">{collector.name}</h4>
+                    {collector.status === 'operational' ? (
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                    ) : collector.status === 'warning' ? (
+                      <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-600" />
+                    )}
+                  </div>
+
+                  {collector.status === 'operational' ? (
+                    <div className="space-y-2">
+                      {collector.articles !== undefined && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Articles:</span>
+                          <span className="font-medium text-green-700">{collector.articles}</span>
+                        </div>
+                      )}
+                      {collector.posts !== undefined && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Posts:</span>
+                          <span className="font-medium text-green-700">{collector.posts}</span>
+                        </div>
+                      )}
+                      {collector.lastRun && (
+                        <div className="pt-2 border-t border-green-200">
+                          <div className="text-xs text-gray-600">
+                            Last run: {formatDateTime(collector.lastRun, {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="text-sm text-red-700 bg-red-100 p-2 rounded border border-red-200">
+                        {collector.error || 'Service unavailable'}
+                      </div>
+                      {collector.lastRun && (
+                        <div className="text-xs text-gray-600 mt-2">
+                          Last attempt: {formatDateTime(collector.lastRun, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Collector Summary */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 rounded-full bg-green-500"></div>
+                    <span className="text-gray-600">
+                      {collectorHealth.filter(c => c.status === 'operational').length} Operational
+                    </span>
+                  </div>
+                  {collectorHealth.filter(c => c.status === 'error').length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-red-500"></div>
+                      <span className="text-gray-600">
+                        {collectorHealth.filter(c => c.status === 'error').length} Error
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="text-gray-600">
+                  Coverage: {Math.round((collectorHealth.filter(c => c.status === 'operational').length / collectorHealth.length) * 100)}%
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
 
         {/* Enhanced Services Status & Control */}

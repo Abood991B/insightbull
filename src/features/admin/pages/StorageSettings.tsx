@@ -450,7 +450,7 @@ const StorageSettings = () => {
                                         {tableInfo.foreign_keys.map((fk, index) => (
                                           <div key={index} className="text-sm p-2 bg-blue-50 rounded">
                                             <span className="font-medium">{fk.constrained_columns.join(', ')}</span>
-                                            <span className="text-gray-500"> → </span>
+                                            <span className="text-gray-500"> -&gt; </span>
                                             <span>{fk.referred_table}.{fk.referred_columns.join(', ')}</span>
                                           </div>
                                         ))}

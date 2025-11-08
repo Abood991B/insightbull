@@ -22,7 +22,7 @@ import {
   WatchlistManager, 
   StorageSettings, 
   SystemLogs,
-  SchedulerManager
+  SchedulerManagerV2 // Using new V2 version with smart presets
 } from "@/features/admin";
 import OAuth2AdminAuth from "@/features/admin/components/OAuth2AdminAuth";
 import AdminProtectedRoute from "@/features/admin/components/AdminProtectedRoute";
@@ -72,7 +72,7 @@ const App = () => (
           } />
           <Route path="/admin/scheduler" element={
             <AdminProtectedRoute>
-              <SchedulerManager />
+              <SchedulerManagerV2 />
             </AdminProtectedRoute>
           } />
           <Route path="/admin/storage" element={

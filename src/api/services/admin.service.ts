@@ -324,6 +324,28 @@ export interface TestPriceFetchResponse {
   };
 }
 
+export interface CollectorHealthInfo {
+  name: string;
+  status: 'operational' | 'error' | 'warning' | 'not_configured';
+  source: string;
+  requires_api_key: boolean;
+  configured: boolean;
+  last_run: string | null;
+  items_collected: number;
+  error: string | null;
+}
+
+export interface CollectorHealthResponse {
+  collectors: CollectorHealthInfo[];
+  summary: {
+    total_collectors: number;
+    operational: number;
+    not_configured: number;
+    error: number;
+    coverage_percentage: number;
+  };
+}
+
 // Utility Functions
 const getAuthHeaders = () => {
   // Get token from admin auth service session
@@ -722,6 +744,17 @@ class AdminAPIService {
     const params = symbol ? `?symbol=${symbol}` : '';
     const response = await fetch(`${API_BASE_URL}/api/admin/realtime-price-service/test-fetch${params}`, {
       method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  // ============================================================================
+  // DATA COLLECTOR HEALTH
+  // ============================================================================
+  
+  async getCollectorHealth(): Promise<CollectorHealthResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/collectors/health`, {
       headers: getAuthHeaders(),
     });
     return handleApiResponse(response);

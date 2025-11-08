@@ -1074,6 +1074,82 @@ async def refresh_scheduled_jobs(
         )
 
 
+# ============================================================================
+# DATA COLLECTOR HEALTH MONITORING
+# ============================================================================
+
+@router.get("/collectors/health")
+async def get_collector_health(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get real-time health status of all data collectors.
+    
+    Returns information about each collector's operational status,
+    recent performance, and any errors encountered.
+    """
+    try:
+        logger.info("Admin requesting collector health", admin_user=current_admin.email)
+        
+        from app.business.pipeline import DataPipeline
+        pipeline = DataPipeline()
+        
+        collector_health = []
+        
+        # Mapping of internal names to display names
+        display_names = {
+            'reddit': 'Reddit',
+            'finnhub': 'FinHub',
+            'newsapi': 'NewsAPI',
+            'marketaux': 'MarketAux'
+        }
+        
+        # Check each collector's status
+        for name, collector in pipeline._collectors.items():
+            health_info = {
+                "name": display_names.get(name, name.capitalize()),
+                "status": "operational" if collector.api_key is not None else "not_configured",
+                "source": collector.source.value,
+                "requires_api_key": collector.requires_api_key,
+                "configured": collector.api_key is not None,
+                "last_run": None,
+                "items_collected": 0,
+                "error": None
+            }
+            
+            # For collectors without API keys (like Reddit with PRAW), check if configured
+            if not collector.requires_api_key or (collector.requires_api_key and collector.api_key):
+                health_info["status"] = "operational"
+            else:
+                health_info["status"] = "not_configured"
+                health_info["error"] = "API key not configured"
+            
+            collector_health.append(health_info)
+        
+        # Calculate summary stats
+        operational_count = len([c for c in collector_health if c["status"] == "operational"])
+        total_count = len(collector_health)
+        coverage_percentage = round((operational_count / total_count) * 100) if total_count > 0 else 0
+        
+        return {
+            "collectors": collector_health,
+            "summary": {
+                "total_collectors": total_count,
+                "operational": operational_count,
+                "not_configured": len([c for c in collector_health if c["status"] == "not_configured"]),
+                "error": len([c for c in collector_health if c["status"] == "error"]),
+                "coverage_percentage": coverage_percentage
+            }
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving collector health", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve collector health status"
+        )
+
+
 @router.post("/realtime-price-service/start")
 async def start_realtime_price_service(
     current_admin: AdminUser = Depends(get_current_admin)
