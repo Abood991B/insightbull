@@ -24,6 +24,7 @@ import asyncio
 
 from app.data_access.models import StocksWatchlist
 from app.infrastructure.log_system import get_logger
+from app.data_access.database.retry_utils import commit_with_retry
 
 logger = get_logger()
 
@@ -307,7 +308,7 @@ class WatchlistService:
                     self.db.add(new_stock)
                     added_stocks.append(symbol)
             
-            await self.db.commit()
+            await commit_with_retry(self.db)
             
             self.logger.info("Added stocks to watchlist", 
                            added=added_stocks, 

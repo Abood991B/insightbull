@@ -28,8 +28,8 @@ from .models.sentiment_model import (
     SentimentModelError
 )
 from ...infrastructure.collectors.base_collector import DataSource
-from .models.vader_model import VADERModel, EnhancementConfig
-from .models.finbert_model import FinBERTModel
+from .models.hybrid_vader_model import HybridVADERModel, HybridConfig
+from .models.finbert_model import FinBERTModel, EnsembleFinBERTModel
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +43,9 @@ class EngineConfig:
     """Configuration for the sentiment analysis engine."""
     enable_vader: bool = True
     enable_finbert: bool = True
-    use_enhanced_vader: bool = False  # Use standard VADER by default
+    use_ensemble_finbert: bool = False  # New: Enable ensemble FinBERT
     finbert_use_gpu: bool = True
+    finbert_use_calibration: bool = True  # New: Enable confidence calibration
     max_concurrent_batches: int = 3
     default_batch_size: int = 32
     timeout_seconds: int = 300
@@ -107,10 +108,10 @@ class SentimentEngine:
         self._active_jobs: Dict[str, AnalysisJob] = {}
         
         # Model routing configuration
-        # Model routing configuration - VADER for social media, FinBERT for financial sources
+        # Model routing configuration - Hybrid VADER for social media, FinBERT for financial sources
         # Following FYP specification: "VADER IS FOR REDDIT AND FINBERT FOR THE OTHER 3 SOURCES(MARKETAUX, NEWSAPI, FINHUB)"
         self._model_routing = {
-            DataSource.REDDIT: "VADER",      # Social media -> VADER
+            DataSource.REDDIT: "Hybrid-VADER",      # Social media -> Hybrid VADER
             DataSource.FINNHUB: "FinBERT",   # Financial news -> FinBERT
             DataSource.MARKETAUX: "FinBERT", # Financial news -> FinBERT  
             DataSource.NEWSAPI: "FinBERT"    # Financial news -> FinBERT
@@ -123,43 +124,35 @@ class SentimentEngine:
         
         logger.info("Initializing Sentiment Analysis Engine...")
         
-        # Initialize VADER model (enhanced or standard)
+        # Initialize Hybrid VADER model (Enhanced VADER + ML ensemble)
         if self.config.enable_vader:
             try:
-                if self.config.use_enhanced_vader:
-                    # Use enhanced VADER with financial domain expertise
-                    enhancement_config = EnhancementConfig(
-                        use_financial_lexicon=True,
-                        use_reddit_slang=True,
-                        use_emoji_boost=True,
-                        use_dynamic_thresholds=True,
-                        use_context_awareness=True
-                    )
-                    self.models["VADER"] = VADERModel(enhancement_config)
-                    logger.info("Using Enhanced VADER model with financial optimizations")
-                else:
-                    # Use standard VADER (with basic config)
-                    basic_config = EnhancementConfig(
-                        use_financial_lexicon=False,
-                        use_reddit_slang=False,
-                        use_emoji_boost=False,
-                        use_dynamic_thresholds=False,
-                        use_context_awareness=False
-                    )
-                    self.models["VADER"] = VADERModel(basic_config)
-                    logger.info("Using standard VADER model")
+                hybrid_config = HybridConfig()
+                self.models["Hybrid-VADER"] = HybridVADERModel(hybrid_config)
+                logger.info("Using Hybrid VADER model (Enhanced VADER + Logistic Regression)")
                 
-                await self.models["VADER"].ensure_loaded()
-                logger.info("VADER model initialized successfully")
+                await self.models["Hybrid-VADER"].ensure_loaded()
+                logger.info("Hybrid VADER model initialized successfully")
             except Exception as e:
-                logger.error(f"Failed to initialize VADER model: {e}")
+                logger.error(f"Failed to initialize Hybrid VADER model: {e}")
                 if not self.config.fallback_to_neutral:
                     raise
         
-        # Initialize FinBERT model
+        # Initialize FinBERT model (standard or ensemble)
         if self.config.enable_finbert:
             try:
-                self.models["FinBERT"] = FinBERTModel(use_gpu=self.config.finbert_use_gpu)
+                if self.config.use_ensemble_finbert:
+                    # Use ensemble FinBERT for improved accuracy (1-2% gain)
+                    self.models["FinBERT"] = EnsembleFinBERTModel(
+                        use_gpu=self.config.finbert_use_gpu,
+                        use_calibration=self.config.finbert_use_calibration
+                    )
+                    logger.info("Using Ensemble FinBERT model (ProsusAI + yiyanghkust)")
+                else:
+                    # Use standard FinBERT
+                    self.models["FinBERT"] = FinBERTModel(use_gpu=self.config.finbert_use_gpu)
+                    logger.info("Using standard FinBERT model (ProsusAI)")
+                
                 await self.models["FinBERT"].ensure_loaded()
                 logger.info("FinBERT model initialized successfully")
             except Exception as e:

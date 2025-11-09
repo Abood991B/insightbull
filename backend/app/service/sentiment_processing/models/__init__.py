@@ -4,7 +4,7 @@ Sentiment Model Implementations
 
 Collection of different sentiment analysis models:
 - FinBERT: For financial news and professional content
-- VADER: For social media and informal text
+- Hybrid VADER: For social media with Enhanced VADER + ML ensemble
 - Base SentimentModel: Abstract interface for all models
 """
 
@@ -18,7 +18,7 @@ from .sentiment_model import (
     SentimentModelError
 )
 from .finbert_model import FinBERTModel
-from .vader_model import VADERModel
+from .hybrid_vader_model import HybridVADERModel
 
 __all__ = [
     "SentimentModel",
@@ -29,5 +29,5 @@ __all__ = [
     "ModelInfo",
     "SentimentModelError",
     "FinBERTModel",
-    "VADERModel"
+    "HybridVADERModel"
 ]

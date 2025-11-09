@@ -194,7 +194,7 @@ class MarketauxCollector(BaseCollector):
                             
                             for symbol in article_symbols:
                                 if len(articles_by_symbol[symbol]) < config.max_items_per_symbol:
-                                    parsed_article = self._parse_news_item(article, symbol)
+                                    parsed_article = self._parse_article(article, symbol, content_type="symbol_news")
                                     if parsed_article:
                                         articles_by_symbol[symbol].append(parsed_article)
                         

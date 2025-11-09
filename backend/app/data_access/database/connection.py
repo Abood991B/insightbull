@@ -8,9 +8,11 @@ Implements connection pooling and async support.
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
+from sqlalchemy.exc import OperationalError
 import structlog
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+import asyncio
 
 from app.infrastructure.config import get_settings
 from app.data_access.database.base import Base
@@ -67,14 +69,45 @@ async def init_database():
 
 @asynccontextmanager
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Get database session context manager."""
+    """
+    Get database session context manager with retry logic for SQLite locks.
+    
+    Implements exponential backoff for database lock errors to handle
+    concurrent write operations in SQLite.
+    """
     if async_session_factory is None:
         raise RuntimeError("Database not initialized. Call init_database() first.")
+    
+    max_retries = 3
+    retry_delay_base = 0.5  # seconds
     
     async with async_session_factory() as session:
         try:
             yield session
-            await session.commit()
+            
+            # Commit with retry logic for SQLite locks
+            for attempt in range(max_retries):
+                try:
+                    await session.commit()
+                    break  # Success, exit retry loop
+                except OperationalError as e:
+                    if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                        retry_delay = retry_delay_base * (2 ** attempt)
+                        logger.warning(
+                            "Database locked, retrying commit",
+                            attempt=attempt + 1,
+                            max_retries=max_retries,
+                            retry_delay=retry_delay
+                        )
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        # Max retries reached or different error
+                        logger.error(
+                            "Database commit failed after retries",
+                            error=str(e),
+                            attempts=attempt + 1
+                        )
+                        raise
         except Exception:
             await session.rollback()
             raise

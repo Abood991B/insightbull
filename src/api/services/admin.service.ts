@@ -45,7 +45,7 @@ export interface SystemStatus {
 export interface ModelAccuracy {
   overall_accuracy: number;
   model_metrics: {
-    vader_sentiment: {
+    vader_sentiment: { // Hybrid VADER (Enhanced VADER + ML ensemble)
       accuracy: number;
       precision: number;
       recall: number;
@@ -198,22 +198,61 @@ export interface ManualCollectionResponse {
 export interface ScheduledJob {
   job_id: string;
   name: string;
-  job_type: 'data_collection' | 'sentiment_analysis' | 'full_pipeline';
-  trigger_config: {
-    cron: string;
+  schedule: string;
+  next_run: string | null;
+  last_run: string | null;
+  status: 'active' | 'paused' | 'disabled';
+  description?: string;
+}
+
+// Sentiment Engine Metrics
+export interface SentimentEngineMetrics {
+  engine_status: {
+    initialized: boolean;
+    available_models: string[];
+    total_models: number;
+    engine_health: 'healthy' | 'degraded' | 'critical';
   };
-  parameters: {
-    symbols: string[];
-    lookback_days?: number;
+  overall_performance: {
+    total_texts_processed: number;
+    successful_analyses: number;
+    failed_analyses: number;
+    success_rate_percent: number;
+    avg_processing_time_ms: number;
+    total_processing_time_sec: number;
   };
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-  created_at: string;
-  last_run?: string;
-  next_run?: string;
-  run_count: number;
-  error_count: number;
-  last_error?: string;
-  enabled: boolean;
+  model_configuration: {
+    vader_enabled: boolean;
+    finbert_enabled: boolean;
+    ensemble_finbert_enabled: boolean;
+    finbert_calibration_enabled: boolean;
+    vader_type: string;
+    finbert_type: string;
+    default_batch_size: number;
+  };
+  model_usage: {
+    hybrid_vader: {
+      session_count: number;
+      database_count: number;
+      percentage_of_total: number;
+      used_for: string[];
+      features: string[];
+    };
+    finbert: {
+      session_count: number;
+      database_count: number;
+      percentage_of_total: number;
+      used_for: string[];
+      model_type: string;
+      features: string[];
+    };
+  };
+  database_statistics: {
+    total_sentiment_records: number;
+    vader_records: number;
+    finbert_records: number;
+  };
+  timestamp: string;
 }
 
 export interface SchedulerResponse {
@@ -483,6 +522,18 @@ class AdminAPIService {
 
     if (!response.ok) {
       throw new Error('Failed to fetch model accuracy');
+    }
+
+    return response.json();
+  }
+
+  async getSentimentEngineMetrics(): Promise<SentimentEngineMetrics> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/models/sentiment-engine-metrics`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch sentiment engine metrics');
     }
 
     return response.json();

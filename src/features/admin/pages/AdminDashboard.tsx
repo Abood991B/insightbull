@@ -414,7 +414,7 @@ const AdminDashboard: React.FC = () => {
                 {modelAccuracy ? `${(modelAccuracy.overall_accuracy * 100).toFixed(1)}%` : 'N/A'}
               </div>
               <p className="text-xs text-muted-foreground">
-                VADER + FinBERT models
+                Hybrid VADER + FinBERT models
               </p>
             </CardContent>
           </Card>
@@ -609,7 +609,7 @@ const AdminDashboard: React.FC = () => {
                       return {
                         icon: <BarChart3 className="h-6 w-6" />,
                         name: 'Sentiment Analysis Engine',
-                        description: 'VADER & FinBERT models with ensemble prediction',
+                        description: 'Hybrid VADER & FinBERT models with ensemble prediction',
                         color: status === 'healthy' ? 'text-blue-600' : 'text-yellow-600',
                         bgColor: status === 'healthy' ? 'bg-blue-50' : 'bg-yellow-50',
                         borderColor: status === 'healthy' ? 'border-blue-200' : 'border-yellow-200',
@@ -807,7 +807,7 @@ const AdminDashboard: React.FC = () => {
                             <span className="font-medium text-blue-600">{(modelAccuracy.overall_accuracy * 100).toFixed(1)}%</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-gray-600">VADER Model:</span>
+                            <span className="text-gray-600">Hybrid VADER:</span>
                             <span className="font-medium text-orange-600">{(modelAccuracy.model_metrics.vader_sentiment.accuracy * 100).toFixed(1)}%</span>
                           </div>
                           <div className="flex justify-between">

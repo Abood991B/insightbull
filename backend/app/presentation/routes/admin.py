@@ -238,6 +238,141 @@ async def get_api_configuration(
         )
 
 
+@router.get("/models/sentiment-engine-metrics")
+async def get_sentiment_engine_metrics(
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get real-time sentiment engine performance metrics.
+    Phase 5: Deployment & Monitoring
+    
+    Returns comprehensive statistics on:
+    - Model usage (Hybrid VADER vs FinBERT)
+    - Processing performance (speed, success rate)
+    - Current configuration (Enhanced VADER enabled, etc.)
+    - Per-model statistics
+    """
+    try:
+        logger.info("Admin requesting sentiment engine metrics", admin_user=current_admin.email)
+        
+        from app.service.sentiment_processing import get_sentiment_engine
+        
+        # Get sentiment engine singleton
+        engine = get_sentiment_engine()
+        
+        # Get engine statistics
+        stats = engine.get_stats()
+        config = engine.config
+        
+        # Calculate per-model metrics
+        vader_usage = stats.model_usage.get("Hybrid-VADER", 0)
+        finbert_usage = stats.model_usage.get("FinBERT", 0)
+        total_usage = vader_usage + finbert_usage
+        
+        # Get database sentiment counts for accuracy context
+        from app.data_access.models import SentimentData
+        total_sentiments = await db.scalar(
+            select(func.count()).select_from(SentimentData)
+        )
+        
+        # Count by model
+        vader_count = await db.scalar(
+            select(func.count())
+            .select_from(SentimentData)
+            .where(
+                or_(
+                    SentimentData.model_used == "VADER",
+                    SentimentData.model_used == "Hybrid-VADER"
+                )
+            )
+        )
+        
+        finbert_count = await db.scalar(
+            select(func.count())
+            .select_from(SentimentData)
+            .where(SentimentData.model_used == "FinBERT")
+        )
+        
+        # Calculate successful and failed analyses
+        successful_analyses = stats.total_texts_processed - stats.error_count
+        failed_analyses = stats.error_count
+        
+        return {
+            "engine_status": {
+                "initialized": engine.is_initialized,
+                "available_models": list(stats.model_usage.keys()),
+                "total_models": len(stats.model_usage),
+                "engine_health": "healthy" if stats.success_rate > 90 else "degraded" if stats.success_rate > 70 else "critical"
+            },
+            "overall_performance": {
+                "total_texts_processed": stats.total_texts_processed,
+                "successful_analyses": successful_analyses,
+                "failed_analyses": failed_analyses,
+                "success_rate_percent": round(stats.success_rate, 2),
+                "avg_processing_time_ms": round(stats.avg_processing_time * 1000, 2),
+                "total_processing_time_sec": round(stats.total_processing_time, 2)
+            },
+            "model_configuration": {
+                "vader_enabled": config.enable_vader,
+                "finbert_enabled": config.enable_finbert,
+                "ensemble_finbert_enabled": config.use_ensemble_finbert,
+                "finbert_calibration_enabled": config.finbert_use_calibration,
+                "vader_type": "Hybrid VADER (Enhanced + ML)",  # Always enhanced when enabled
+                "finbert_type": "Ensemble FinBERT (ProsusAI + yiyanghkust)" if config.use_ensemble_finbert else "Standard FinBERT (ProsusAI)",
+                "default_batch_size": config.default_batch_size
+            },
+            "model_usage": {
+                "hybrid_vader": {
+                    "session_count": vader_usage,
+                    "database_count": vader_count or 0,
+                    "percentage_of_total": round((vader_usage / total_usage * 100) if total_usage > 0 else 0, 2),
+                    "used_for": ["Reddit", "Social Media"],
+                    "features": [
+                        "75 financial terms (bullish/bearish)",
+                        "40 Reddit slang phrases (BTFD, diamond hands, etc.)",
+                        "30 emoji mappings (🚀📈💎🙌)",
+                        "ML ensemble (Logistic Regression)",
+                        "Negative percentage detection (Down 40%)",
+                        "Dynamic thresholds",
+                        "Context-aware adjustments"
+                    ]
+                },
+                "finbert": {
+                    "session_count": finbert_usage,
+                    "database_count": finbert_count or 0,
+                    "percentage_of_total": round((finbert_usage / total_usage * 100) if total_usage > 0 else 0, 2),
+                    "used_for": ["Financial News", "FinHub", "Marketaux", "NewsAPI"],
+                    "model_type": "Ensemble" if config.use_ensemble_finbert else "Standard",
+                    "features": [
+                        "Advanced preprocessing (entity recognition)",
+                        "Number standardization ($1.5B → $1,500,000,000)",
+                        "16 financial abbreviation expansions (P/E, EPS, ROI, etc.)",
+                        "Company name normalization (AAPL → Apple)",
+                        "Intelligent truncation (keyword-based)",
+                        "Noise filtering (ads, promotional content)",
+                        "Confidence calibration (temperature scaling)" if config.finbert_use_calibration else "Standard confidence",
+                        "Multi-model ensemble (2 FinBERT checkpoints)" if config.use_ensemble_finbert else "Single model"
+                    ]
+                }
+            },
+            "database_statistics": {
+                "total_sentiment_records": total_sentiments or 0,
+                "vader_records": vader_count or 0,
+                "finbert_records": finbert_count or 0
+            },
+            "timestamp": utc_now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving sentiment engine metrics", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve sentiment engine metrics: {str(e)}"
+        )
+
+
+# U-FR7 (continued): API Configuration Management
 @router.put("/config/apis")
 async def update_api_configuration(
     config_update: APIConfigUpdateRequest,

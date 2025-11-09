@@ -17,6 +17,7 @@ from app.utils.timezone import utc_now, to_naive_utc
 from app.data_access.models import StocksWatchlist, SentimentData, StockPrice, SystemLog, NewsArticle, RedditPost
 from app.infrastructure.log_system import get_logger
 from app.presentation.schemas.admin_schemas import StorageMetrics, RetentionPolicy
+from app.data_access.database.retry_utils import commit_with_retry
 
 
 logger = get_logger()
@@ -172,7 +173,7 @@ class StorageManager:
                 )
                 cleanup_stats["reddit_records_deleted"] = reddit_delete_result.rowcount
                 
-                await self.db.commit()
+                await commit_with_retry(self.db)
                 
                 self.logger.info("Retention policy applied successfully", stats=cleanup_stats)
             else:

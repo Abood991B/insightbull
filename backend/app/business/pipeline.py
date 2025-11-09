@@ -209,12 +209,13 @@ class DataPipeline:
         self.stock_repository = stock_repository
         self._repository_initialized = False
         
-        # Initialize sentiment analysis engine (singleton)
+        # Initialize sentiment analysis engine with Enhanced VADER & Ensemble FinBERT (singleton)
         sentiment_config = EngineConfig(
             enable_vader=True,
             enable_finbert=True,
-            use_enhanced_vader=False,  # Use standard VADER
+            use_ensemble_finbert=False,  # Set to True for +1-2% FinBERT accuracy (requires more GPU memory)
             finbert_use_gpu=True,  # Will auto-detect if GPU is available
+            finbert_use_calibration=True,  # Enable confidence calibration (temperature scaling)
             max_concurrent_batches=2,  # Conservative for stability
             default_batch_size=16,
             fallback_to_neutral=True  # Graceful degradation

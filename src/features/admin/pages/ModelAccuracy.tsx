@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import AdminLayout from "@/shared/components/layouts/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
@@ -7,12 +6,13 @@ import { Progress } from "@/shared/components/ui/progress";
 import { Button } from "@/shared/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
 import { formatDateTime, formatDate } from "@/shared/utils/timezone";
-import { adminAPI, ModelAccuracy as ModelAccuracyType } from "../../../api/services/admin.service";
-import { RefreshCw, TrendingUp, AlertCircle, Clock, Database } from "lucide-react";
+import { adminAPI, ModelAccuracy as ModelAccuracyType, SentimentEngineMetrics } from "../../../api/services/admin.service";
+import { RefreshCw, TrendingUp, AlertCircle, Clock, Database, Settings, CheckCircle, XCircle, Cpu } from "lucide-react";
 
 const ModelAccuracy = () => {
   const { toast } = useToast();
   const [modelData, setModelData] = useState<ModelAccuracyType | null>(null);
+  const [engineMetrics, setEngineMetrics] = useState<SentimentEngineMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [viewType, setViewType] = useState<'overall' | 'latest'>('overall');
@@ -21,8 +21,12 @@ const ModelAccuracy = () => {
   const loadModelAccuracy = async (showRefreshToast = false) => {
     try {
       setRefreshing(true);
-      const data = await adminAPI.getModelAccuracy(viewType);
-      setModelData(data);
+      const [accuracy, metrics] = await Promise.all([
+        adminAPI.getModelAccuracy(viewType),
+        adminAPI.getSentimentEngineMetrics()
+      ]);
+      setModelData(accuracy);
+      setEngineMetrics(metrics);
       
       if (showRefreshToast) {
         toast({
@@ -130,7 +134,7 @@ const ModelAccuracy = () => {
                   <h3 className="font-medium text-blue-900">Latest Pipeline Run View</h3>
                   <p className="text-sm text-blue-700">
                     Showing performance metrics from the most recent pipeline execution (last 24 hours). 
-                    This reflects how well your Enhanced VADER model is performing on newly collected data.
+                    This reflects how well your Hybrid VADER model (Enhanced VADER + ML) is performing on newly collected data.
                   </p>
                 </div>
               </>
@@ -184,8 +188,8 @@ const ModelAccuracy = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
-              <CardTitle>VADER Model</CardTitle>
-              <CardDescription>Social media sentiment analysis performance</CardDescription>
+              <CardTitle>Hybrid VADER Model</CardTitle>
+              <CardDescription>Social media sentiment analysis (Enhanced VADER + ML ensemble)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {modelData ? (
@@ -314,7 +318,7 @@ const ModelAccuracy = () => {
                 </div>
                 <div className="text-center">
                   {getPerformanceBadge(modelData.model_metrics.vader_sentiment.accuracy)}
-                  <p className="text-sm text-gray-600 mt-2">VADER performance on social media</p>
+                  <p className="text-sm text-gray-600 mt-2">Hybrid VADER on social media</p>
                   <p className="text-xs text-gray-500 mt-1">
                     {(modelData.model_metrics.vader_sentiment.accuracy * 100).toFixed(1)}% accuracy
                   </p>
@@ -357,6 +361,171 @@ const ModelAccuracy = () => {
                     </p>
                   </div>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Sentiment Engine Configuration & Metrics */}
+        {engineMetrics && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Engine Status & Configuration */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Engine Configuration
+                </CardTitle>
+                <CardDescription>
+                  Current sentiment analysis engine setup
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Engine Health */}
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm font-medium">Engine Health</span>
+                  <Badge 
+                    className={
+                      engineMetrics.engine_status.engine_health === 'healthy' 
+                        ? 'bg-green-100 text-green-800' 
+                        : engineMetrics.engine_status.engine_health === 'degraded'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-red-100 text-red-800'
+                    }
+                  >
+                    {engineMetrics.engine_status.engine_health.toUpperCase()}
+                  </Badge>
+                </div>
+
+                {/* Model Types */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {engineMetrics.model_configuration.vader_enabled ? (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-gray-400" />
+                      )}
+                      <span className="text-sm">VADER Model</span>
+                    </div>
+                    <span className="text-xs text-gray-600">
+                      {engineMetrics.model_configuration.vader_type}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {engineMetrics.model_configuration.finbert_enabled ? (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-gray-400" />
+                      )}
+                      <span className="text-sm">FinBERT Model</span>
+                    </div>
+                    <span className="text-xs text-gray-600">
+                      {engineMetrics.model_configuration.finbert_type}
+                    </span>
+                  </div>
+
+                  {engineMetrics.model_configuration.ensemble_finbert_enabled && (
+                    <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                      <strong>Ensemble Mode Active:</strong> Using multiple FinBERT checkpoints for improved accuracy (+1-2%)
+                    </div>
+                  )}
+
+                  {engineMetrics.model_configuration.finbert_calibration_enabled && (
+                    <div className="p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
+                      <strong>Confidence Calibration:</strong> Temperature scaling enabled for better confidence estimates
+                    </div>
+                  )}
+                </div>
+
+                {/* Performance Stats */}
+                <div className="grid grid-cols-2 gap-3 pt-3 border-t">
+                  <div>
+                    <p className="text-xs text-gray-600">Success Rate</p>
+                    <p className="text-lg font-semibold text-green-600">
+                      {engineMetrics.overall_performance.success_rate_percent.toFixed(1)}%
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600">Avg Processing Time</p>
+                    <p className="text-lg font-semibold">
+                      {engineMetrics.overall_performance.avg_processing_time_ms.toFixed(1)}ms
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Model Usage Statistics */}
+        {engineMetrics && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Model Usage Distribution</CardTitle>
+              <CardDescription>
+                How sentiment analysis workload is distributed across models
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Hybrid VADER Usage */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-blue-600">Hybrid VADER</h4>
+                    <span className="text-2xl font-bold text-blue-600">
+                      {engineMetrics.model_usage.hybrid_vader.percentage_of_total.toFixed(1)}%
+                    </span>
+                  </div>
+                  <Progress 
+                    value={engineMetrics.model_usage.hybrid_vader.percentage_of_total} 
+                    className="h-3"
+                  />
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="p-2 bg-blue-50 rounded">
+                      <p className="text-xs text-gray-600">Session</p>
+                      <p className="font-semibold">
+                        {engineMetrics.model_usage.hybrid_vader.session_count.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="p-2 bg-blue-50 rounded">
+                      <p className="text-xs text-gray-600">Database</p>
+                      <p className="font-semibold">
+                        {engineMetrics.model_usage.hybrid_vader.database_count.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* FinBERT Usage */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-purple-600">FinBERT ({engineMetrics.model_usage.finbert.model_type})</h4>
+                    <span className="text-2xl font-bold text-purple-600">
+                      {engineMetrics.model_usage.finbert.percentage_of_total.toFixed(1)}%
+                    </span>
+                  </div>
+                  <Progress 
+                    value={engineMetrics.model_usage.finbert.percentage_of_total} 
+                    className="h-3"
+                  />
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="p-2 bg-purple-50 rounded">
+                      <p className="text-xs text-gray-600">Session</p>
+                      <p className="font-semibold">
+                        {engineMetrics.model_usage.finbert.session_count.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="p-2 bg-purple-50 rounded">
+                      <p className="text-xs text-gray-600">Database</p>
+                      <p className="font-semibold">
+                        {engineMetrics.model_usage.finbert.database_count.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
