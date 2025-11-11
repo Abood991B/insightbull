@@ -79,7 +79,7 @@ class AdminService(WatchlistSubject):
             models = []
             
             # Calculate actual model metrics from real data
-            vader_data = [s for s in recent_sentiment_data if s.model_used == 'VADER']
+            vader_data = [s for s in recent_sentiment_data if s.model_used in ['VADER', 'Hybrid-VADER']]
             finbert_data = [s for s in recent_sentiment_data if s.model_used == 'FinBERT']
             
             # VADER model metrics - based on confidence scores and distribution
@@ -109,27 +109,25 @@ class AdminService(WatchlistSubject):
             total_predictions = sum(m.total_predictions for m in models)
             overall_accuracy = sum(m.accuracy * m.total_predictions for m in models) / total_predictions if total_predictions > 0 else 0
             
-            # Convert to the format expected by frontend
-            model_metrics = {}
-            for model in models:
-                if model.name == "VADER":
-                    model_metrics["vader_sentiment"] = {
-                        "accuracy": model.accuracy,
-                        "precision": model.precision,
-                        "recall": model.recall,
-                        "f1_score": model.f1_score,
-                        "total_predictions": model.total_predictions,
-                        "last_evaluated": model.last_evaluated
-                    }
-                elif model.name == "FinBERT":
-                    model_metrics["finbert_sentiment"] = {
-                        "accuracy": model.accuracy,
-                        "precision": model.precision,
-                        "recall": model.recall,
-                        "f1_score": model.f1_score,
-                        "total_predictions": model.total_predictions,
-                        "last_evaluated": model.last_evaluated
-                    }
+            # Convert to the format expected by frontend - ALWAYS include both models
+            model_metrics = {
+                "vader_sentiment": {
+                    "accuracy": vader_metrics['accuracy'],
+                    "precision": vader_metrics['precision'],
+                    "recall": vader_metrics['recall'],
+                    "f1_score": vader_metrics['f1_score'],
+                    "total_predictions": len(vader_data),
+                    "last_evaluated": utc_now().isoformat()
+                },
+                "finbert_sentiment": {
+                    "accuracy": finbert_metrics['accuracy'],
+                    "precision": finbert_metrics['precision'],
+                    "recall": finbert_metrics['recall'],
+                    "f1_score": finbert_metrics['f1_score'],
+                    "total_predictions": len(finbert_data),
+                    "last_evaluated": utc_now().isoformat()
+                }
+            }
             
             # Return data in the format expected by the frontend
             return {
@@ -901,7 +899,7 @@ class AdminService(WatchlistSubject):
             models = []
             
             # Calculate actual model metrics from latest pipeline data
-            vader_data = [s for s in latest_sentiment_data if s.model_used == 'VADER']
+            vader_data = [s for s in latest_sentiment_data if s.model_used in ['VADER', 'Hybrid-VADER']]
             finbert_data = [s for s in latest_sentiment_data if s.model_used == 'FinBERT']
             
             # VADER model metrics for latest run
@@ -931,23 +929,25 @@ class AdminService(WatchlistSubject):
             total_predictions = sum(m.total_predictions for m in models)
             overall_accuracy = sum(m.accuracy * m.total_predictions for m in models) / total_predictions if total_predictions > 0 else 0
             
-            # Convert to the format expected by frontend
-            model_metrics = {}
-            for model in models:
-                if model.name == "VADER":
-                    model_metrics["vader_sentiment"] = {
-                        "accuracy": model.accuracy,
-                        "precision": model.precision,
-                        "recall": model.recall,
-                        "f1_score": model.f1_score
-                    }
-                elif model.name == "FinBERT":
-                    model_metrics["finbert_sentiment"] = {
-                        "accuracy": model.accuracy,
-                        "precision": model.precision,
-                        "recall": model.recall,
-                        "f1_score": model.f1_score
-                    }
+            # Convert to the format expected by frontend - ALWAYS include both models
+            model_metrics = {
+                "vader_sentiment": {
+                    "accuracy": vader_metrics['accuracy'],
+                    "precision": vader_metrics['precision'],
+                    "recall": vader_metrics['recall'],
+                    "f1_score": vader_metrics['f1_score'],
+                    "total_predictions": len(vader_data),
+                    "last_evaluated": utc_now().isoformat()
+                },
+                "finbert_sentiment": {
+                    "accuracy": finbert_metrics['accuracy'],
+                    "precision": finbert_metrics['precision'],
+                    "recall": finbert_metrics['recall'],
+                    "f1_score": finbert_metrics['f1_score'],
+                    "total_predictions": len(finbert_data),
+                    "last_evaluated": utc_now().isoformat()
+                }
+            }
             
             return {
                 "overall_accuracy": overall_accuracy,

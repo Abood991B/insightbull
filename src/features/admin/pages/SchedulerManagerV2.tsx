@@ -20,6 +20,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useToast } from "@/shared/hooks/use-toast";
 import { formatDateTime, USER_TIMEZONE } from "@/shared/utils/timezone";
+import { MarketCountdown } from "@/shared/components/MarketCountdown";
 import { 
   adminAPI, 
   SchedulerResponse, 
@@ -161,7 +162,7 @@ const PRESET_SCHEDULES: PresetSchedule[] = [
     description: 'Full pipeline run before market opens',
     icon: <Sunrise className="h-5 w-5" />,
     schedule: `Daily at ${convertETTimeToUserTimezone(8)} ${timezoneName} (Mon-Fri)`,
-    cronExpression: '0 13 * * 1-5', // 8:00 AM ET = 13:00 UTC
+    cronExpression: '0 13 * * 1-5', // 8:00 AM ET = 13:00 UTC (Standard Time)
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-amber-500',
@@ -174,7 +175,7 @@ const PRESET_SCHEDULES: PresetSchedule[] = [
     description: 'Frequent updates during market hours',
     icon: <Activity className="h-5 w-5" />,
     schedule: `Every 30 minutes (${convertETTimeToUserTimezone(9, 30)} - ${convertETTimeToUserTimezone(16)} ${timezoneName}, Mon-Fri)`,
-    cronExpression: '*/30 14-20 * * 1-5', // 9:30 AM-4:00 PM ET = 14:30-21:00 UTC
+    cronExpression: '*/30 14-20 * * 1-5', // 9:30 AM-4:00 PM ET = 14:30-20:59 UTC (Standard Time) - runs at :00 and :30
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-green-500',
@@ -187,7 +188,7 @@ const PRESET_SCHEDULES: PresetSchedule[] = [
     description: `Post-market sentiment at ${convertETTimeToUserTimezone(17)} ${timezoneName}`,
     icon: <Sunset className="h-5 w-5" />,
     schedule: `Daily at ${convertETTimeToUserTimezone(17)} ${timezoneName} (Mon-Fri)`,
-    cronExpression: '0 22 * * 1-5', // 5 PM ET = 22:00 UTC
+    cronExpression: '0 22 * * 1-5', // 5:00 PM ET = 22:00 UTC (Standard Time)
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-orange-500',
@@ -200,7 +201,7 @@ const PRESET_SCHEDULES: PresetSchedule[] = [
     description: `Late evening sentiment at ${convertETTimeToUserTimezone(20)} ${timezoneName}`,
     icon: <Moon className="h-5 w-5" />,
     schedule: `Daily at ${convertETTimeToUserTimezone(20)} ${timezoneName} (Mon-Fri)`,
-    cronExpression: '0 1 * * 2-6', // 8 PM ET Mon-Fri = 1:00 UTC Tue-Sat
+    cronExpression: '0 1 * * 2-6', // 8:00 PM ET Mon-Fri = 01:00 UTC Tue-Sat (Standard Time)
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-indigo-500',
@@ -213,7 +214,7 @@ const PRESET_SCHEDULES: PresetSchedule[] = [
     description: 'Comprehensive weekly analysis',
     icon: <BarChart3 className="h-5 w-5" />,
     schedule: `Saturday at ${convertETTimeToUserTimezone(10)} ${timezoneName}`,
-    cronExpression: '0 15 * * 6', // Saturday 10 AM ET = 15:00 UTC
+    cronExpression: '0 15 * * 6', // Saturday 10:00 AM ET = 15:00 UTC (Standard Time)
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-blue-500',
@@ -238,10 +239,12 @@ const SchedulerManagerV2 = () => {
     isOpen: boolean;
     currentPeriod: string;
     nextOpen: string | null;
+    nextClose: string | null;
   }>({
     isOpen: false,
     currentPeriod: 'unknown',
-    nextOpen: null
+    nextOpen: null,
+    nextClose: null
   });
   const { toast } = useToast();
 
@@ -285,90 +288,81 @@ const SchedulerManagerV2 = () => {
 
   useEffect(() => {
     loadSchedulerData();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(() => loadSchedulerData(), 30000);
-    return () => clearInterval(interval);
+    // Auto-refresh scheduler data every 30 seconds
+    const schedulerInterval = setInterval(() => loadSchedulerData(), 30000);
+    
+    // Update market status every 10 seconds (backend fetches real data)
+    const marketInterval = setInterval(() => updateMarketStatus(), 10000);
+    
+    return () => {
+      clearInterval(schedulerInterval);
+      clearInterval(marketInterval);
+    };
   }, []);
 
   // ============================================================================
   // Market Status & Timeline
   // ============================================================================
 
-  const updateMarketStatus = () => {
-    const now = new Date();
-    const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-    const hour = et.getHours();
-    const day = et.getDay(); // 0 = Sunday, 6 = Saturday
-    
-    let isOpen = false;
-    let currentPeriod = 'overnight';
-    
-    // Weekend check
-    if (day === 0 || day === 6) {
-      currentPeriod = 'weekend';
-    } else {
-      // Weekday time checks
-      if (hour >= 7 && hour < 9) currentPeriod = 'pre-market';
-      else if (hour === 9 && et.getMinutes() >= 30 || (hour >= 10 && hour < 16)) {
-        currentPeriod = 'market-hours';
-        isOpen = true;
-      }
-      else if (hour >= 16 && hour < 20) currentPeriod = 'after-hours';
-      else currentPeriod = 'overnight';
-    }
-    
-    // Calculate next market open
-    let nextOpen: string | null = null;
-    if (!isOpen) {
-      // Calculate next market open in ET
-      let daysToAdd = 0;
+  const updateMarketStatus = async () => {
+    try {
+      const status = await adminAPI.getMarketStatus();
       
-      if (day === 0) {
-        // Sunday -> Monday
-        daysToAdd = 1;
-      } else if (day === 6) {
-        // Saturday -> Monday (2 days)
-        daysToAdd = 2;
-      } else if (hour >= 16 || (hour === 16 && et.getMinutes() > 0)) {
-        // After market close on weekday -> next weekday
-        if (day === 5) {
-          // Friday after hours -> Monday
-          daysToAdd = 3;
-        } else {
-          daysToAdd = 1;
-        }
-      } else if (hour < 9 || (hour === 9 && et.getMinutes() < 30)) {
-        // Before market open on weekday -> same day at 9:30 AM
-        daysToAdd = 0;
+      // Format next open time for display
+      let nextOpenDisplay = null;
+      if (status.next_open) {
+        const nextOpen = new Date(status.next_open);
+        nextOpenDisplay = nextOpen.toLocaleString("en-US", { 
+          weekday: 'short', 
+          month: 'short', 
+          day: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: true,
+          timeZone: USER_TIMEZONE,
+          timeZoneName: 'short'
+        });
       }
       
-      // Create next market open time in ET (9:30 AM ET)
-      const nextMarketOpenET = new Date(et);
-      nextMarketOpenET.setDate(et.getDate() + daysToAdd);
-      nextMarketOpenET.setHours(9, 30, 0, 0);
+      let nextCloseDisplay = null;
+      if (status.next_close) {
+        const nextClose = new Date(status.next_close);
+        nextCloseDisplay = nextClose.toLocaleString("en-US", { 
+          weekday: 'short', 
+          month: 'short', 
+          day: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: true,
+          timeZone: USER_TIMEZONE,
+          timeZoneName: 'short'
+        });
+      }
       
-      // Convert to user's local timezone for display
-      nextOpen = nextMarketOpenET.toLocaleString("en-US", { 
-        weekday: 'short', 
-        month: 'short', 
-        day: 'numeric', 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true,
-        timeZone: USER_TIMEZONE,
-        timeZoneName: 'short'
+      setMarketStatus({
+        isOpen: status.is_open,
+        currentPeriod: status.current_period,
+        nextOpen: nextOpenDisplay,
+        nextClose: nextCloseDisplay
       });
+    } catch (error) {
+      console.error('Failed to update market status:', error);
+      // Keep existing status on error
     }
-    
-    setMarketStatus({ isOpen, currentPeriod, nextOpen });
   };
+
 
   const buildTimeline = (jobs: ScheduledJob[]) => {
     const now = new Date();
     const next48Hours = new Date(now.getTime() + 48 * 60 * 60 * 1000);
     
     const events: TimelineEvent[] = jobs
-      .filter(job => job.next_run && new Date(job.next_run) <= next48Hours)
+      .filter(job => {
+        if (!job.next_run) return false;
+        const nextRunDate = new Date(job.next_run);
+        if (isNaN(nextRunDate.getTime())) return false;
+        return nextRunDate > now && nextRunDate <= next48Hours;
+      })
       .map(job => {
         const scheduledTime = new Date(job.next_run!);
         const hour = scheduledTime.getHours();
@@ -415,17 +409,20 @@ const SchedulerManagerV2 = () => {
           collector.status === 'error' ? 'failed' : 
           'unknown';
         
+        // Determine if it's a news source or reddit based on name
+        const isReddit = collector.name.toLowerCase() === 'reddit';
+        
         return {
           name: collector.name,
           status,
-          articles: collector.source === 'news' ? collector.items_collected : undefined,
-          posts: collector.source === 'reddit' ? collector.items_collected : undefined,
+          articles: !isReddit ? collector.items_collected : undefined,
+          posts: isReddit ? collector.items_collected : undefined,
           error: collector.error || undefined,
           lastRun: collector.last_run ? formatDateTime(collector.last_run, {
             hour: '2-digit',
             minute: '2-digit',
             hour12: true
-          }) : 'Never',
+          }) : undefined,
         };
       });
       
@@ -566,75 +563,62 @@ const SchedulerManagerV2 = () => {
           </div>
         </div>
 
-        {/* Market Status Bar */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
+        {/* Market Status Bar with Prominent Countdown */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
                   <Activity className="h-5 w-5 text-muted-foreground" />
                   <span className="font-medium">Market Status:</span>
+                  {getMarketStatusBadge()}
                 </div>
-                {getMarketStatusBadge()}
               </div>
               {marketStatus.nextOpen && (
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-muted-foreground mt-2">
                   Next open: <span className="font-medium">{marketStatus.nextOpen}</span>
                 </div>
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
+            <CardContent className="pt-6">
+              <MarketCountdown />
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Collector Health Status */}
+        {/* Compact Collector Health Status */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Data Collector Health
-            </CardTitle>
-            <CardDescription>
-              Real-time status of all data collection APIs
-            </CardDescription>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Database className="h-4 w-4" />
+                Data Sources (Last 24h)
+              </CardTitle>
+              <Badge variant="outline" className="text-xs">
+                {collectorHealth.filter(c => c.status === 'success').length}/{collectorHealth.length} Active
+              </Badge>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {collectorHealth.map((collector) => (
-                <div key={collector.name} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium">{collector.name}</span>
+                <div key={collector.name} className="border rounded-md p-2 text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
                     {getCollectorStatusIcon(collector.status)}
+                    <span className="text-sm font-medium">{collector.name}</span>
                   </div>
-                  {collector.status === 'success' && (
-                    <div className="text-sm text-muted-foreground">
-                      {collector.articles && `${collector.articles} articles`}
-                      {collector.posts && `${collector.posts} posts`}
-                    </div>
-                  )}
-                  {collector.status === 'failed' && collector.error && (
-                    <div className="text-xs text-red-600 mt-1">
-                      {collector.error}
-                    </div>
-                  )}
-                  {collector.lastRun && (
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Last run: {collector.lastRun}
-                    </div>
-                  )}
+                  <div className="text-lg font-bold text-gray-900">
+                    {collector.articles || collector.posts || 0}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {collector.posts ? 'posts' : 'articles'}
+                  </div>
                 </div>
               ))}
             </div>
-            
-            {collectorHealth.some(c => c.status === 'failed') && (
-              <Alert className="mt-4 border-red-200 bg-red-50">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  <strong>Warning:</strong> MarketAux API is currently unavailable (402 Payment Required). 
-                  Pipeline will continue with NewsAPI, FinHub, and Reddit data only. 
-                  Consider upgrading MarketAux subscription or disabling this collector.
-                </AlertDescription>
-              </Alert>
-            )}
           </CardContent>
         </Card>
 

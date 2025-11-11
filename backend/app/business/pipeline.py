@@ -515,6 +515,7 @@ class DataPipeline:
                 {
                     "pipeline_id": pipeline_id,
                     "symbols": config.symbols,
+                    "symbol_count": len(config.symbols),
                     "date_range": {
                         "start": config.date_range.start_date.isoformat() if config.date_range else None,
                         "end": config.date_range.end_date.isoformat() if config.date_range else None
@@ -526,6 +527,12 @@ class DataPipeline:
                         "include_comments": config.include_comments
                     }
                 }
+            )
+            
+            # User-friendly start log
+            self.logger.info(
+                f"Pipeline Started: Collecting data for {len(config.symbols)} tracked stocks: {', '.join(config.symbols)}",
+                extra={"pipeline_id": pipeline_id, "symbols": config.symbols}
             )
             
             # Step 1: Data Collection with tracking
@@ -703,6 +710,11 @@ class DataPipeline:
             
             # Log comprehensive completion metrics
             execution_time = (result.end_time - result.start_time).total_seconds()
+            
+            # Calculate meaningful success rate (stored / unique items after dedup)
+            unique_items = result.total_items_collected - dedup_stats["duplicates_found"]
+            new_items_rate = (result.total_items_stored or 0) / unique_items if unique_items > 0 else 0
+            
             self.logger.log_pipeline_operation(
                 "pipeline_execution_complete",
                 {
@@ -712,10 +724,23 @@ class DataPipeline:
                     "total_processed": result.total_items_processed,
                     "total_analyzed": result.total_items_analyzed,
                     "total_stored": result.total_items_stored or 0,
-                    "overall_success_rate": (result.total_items_stored or 0) / result.total_items_collected if result.total_items_collected > 0 else 0,
-                    "items_per_second": result.total_items_collected / execution_time if execution_time > 0 else 0,
-                    "deduplication_rate": dedup_stats["deduplication_rate"],
-                    "duplicates_skipped": dedup_stats["duplicates_found"]
+                    "new_items_rate": new_items_rate,  # Percentage of unique items that are NEW to database
+                    "duplicate_content_skipped": dedup_stats["duplicates_found"],  # By content hash
+                    "already_in_database": unique_items - (result.total_items_stored or 0),  # By URL
+                    "items_per_second": result.total_items_collected / execution_time if execution_time > 0 else 0
+                }
+            )
+            
+            # User-friendly summary log
+            self.logger.info(
+                f"Pipeline Complete: {result.total_items_stored} NEW items added to database, "
+                f"{dedup_stats['duplicates_found']} duplicate content skipped, "
+                f"{unique_items - (result.total_items_stored or 0)} already in database from previous runs",
+                extra={
+                    "pipeline_id": pipeline_id,
+                    "execution_time": f"{execution_time:.1f}s",
+                    "new_items": result.total_items_stored or 0,
+                    "duplicate_rate": f"{((1 - new_items_rate) * 100):.0f}%"
                 }
             )
             
@@ -1168,6 +1193,8 @@ class DataPipeline:
             Number of raw data items stored
         """
         stored_count = 0
+        skipped_duplicate_urls = 0
+        skipped_no_symbol = 0
         
         try:
             # Process each collection result
@@ -1182,6 +1209,7 @@ class DataPipeline:
                             # Determine stock from raw data
                             stock_symbol = getattr(raw_data, 'stock_symbol', None)
                             if not stock_symbol:
+                                skipped_no_symbol += 1
                                 continue
                             
                             # Get or create stock record
@@ -1205,8 +1233,13 @@ class DataPipeline:
                                     existing_article = await session.execute(
                                         select(NewsArticle).where(NewsArticle.url == url)
                                     )
-                                if existing_article.scalar_one_or_none():
-                                    continue  # Skip duplicate
+                                    if existing_article.scalar_one_or_none():
+                                        skipped_duplicate_urls += 1
+                                        self.logger.debug(
+                                            f"Skipped duplicate URL from {source_name}: {url[:80]}",
+                                            extra={"source": source_name, "correlation_id": correlation_id}
+                                        )
+                                        continue  # Skip duplicate
                                 
                                 # Store as news article
                                 # FIX: Collectors store timestamp in 'timestamp' field, not 'published_at'
@@ -1281,6 +1314,11 @@ class DataPipeline:
                                     select(RedditPost).where(RedditPost.reddit_id == reddit_id)
                                 )
                                 if existing_post.scalar_one_or_none():
+                                    skipped_duplicate_urls += 1
+                                    self.logger.debug(
+                                        f"Skipped duplicate Reddit post: {reddit_id}",
+                                        extra={"source": source_name, "correlation_id": correlation_id}
+                                    )
                                     continue  # Skip duplicate
                                 
                                 # Store as Reddit post
@@ -1354,10 +1392,27 @@ class DataPipeline:
                 "raw_data_storage_complete",
                 {
                     "total_stored": stored_count,
+                    "skipped_duplicate_urls": skipped_duplicate_urls,
+                    "skipped_no_symbol": skipped_no_symbol,
                     "correlation_id": correlation_id,
                     "sources_processed": list(collection_results.keys())
                 }
             )
+            
+            # Log user-friendly summary
+            total_processed = stored_count + skipped_duplicate_urls + skipped_no_symbol
+            if total_processed > 0:
+                self.logger.info(
+                    f"Storage Summary: {stored_count} new items stored, "
+                    f"{skipped_duplicate_urls} already in database (duplicates), "
+                    f"{skipped_no_symbol} skipped (no stock symbol)",
+                    extra={
+                        "stored": stored_count,
+                        "duplicates": skipped_duplicate_urls,
+                        "invalid": skipped_no_symbol,
+                        "success_rate": f"{(stored_count / total_processed * 100):.1f}%"
+                    }
+                )
                 
         except Exception as e:
             self.logger.log_error(
@@ -1898,7 +1953,7 @@ class DataPipeline:
                 return {
                     "status": "success",
                     "pipeline_id": result.pipeline_id,
-                    "items_collected": result.total_items,
+                    "items_collected": result.total_items_collected,
                     "sentiment_records": result.sentiment_records_created,
                     "execution_time": result.execution_time,
                     "symbols_processed": len(symbols)

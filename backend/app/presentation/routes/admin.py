@@ -1215,49 +1215,116 @@ async def refresh_scheduled_jobs(
 
 @router.get("/collectors/health")
 async def get_collector_health(
+    db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)
 ) -> Dict[str, Any]:
     """
-    Get real-time health status of all data collectors.
+    Get real-time health status of all data collectors with actual collection stats.
     
     Returns information about each collector's operational status,
-    recent performance, and any errors encountered.
+    items collected from last pipeline run, and any errors encountered.
     """
     try:
         logger.info("Admin requesting collector health", admin_user=current_admin.email)
         
-        from app.business.pipeline import DataPipeline
-        pipeline = DataPipeline()
+        from app.data_access.models import NewsArticle, RedditPost
+        from sqlalchemy import select, func
+        from datetime import timedelta
+        from app.infrastructure.security.api_key_manager import SecureAPIKeyLoader
+        from fastapi import status as http_status
         
         collector_health = []
         
-        # Mapping of internal names to display names
-        display_names = {
-            'reddit': 'Reddit',
-            'finnhub': 'FinHub',
-            'newsapi': 'NewsAPI',
-            'marketaux': 'MarketAux'
-        }
+        # Load API keys to check configuration
+        try:
+            key_loader = SecureAPIKeyLoader()
+            keys = key_loader.load_api_keys()
+        except Exception as e:
+            logger.warning(f"Could not load API keys for health check: {e}")
+            keys = {}
         
-        # Check each collector's status
-        for name, collector in pipeline._collectors.items():
-            health_info = {
-                "name": display_names.get(name, name.capitalize()),
-                "status": "operational" if collector.api_key is not None else "not_configured",
-                "source": collector.source.value,
-                "requires_api_key": collector.requires_api_key,
-                "configured": collector.api_key is not None,
-                "last_run": None,
-                "items_collected": 0,
-                "error": None
+        # Get data from last 24 hours to show recent activity
+        last_24_hours = utc_now() - timedelta(hours=24)
+        
+        # Query Reddit posts from last 24 hours (use created_utc, not created_at)
+        reddit_result = await db.execute(
+            select(func.count()).select_from(RedditPost)
+            .where(RedditPost.created_utc >= last_24_hours)
+        )
+        reddit_count = reddit_result.scalar() or 0
+        
+        # Query news articles by source from last 24 hours (use published_at, not created_at)
+        finnhub_result = await db.execute(
+            select(func.count()).select_from(NewsArticle)
+            .where(NewsArticle.source == 'finnhub')
+            .where(NewsArticle.published_at >= last_24_hours)
+        )
+        finnhub_count = finnhub_result.scalar() or 0
+        
+        newsapi_result = await db.execute(
+            select(func.count()).select_from(NewsArticle)
+            .where(NewsArticle.source == 'newsapi')
+            .where(NewsArticle.published_at >= last_24_hours)
+        )
+        newsapi_count = newsapi_result.scalar() or 0
+        
+        marketaux_result = await db.execute(
+            select(func.count()).select_from(NewsArticle)
+            .where(NewsArticle.source == 'marketaux')
+            .where(NewsArticle.published_at >= last_24_hours)
+        )
+        marketaux_count = marketaux_result.scalar() or 0
+        
+        # Define collectors with their configuration requirements
+        collectors = [
+            {
+                "name": "Reddit",
+                "internal_name": "reddit",
+                "source": "reddit",
+                "items_collected": reddit_count,
+                "api_key_required": True,
+                "api_key_configured": bool(keys.get('reddit_client_id') and keys.get('reddit_client_secret'))
+            },
+            {
+                "name": "FinHub",
+                "internal_name": "finnhub",
+                "source": "news",
+                "items_collected": finnhub_count,
+                "api_key_required": True,
+                "api_key_configured": bool(keys.get('finnhub_api_key'))
+            },
+            {
+                "name": "NewsAPI",
+                "internal_name": "newsapi",
+                "source": "news",
+                "items_collected": newsapi_count,
+                "api_key_required": True,
+                "api_key_configured": bool(keys.get('news_api_key'))
+            },
+            {
+                "name": "MarketAux",
+                "internal_name": "marketaux",
+                "source": "news",
+                "items_collected": marketaux_count,
+                "api_key_required": True,
+                "api_key_configured": bool(keys.get('marketaux_api_key'))
             }
+        ]
+        
+        # Build health info for each collector
+        for collector in collectors:
+            collector_status = "operational" if collector["api_key_configured"] else "not_configured"
             
-            # For collectors without API keys (like Reddit with PRAW), check if configured
-            if not collector.requires_api_key or (collector.requires_api_key and collector.api_key):
-                health_info["status"] = "operational"
-            else:
-                health_info["status"] = "not_configured"
-                health_info["error"] = "API key not configured"
+            health_info = {
+                "name": collector["name"],
+                "status": collector_status,
+                "source": collector["source"],
+                "requires_api_key": collector["api_key_required"],
+                "configured": collector["api_key_configured"],
+                "last_run": None,
+                "items_collected": collector["items_collected"],
+                "error": None if collector["api_key_configured"] else "API key not configured"
+            }
             
             collector_health.append(health_info)
         
@@ -1265,6 +1332,7 @@ async def get_collector_health(
         operational_count = len([c for c in collector_health if c["status"] == "operational"])
         total_count = len(collector_health)
         coverage_percentage = round((operational_count / total_count) * 100) if total_count > 0 else 0
+        total_items = sum(c["items_collected"] for c in collector_health)
         
         return {
             "collectors": collector_health,
@@ -1273,15 +1341,16 @@ async def get_collector_health(
                 "operational": operational_count,
                 "not_configured": len([c for c in collector_health if c["status"] == "not_configured"]),
                 "error": len([c for c in collector_health if c["status"] == "error"]),
-                "coverage_percentage": coverage_percentage
+                "coverage_percentage": coverage_percentage,
+                "total_items_24h": total_items
             }
         }
         
     except Exception as e:
         logger.error("Error retrieving collector health", error=str(e))
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve collector health status"
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve collector health status: {str(e)}"
         )
 
 
@@ -1593,6 +1662,99 @@ async def debug_price_service(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get debug information"
+        )
+
+
+@router.get("/market/status")
+async def get_market_status(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get comprehensive market status including current period, next open/close times.
+    
+    Returns:
+        - is_open: Boolean indicating if market is currently open
+        - current_period: One of 'pre-market', 'market-hours', 'after-hours', 'overnight', 'weekend'
+        - current_time_et: Current time in Eastern timezone
+        - next_open: Next market open time (if closed)
+        - next_close: Next market close time (if open)
+        - market_hours: Standard market hours configuration
+    """
+    try:
+        import pytz
+        from datetime import datetime, timedelta
+        
+        logger.info("Admin requesting market status", admin_user=current_admin.email)
+        
+        # Get current time in Eastern timezone
+        eastern = pytz.timezone('US/Eastern')
+        now = datetime.now(pytz.UTC).astimezone(eastern)
+        
+        weekday = now.weekday()  # 0=Monday, 6=Sunday
+        hour = now.hour
+        minute = now.minute
+        
+        # Determine current period
+        is_open = False
+        current_period = 'overnight'
+        
+        if weekday >= 5:  # Weekend
+            current_period = 'weekend'
+        else:  # Weekday
+            if hour >= 4 and (hour < 9 or (hour == 9 and minute < 30)):
+                current_period = 'pre-market'
+            elif (hour == 9 and minute >= 30) or (9 < hour < 16):
+                current_period = 'market-hours'
+                is_open = True
+            elif 16 <= hour < 20:
+                current_period = 'after-hours'
+            else:  # 20:00 - 04:00
+                current_period = 'overnight'
+        
+        # Calculate next market open
+        next_open = None
+        next_close = None
+        
+        if is_open:
+            # Market is open, calculate next close (4 PM today)
+            next_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        else:
+            # Market is closed, calculate next open (9:30 AM)
+            days_ahead = 0
+            
+            if weekday == 6:  # Sunday
+                days_ahead = 1
+            elif weekday == 5:  # Saturday
+                days_ahead = 2
+            elif hour >= 16:  # After market close on weekday
+                if weekday == 4:  # Friday
+                    days_ahead = 3  # Skip to Monday
+                else:
+                    days_ahead = 1
+            # else: before market open today, days_ahead = 0
+            
+            next_open = now.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=days_ahead)
+        
+        return {
+            "is_open": is_open,
+            "current_period": current_period,
+            "current_time_et": now.isoformat(),
+            "weekday": weekday,
+            "next_open": next_open.isoformat() if next_open else None,
+            "next_close": next_close.isoformat() if next_close else None,
+            "market_hours": {
+                "pre_market": "04:00 - 09:30 ET",
+                "market_hours": "09:30 - 16:00 ET",
+                "after_hours": "16:00 - 20:00 ET",
+                "overnight": "20:00 - 04:00 ET"
+            }
+        }
+        
+    except Exception as e:
+        logger.error("Error getting market status", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get market status"
         )
 
 

@@ -192,7 +192,7 @@ const ModelAccuracy = () => {
               <CardDescription>Social media sentiment analysis (Enhanced VADER + ML ensemble)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {modelData ? (
+              {modelData && modelData.model_metrics?.vader_sentiment ? (
                 <>
                   <div className="flex justify-between items-center">
                     <span>Accuracy</span>
@@ -249,7 +249,7 @@ const ModelAccuracy = () => {
               <CardDescription>Financial news sentiment analysis performance</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {modelData ? (
+              {modelData && modelData.model_metrics?.finbert_sentiment ? (
                 <>
                   <div className="flex justify-between items-center">
                     <span>Accuracy</span>

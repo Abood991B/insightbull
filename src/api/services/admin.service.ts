@@ -198,11 +198,17 @@ export interface ManualCollectionResponse {
 export interface ScheduledJob {
   job_id: string;
   name: string;
-  schedule: string;
-  next_run: string | null;
+  job_type: string;
+  trigger_config: Record<string, any>;
+  parameters: Record<string, any>;
+  status: string;
+  created_at: string;
   last_run: string | null;
-  status: 'active' | 'paused' | 'disabled';
-  description?: string;
+  next_run: string | null;
+  run_count: number;
+  error_count: number;
+  last_error: string | null;
+  enabled: boolean;
 }
 
 // Sentiment Engine Metrics
@@ -382,6 +388,22 @@ export interface CollectorHealthResponse {
     not_configured: number;
     error: number;
     coverage_percentage: number;
+    total_items_24h: number;
+  };
+}
+
+export interface MarketStatus {
+  is_open: boolean;
+  current_period: 'pre-market' | 'market-hours' | 'after-hours' | 'overnight' | 'weekend';
+  current_time_et: string;
+  weekday: number;
+  next_open: string | null;
+  next_close: string | null;
+  market_hours: {
+    pre_market: string;
+    market_hours: string;
+    after_hours: string;
+    overnight: string;
   };
 }
 
@@ -806,6 +828,17 @@ class AdminAPIService {
   
   async getCollectorHealth(): Promise<CollectorHealthResponse> {
     const response = await fetch(`${API_BASE_URL}/api/admin/collectors/health`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  // ============================================================================
+  // MARKET STATUS
+  // ============================================================================
+  
+  async getMarketStatus(): Promise<MarketStatus> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/market/status`, {
       headers: getAuthHeaders(),
     });
     return handleApiResponse(response);

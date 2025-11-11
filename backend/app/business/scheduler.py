@@ -576,8 +576,36 @@ class Scheduler:
         return self.jobs.get(job_id)
     
     def list_jobs(self) -> List[ScheduledJob]:
-        """List all scheduled jobs"""
-        return list(self.jobs.values())
+        """List all scheduled jobs.
+
+        This method populates the `next_run` field for each ScheduledJob by
+        querying APScheduler's internal job metadata (next_run_time). Without
+        this, frontend components will receive `next_run=None` and cannot
+        display upcoming runs.
+        """
+        jobs_list: List[ScheduledJob] = []
+        for job_id, job in self.jobs.items():
+            try:
+                aps_job = self.scheduler.get_job(job_id)
+                if aps_job and getattr(aps_job, 'next_run_time', None):
+                    # APScheduler returns timezone-aware datetimes; convert to naive UTC
+                    next_run = aps_job.next_run_time
+                    # Convert to naive UTC datetime for consistency with other code
+                    try:
+                        # If next_run has tzinfo, convert to UTC and drop tzinfo
+                        next_run_utc = next_run.astimezone(pytz.utc).replace(tzinfo=None)
+                    except Exception:
+                        next_run_utc = next_run
+                    job.next_run = next_run_utc
+                else:
+                    job.next_run = None
+            except Exception as e:
+                self.logger.warning(f"Failed to get APScheduler job metadata for {job_id}: {e}")
+                job.next_run = None
+
+            jobs_list.append(job)
+
+        return jobs_list
     
     def enable_job(self, job_id: str) -> bool:
         """Enable a job"""

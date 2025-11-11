@@ -7,6 +7,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useNavigate } from "react-router-dom";
 import { TrendingUp, TrendingDown, Activity, Clock, AlertCircle, RefreshCw, Search, BarChart3, TrendingUpIcon } from "lucide-react";
+import { MarketCountdown } from "@/shared/components/MarketCountdown";
 
 // Import services and types
 import { dashboardService } from "@/api/services/dashboard.service";
@@ -253,6 +254,19 @@ const Index = () => {
             </div>
           </div>
         </div>
+
+        {/* Market Status Countdown - Prominent Position */}
+        <Card className="bg-gradient-to-br from-amber-50 to-yellow-50 border-l-4 border-l-amber-500">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-amber-600" />
+              Market Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MarketCountdown />
+          </CardContent>
+        </Card>
 
         {/* Stats Cards - MATCHING SCREENSHOT */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
