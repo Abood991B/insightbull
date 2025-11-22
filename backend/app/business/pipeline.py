@@ -1954,7 +1954,7 @@ class DataPipeline:
                     "status": "success",
                     "pipeline_id": result.pipeline_id,
                     "items_collected": result.total_items_collected,
-                    "sentiment_records": result.sentiment_records_created,
+                    "sentiment_records": result.total_items_analyzed,
                     "execution_time": result.execution_time,
                     "symbols_processed": len(symbols)
                 }

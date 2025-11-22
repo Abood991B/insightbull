@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { authService } from "@/features/admin/services/auth.service";
 import { useToast } from "@/shared/hooks/use-toast";
+import { MarketCountdown } from "@/shared/components/MarketCountdown";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -178,6 +179,20 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
             {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </Button>
         </div>
+
+        {/* Market Status - Prominent in Admin Sidebar */}
+        {isSidebarOpen && (
+          <div className="mx-4 my-4">
+            <div className="bg-gradient-to-br from-slate-50 to-blue-50 border border-blue-200/60 rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow">
+              <MarketCountdown variant="detailed" />
+            </div>
+          </div>
+        )}
+        {!isSidebarOpen && (
+          <div className="flex justify-center py-4">
+            <MarketCountdown variant="compact" />
+          </div>
+        )}
 
         {/* Enhanced Navigation */}
         <nav className="flex-1 p-4 space-y-6 overflow-y-auto">

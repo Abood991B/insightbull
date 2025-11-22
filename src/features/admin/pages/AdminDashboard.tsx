@@ -7,7 +7,6 @@ import { Badge } from '../../../shared/components/ui/badge';
 import { Alert, AlertDescription } from '../../../shared/components/ui/alert';
 import { useToast } from '../../../shared/hooks/use-toast';
 import { formatDateTime } from '@/shared/utils/timezone';
-import { MarketCountdown } from '@/shared/components/MarketCountdown';
 import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus } from '../../../api/services/admin.service';
 import SystemHealthAlerts from '../components/SystemHealthAlerts';
 import {
@@ -341,19 +340,6 @@ const AdminDashboard: React.FC = () => {
           modelAccuracy={modelAccuracy}
           onRefresh={() => loadDashboardData(false)}
         />
-
-        {/* Market Status Countdown - Prominent Position */}
-        <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-amber-600" />
-              Market Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MarketCountdown />
-          </CardContent>
-        </Card>
 
         {/* System Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">

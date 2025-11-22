@@ -582,9 +582,9 @@ const SchedulerManagerV2 = () => {
             </CardContent>
           </Card>
           
-          <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
+          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200">
             <CardContent className="pt-6">
-              <MarketCountdown />
+              <MarketCountdown variant="card" />
             </CardContent>
           </Card>
         </div>

@@ -119,15 +119,18 @@ class RedditCollector(BaseCollector):
             client_id=self.client_id,
             client_secret=self.client_secret,
             user_agent=self.user_agent,
-            read_only=True  # We only need read access
+            read_only=True,  # We only need read access
+            requestor_kwargs={"timeout": 30}  # Add timeout to avoid hanging
         )
     
     async def validate_connection(self) -> bool:
-        """Validate Reddit API connection"""
+        """Validate Reddit API connection by attempting to access a subreddit"""
         try:
             async with self._get_reddit_client() as reddit:
-                # Test connection by accessing user info
-                user = await reddit.user.me()
+                # For read-only apps, test by accessing a public subreddit
+                # Don't use reddit.user.me() as that requires user OAuth
+                subreddit = await reddit.subreddit("stocks")
+                await subreddit.load()  # Force API call
                 return True
         except Exception as e:
             self.logger.error(f"Reddit connection validation failed: {str(e)}")
@@ -150,24 +153,24 @@ class RedditCollector(BaseCollector):
             self._validate_config(config)
             await self._apply_rate_limit()
             
-            reddit = self._get_reddit_client()
+            # Use async context manager for Reddit client
+            async with self._get_reddit_client() as reddit:
+                # Parallelize collection across symbols for better performance
+                tasks = [
+                    self._collect_for_symbol(reddit, symbol.upper(), config)
+                    for symbol in config.symbols
+                ]
+                
+                # Execute all symbol collections in parallel
+                results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Parallelize collection across symbols for better performance
-            tasks = [
-                self._collect_for_symbol(reddit, symbol.upper(), config)
-                for symbol in config.symbols
-            ]
-            
-            # Execute all symbol collections in parallel
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Process results
-            for result in results:
-                if isinstance(result, Exception):
-                    self.logger.error(f"Reddit symbol collection failed: {str(result)}")
-                    continue
-                if isinstance(result, list):
-                    collected_data.extend(result)
+                # Process results
+                for result in results:
+                    if isinstance(result, Exception):
+                        self.logger.error(f"Reddit symbol collection failed: {str(result)}")
+                        continue
+                    if isinstance(result, list):
+                        collected_data.extend(result)
             
             execution_time = (utc_now() - start_time).total_seconds()
             
@@ -298,7 +301,15 @@ class RedditCollector(BaseCollector):
                     continue
                     
         except Exception as e:
-            self.logger.warning(f"Error collecting from r/{subreddit_name} for {target_symbol}: {str(e)}")
+            error_msg = str(e)
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                self.logger.error(
+                    f"Reddit API authentication failed for r/{subreddit_name}: "
+                    f"Please verify Reddit API credentials (client_id, client_secret) are correct. "
+                    f"Error: {error_msg}"
+                )
+            else:
+                self.logger.warning(f"Error collecting from r/{subreddit_name} for {target_symbol}: {error_msg}")
         
         return collected_data
     
