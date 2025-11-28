@@ -48,7 +48,7 @@ export interface MarketSentimentOverview {
 export interface SystemStatus {
   pipeline_status: string;             // Data collection pipeline status (operational/delayed/stale/no_data)
   last_collection: string | null;      // Last successful data collection (ISO string)
-  active_data_sources: string[];       // Currently active data sources (reddit, news)
+  active_data_sources: string[];       // Currently active data sources (hackernews, news)
   total_sentiment_records: number;     // Total sentiment records in database
 }
 
@@ -91,7 +91,7 @@ export interface SentimentDataPoint {
   score: number;                       // Sentiment score (-1.0 to 1.0)
   label: string;                       // Sentiment label (positive/neutral/negative)
   confidence: number | null;           // Model confidence score
-  source: string;                      // Data source (reddit, news, etc.)
+  source: string;                      // Data source (hackernews, news, etc.)
 }
 
 /**

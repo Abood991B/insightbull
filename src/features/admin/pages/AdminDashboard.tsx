@@ -98,7 +98,7 @@ const AdminDashboard: React.FC = () => {
         name: collector.name,
         status: collector.status,
         articles: collector.source === 'news' ? collector.items_collected : undefined,
-        posts: collector.source === 'reddit' ? collector.items_collected : undefined,
+        posts: collector.source === 'hackernews' ? collector.items_collected : undefined,
         error: collector.error,
         lastRun: collector.last_run,
       }));
@@ -619,7 +619,7 @@ const AdminDashboard: React.FC = () => {
                       return {
                         icon: <Zap className="h-6 w-6" />,
                         name: 'Data Collection Hub',
-                        description: 'Multi-source aggregation: Reddit, News, Financial APIs',
+                        description: 'Multi-source aggregation: Hacker News, News, Financial APIs',
                         color: status === 'healthy' ? 'text-purple-600' : 'text-red-600',
                         bgColor: status === 'healthy' ? 'bg-purple-50' : 'bg-red-50',
                         borderColor: status === 'healthy' ? 'border-purple-200' : 'border-red-200',
@@ -944,8 +944,8 @@ const AdminDashboard: React.FC = () => {
                       <span className="font-bold text-purple-700 text-lg">{systemStatus?.metrics.news_articles?.toLocaleString() || 0}</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
-                      <span className="font-medium text-orange-800">Reddit Posts</span>
-                      <span className="font-bold text-orange-700 text-lg">{systemStatus?.metrics.reddit_posts?.toLocaleString() || 0}</span>
+                      <span className="font-medium text-orange-800">Hacker News Posts</span>
+                      <span className="font-bold text-orange-700 text-lg">{systemStatus?.metrics.hackernews_posts?.toLocaleString() || 0}</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-teal-50 rounded-lg border border-teal-200">
                       <span className="font-medium text-teal-800">Price Records</span>

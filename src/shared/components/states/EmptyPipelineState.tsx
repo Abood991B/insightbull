@@ -26,7 +26,7 @@ export function EmptyPipelineState() {
         <p className="text-gray-600 mb-6 max-w-md mx-auto">
           The sentiment analysis pipeline hasn't run yet. 
           Start data collection to populate the dashboard with 
-          real-time sentiment analysis from Reddit, FinHub, NewsAPI, and Marketaux.
+          real-time sentiment analysis from Hacker News, FinHub, NewsAPI, and Marketaux.
         </p>
         
         <div className="flex justify-center gap-4 mb-6">

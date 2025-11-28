@@ -34,7 +34,7 @@ export interface SystemStatus {
       negative: number;
     };
     news_articles?: number;
-    reddit_posts?: number;
+    hackernews_posts?: number;
     price_records?: number;
     last_price_update?: string;
   };
@@ -66,12 +66,10 @@ export interface ModelAccuracy {
 
 export interface APIConfiguration {
   apis: {
-    reddit: {
+    hackernews: {
       status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
-      client_id: string;
-      client_secret: string;
-      user_agent: string;
+      requires_api_key: boolean;
       error?: string | null;
     };
     finnhub: {
@@ -101,7 +99,7 @@ export interface APIConfiguration {
 }
 
 export interface APIKeyUpdate {
-  service: 'reddit' | 'finnhub' | 'newsapi' | 'marketaux';
+  service: 'hackernews' | 'finnhub' | 'newsapi' | 'marketaux';
   keys: Record<string, string>;
 }
 

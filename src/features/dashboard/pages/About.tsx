@@ -19,7 +19,7 @@ const About = () => {
     {
       icon: Activity,
       title: "Multi-Source Data",
-      description: "Aggregated data from Reddit, news APIs, and financial sources"
+      description: "Aggregated data from Hacker News, news APIs, and financial sources"
     },
     {
       icon: Database,
@@ -39,7 +39,7 @@ const About = () => {
   ];
 
   const dataSourceCard = [
-    { name: "Reddit", description: "Social media sentiment from financial communities", badge: "Social" },
+    { name: "Hacker News", description: "Tech community sentiment from news.ycombinator.com", badge: "Social" },
     { name: "FinHub", description: "Professional financial news and market data", badge: "News" },
     { name: "NewsAPI", description: "Global news sentiment analysis", badge: "News" },
     { name: "Marketaux", description: "Market news and real-time analysis", badge: "Market" }

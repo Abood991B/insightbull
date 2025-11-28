@@ -409,14 +409,14 @@ const SchedulerManagerV2 = () => {
           collector.status === 'error' ? 'failed' : 
           'unknown';
         
-        // Determine if it's a news source or reddit based on name
-        const isReddit = collector.name.toLowerCase() === 'reddit';
+        // Determine if it's a news source or hackernews based on name
+        const isHackerNews = collector.name.toLowerCase() === 'hackernews' || collector.name.toLowerCase() === 'hacker news';
         
         return {
           name: collector.name,
           status,
-          articles: !isReddit ? collector.items_collected : undefined,
-          posts: isReddit ? collector.items_collected : undefined,
+          articles: !isHackerNews ? collector.items_collected : undefined,
+          posts: isHackerNews ? collector.items_collected : undefined,
           error: collector.error || undefined,
           lastRun: collector.last_run ? formatDateTime(collector.last_run, {
             hour: '2-digit',
@@ -811,7 +811,7 @@ const SchedulerManagerV2 = () => {
             <strong>Pipeline Execution Model:</strong> All schedules run the FULL pipeline 
             (Data Collection -&gt; Sentiment Analysis -&gt; Storage) as an atomic operation. 
             This ensures data consistency and proper sentiment analysis of fresh data.
-            Each run processes all 4 collectors (NewsAPI, FinHub, Reddit, MarketAux*) sequentially.
+            Each run processes all 4 collectors (NewsAPI, FinHub, Hacker News, MarketAux*) sequentially.
           </AlertDescription>
         </Alert>
       </div>

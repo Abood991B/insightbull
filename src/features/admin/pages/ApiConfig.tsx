@@ -31,11 +31,9 @@ const ApiConfig = () => {
       // Initialize form data with full keys for editing
       const initialFormData: {[key: string]: string} = {};
       Object.entries(data.apis).forEach(([key, config]) => {
-        if (key === 'reddit') {
-          // Special handling for Reddit with separate client_id, client_secret, and user_agent
-          initialFormData[`${key}-client-id`] = (config as any).client_id || '';
-          initialFormData[`${key}-client-secret`] = (config as any).client_secret || '';
-          initialFormData[`${key}-user-agent`] = (config as any).user_agent || 'InsightStockDash/1.0';
+        // Hacker News doesn't need API keys - it uses free Algolia API
+        if (key === 'hackernews') {
+          // No configuration needed for Hacker News
         } else {
           // Standard handling for other APIs - use full key for editing
           initialFormData[key] = (config as any).api_key || '';
@@ -66,7 +64,7 @@ const ApiConfig = () => {
   };
 
   // Update API configuration
-  const updateApiConfiguration = async (service: 'reddit' | 'finnhub' | 'newsapi' | 'marketaux', keys: Record<string, string>) => {
+  const updateApiConfiguration = async (service: 'hackernews' | 'finnhub' | 'newsapi' | 'marketaux', keys: Record<string, string>) => {
     try {
       setSaving(true);
       await adminAPI.updateAPIConfiguration({ service, keys });
@@ -220,7 +218,7 @@ const ApiConfig = () => {
                       {apiName === 'finnhub' ? 'FinHub API' : 
                        apiName === 'newsapi' ? 'NewsAPI' : 
                        apiName === 'marketaux' ? 'Marketaux API' : 
-                       'Reddit API'}
+                       'Hacker News'}
                       <div className="flex items-center gap-2">
                         {getStatusIcon(config.status)}
                         {config.status === 'active' && (
@@ -231,7 +229,7 @@ const ApiConfig = () => {
                       </div>
                     </CardTitle>
                     <CardDescription>
-                      {apiName === 'reddit' && 'Configuration for Reddit social media data collection'}
+                      {apiName === 'hackernews' && 'Tech community data from news.ycombinator.com (no API key required)'}
                       {apiName === 'finnhub' && 'Configuration for financial market data'}
                       {apiName === 'newsapi' && 'Configuration for general news data collection'}
                       {apiName === 'marketaux' && 'Configuration for financial news and market data'}
@@ -247,75 +245,16 @@ const ApiConfig = () => {
                         </AlertDescription>
                       </Alert>
                     )}
-                    {apiName === 'reddit' ? (
-                      // Special layout for Reddit with separate Client ID and Secret fields
-                      <>
-                        <div>
-                          <Label htmlFor={`${apiName}-client-id`}>Client ID</Label>
-                          <div className="relative">
-                            <Input
-                              id={`${apiName}-client-id`}
-                              type="text"
-                              value={showKeys[`${apiName}-client-id`] ? (formData[`${apiName}-client-id`] || '') : '********************'}
-                              onChange={(e) => handleInputChange(`${apiName}-client-id`, e.target.value)}
-                              placeholder="Enter Reddit Client ID"
-                              readOnly={!showKeys[`${apiName}-client-id`]}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                              onClick={() => toggleKeyVisibility(`${apiName}-client-id`)}
-                              type="button"
-                            >
-                              {showKeys[`${apiName}-client-id`] ? 
-                                <Eye className="h-3 w-3" /> : 
-                                <EyeOff className="h-3 w-3" />
-                              }
-                            </Button>
-                          </div>
-                        </div>
-                        <div>
-                          <Label htmlFor={`${apiName}-client-secret`}>Client Secret</Label>
-                          <div className="relative">
-                            <Input
-                              id={`${apiName}-client-secret`}
-                              type="text"
-                              value={showKeys[`${apiName}-client-secret`] ? (formData[`${apiName}-client-secret`] || '') : '********************'}
-                              onChange={(e) => handleInputChange(`${apiName}-client-secret`, e.target.value)}
-                              placeholder="Enter Reddit Client Secret"
-                              readOnly={!showKeys[`${apiName}-client-secret`]}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                              onClick={() => toggleKeyVisibility(`${apiName}-client-secret`)}
-                              type="button"
-                            >
-                              {showKeys[`${apiName}-client-secret`] ? 
-                                <Eye className="h-3 w-3" /> : 
-                                <EyeOff className="h-3 w-3" />
-                              }
-                            </Button>
-                          </div>
-                        </div>
-                        <div>
-                          <Label htmlFor={`${apiName}-user-agent`}>User Agent</Label>
-                          <div className="relative">
-                            <Input
-                              id={`${apiName}-user-agent`}
-                              type="text"
-                              value={formData[`${apiName}-user-agent`] || 'InsightStockDash/1.0'}
-                              onChange={(e) => handleInputChange(`${apiName}-user-agent`, e.target.value)}
-                              placeholder="Enter Reddit User Agent (e.g., InsightStockDash/1.0)"
-                            />
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1">
-                            User agent string for Reddit API requests. Should be descriptive and unique.
-                          </p>
-                        </div>
-                      </>
+                    {apiName === 'hackernews' ? (
+                      // Hacker News info - no API key needed
+                      <Alert className="bg-green-50 border-green-200">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <AlertDescription className="text-green-800">
+                          <strong>No API Key Required</strong><br />
+                          Hacker News uses the free Algolia HN Search API which requires no authentication. 
+                          Data collection is always enabled and operational.
+                        </AlertDescription>
+                      </Alert>
                     ) : (
                       // Standard layout for other APIs
                       <div>
@@ -350,27 +289,18 @@ const ApiConfig = () => {
                     )}
                     
                     <div className="flex gap-2">
-                      <Button 
-                        onClick={() => {
-                          const keys = apiName === 'reddit' 
-                            ? { 
-                                client_id: formData[`${apiName}-client-id`], 
-                                client_secret: formData[`${apiName}-client-secret`],
-                                user_agent: formData[`${apiName}-user-agent`] || 'InsightStockDash/1.0'
-                              }
-                            : { api_key: formData[apiName] };
-                          updateApiConfiguration(apiName as any, keys);
-                        }}
-                        disabled={saving || (apiName === 'reddit' 
-                          ? (!formData[`${apiName}-client-id`] || !formData[`${apiName}-client-secret`] || 
-                             formData[`${apiName}-client-id`].includes('••••••••') || 
-                             formData[`${apiName}-client-secret`].includes('••••••••'))
-                          : (!formData[apiName] || formData[apiName].includes('••••••••'))
-                        )}
-                        className="flex-1"
-                      >
-                        {saving ? 'Updating...' : `Update ${apiName === 'finnhub' ? 'FinHub' : apiName === 'newsapi' ? 'NewsAPI' : apiName === 'marketaux' ? 'Marketaux' : 'Reddit'}`}
-                      </Button>
+                      {apiName !== 'hackernews' && (
+                        <Button 
+                          onClick={() => {
+                            const keys = { api_key: formData[apiName] };
+                            updateApiConfiguration(apiName as any, keys);
+                          }}
+                          disabled={saving || !formData[apiName] || formData[apiName].includes('••••••••')}
+                          className="flex-1"
+                        >
+                          {saving ? 'Updating...' : `Update ${apiName === 'finnhub' ? 'FinHub' : apiName === 'newsapi' ? 'NewsAPI' : 'Marketaux'}`}
+                        </Button>
+                      )}
                     </div>
 
                     {config.status === 'inactive' && (

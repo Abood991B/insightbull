@@ -217,7 +217,12 @@ const StockAnalysis = () => {
                 {/* Market Status */}
                 <div className="text-center p-4 bg-yellow-50 rounded-lg">
                   <p className="text-sm text-gray-600 mb-2">Market Status</p>
-                  <p className={`text-3xl font-bold ${stockAnalysis.stock_overview.market_status === 'Open' ? 'text-green-600' : 'text-gray-600'}`}>
+                  <p className={`text-3xl font-bold ${
+                    stockAnalysis.stock_overview.market_status === 'Open' ? 'text-green-600' : 
+                    stockAnalysis.stock_overview.market_status === 'Pre-Market' ? 'text-blue-600' :
+                    stockAnalysis.stock_overview.market_status === 'After-Hours' ? 'text-orange-600' :
+                    'text-gray-600'
+                  }`}>
                     {stockAnalysis.stock_overview.market_status}
                   </p>
                 </div>
