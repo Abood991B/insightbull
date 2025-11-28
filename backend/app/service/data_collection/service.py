@@ -22,7 +22,7 @@ from app.utils.timezone import utc_now, to_naive_utc
 
 from app.infrastructure.collectors import (
     BaseCollector,
-    RedditCollector,
+    HackerNewsCollector,
     FinHubCollector,
     NewsAPICollector,
     MarketauxCollector
@@ -64,11 +64,7 @@ class DataCollectionService:
     def __init__(self):
         self.security = SecurityUtils()
         self.collectors = {
-            'reddit': RedditCollector(
-                client_id=self.security.get_api_key("REDDIT_CLIENT_ID", "reddit_client_id"),
-                client_secret=self.security.get_api_key("REDDIT_CLIENT_SECRET", "reddit_client_secret"),
-                user_agent="StockInsight/1.0"
-            ),
+            'hackernews': HackerNewsCollector(),  # No API key required
             'finnhub': FinHubCollector(
                 api_key=self.security.get_api_key("FINNHUB_API_KEY", "finnhub_api_key")
             ),
@@ -98,7 +94,7 @@ class DataCollectionService:
         - Handle errors gracefully
         """
         if sources is None:
-            sources = ['reddit', 'finnhub', 'newsapi']
+            sources = ['hackernews', 'finnhub', 'newsapi']
         
         # Validate business rules
         symbols = self._validate_symbols(symbols)
@@ -132,8 +128,8 @@ class DataCollectionService:
                 self.logger.info(f"Collecting {source} data for {symbol}")
                 
                 # Apply business logic based on source type
-                if source == 'reddit':
-                    data = await self._collect_reddit_with_rules(
+                if source == 'hackernews':
+                    data = await self._collect_hackernews_with_rules(
                         collector, symbol, days_back, max_items
                     )
                 elif source in ['finnhub', 'newsapi', 'marketaux']:
@@ -170,37 +166,54 @@ class DataCollectionService:
         
         return results
     
-    async def _collect_reddit_with_rules(
+    async def _collect_hackernews_with_rules(
         self,
-        collector: RedditCollector,
+        collector: HackerNewsCollector,
         symbol: str,
         days_back: int,
         max_items: int
     ) -> List[Dict[str, Any]]:
-        """Apply business rules for Reddit data collection"""
+        """Apply business rules for Hacker News data collection"""
+        from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
         
-        # Business rule: Search multiple subreddits
-        subreddits = ['stocks', 'investing', 'SecurityAnalysis', 'StockMarket']
-        all_data = []
+        # Create collection config
+        date_range = DateRange.last_days(days_back)
+        config = CollectionConfig(
+            symbols=[symbol],
+            date_range=date_range,
+            max_items_per_symbol=max_items,
+            include_comments=True,
+            min_score=2  # Quality filter: at least 2 points
+        )
         
-        for subreddit in subreddits:
-            try:
-                data = await collector.collect_posts(
-                    subreddit=subreddit,
-                    keywords=[symbol, f"${symbol}"],
-                    limit=max_items // len(subreddits),
-                    days_back=days_back
-                )
+        try:
+            result = await collector.collect_data(config)
+            
+            if result.success and result.data:
+                # Convert RawData objects to dicts and apply validation
+                validated_data = self._validate_hackernews_items([
+                    {
+                        'title': item.metadata.get('title', ''),
+                        'content': item.text,
+                        'content_type': item.content_type,
+                        'author': item.metadata.get('author', ''),
+                        'points': item.metadata.get('points', 0),
+                        'num_comments': item.metadata.get('num_comments', 0),
+                        'url': item.url,
+                        'hn_id': item.metadata.get('hn_id', ''),
+                        'timestamp': item.timestamp,
+                        'all_symbols': item.metadata.get('all_symbols', [symbol])
+                    }
+                    for item in result.data
+                ])
+                return validated_data
+            else:
+                self.logger.warning(f"HN collection failed for {symbol}: {result.error_message}")
+                return []
                 
-                # Apply business validation
-                validated_data = self._validate_reddit_posts(data)
-                all_data.extend(validated_data)
-                
-            except Exception as e:
-                self.logger.warning(f"Failed to collect from r/{subreddit}: {e}")
-                continue
-        
-        return all_data[:max_items]
+        except Exception as e:
+            self.logger.warning(f"Failed to collect from Hacker News for {symbol}: {e}")
+            return []
     
     async def _collect_news_with_rules(
         self,
@@ -250,16 +263,18 @@ class DataCollectionService:
         
         return validated
     
-    def _validate_reddit_posts(self, posts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Business validation for Reddit posts"""
+    def _validate_hackernews_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Business validation for Hacker News items"""
         validated = []
         
-        for post in posts:
-            # Business rules for Reddit content
-            if (post.get('title') and 
-                len(post.get('title', '')) > 10 and
-                post.get('score', 0) >= 0):  # Filter out heavily downvoted
-                validated.append(post)
+        for item in items:
+            # Business rules for HN content
+            content = item.get('content', '') or ''
+            title = item.get('title', '') or ''
+            
+            # Must have either title or content with reasonable length
+            if (len(title) > 5 or len(content) > 20) and item.get('points', 0) >= 0:
+                validated.append(item)
         
         return validated
     

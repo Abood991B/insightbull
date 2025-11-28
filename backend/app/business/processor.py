@@ -139,8 +139,8 @@ class TextProcessor:
         self.special_chars_pattern = re.compile(r'[^\w\s.,!?;:()\-\'\"$%]')
         self.repeated_chars_pattern = re.compile(r'(.)\1{3,}')  # Remove excessive repetition
         
-        # Reddit/forum specific patterns
-        self.reddit_quote_pattern = re.compile(r'^&gt;.*$', re.MULTILINE)
+        # Forum/community specific patterns
+        self.forum_quote_pattern = re.compile(r'^&gt;.*$', re.MULTILINE)
         self.edit_pattern = re.compile(r'\[?\s*edit\s*:.*?\]?', re.IGNORECASE)
         
         # Stock ticker cleanup (preserve but normalize)
@@ -292,8 +292,8 @@ class TextProcessor:
         if self.config.remove_hashtags:
             processed = self._remove_hashtags(processed)
         
-        # 4. Reddit/forum specific cleanup
-        processed = self._clean_reddit_content(processed)
+        # 4. Community forum specific cleanup (HackerNews, etc.)
+        processed = self._clean_community_content(processed)
         
         # 5. Contraction expansion
         if self.config.expand_contractions:
@@ -365,10 +365,10 @@ class TextProcessor:
         """Remove hashtags"""
         return self.hashtag_pattern.sub(' ', text)
     
-    def _clean_reddit_content(self, text: str) -> str:
-        """Clean Reddit-specific content"""
+    def _clean_community_content(self, text: str) -> str:
+        """Clean community forum content (HackerNews, etc.)"""
         # Remove quote blocks
-        text = self.reddit_quote_pattern.sub('', text)
+        text = self.forum_quote_pattern.sub('', text)
         # Remove edit markers
         text = self.edit_pattern.sub('', text)
         return text

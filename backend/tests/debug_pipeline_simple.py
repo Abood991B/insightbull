@@ -25,11 +25,11 @@ async def test_sentiment_debug():
     config = PipelineConfig(
         symbols=["AAPL"],
         date_range=DateRange(
-            start_date=utc_now() - timedelta(days=7),  # Extended to 7 days for Reddit data
+            start_date=utc_now() - timedelta(days=7),  # Extended to 7 days for HackerNews data
             end_date=utc_now()
         ),
         max_items_per_symbol=5,
-        include_reddit=True,
+        include_hackernews=True,
         include_finnhub=True,
         include_newsapi=True,
         include_marketaux=True

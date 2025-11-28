@@ -6,7 +6,7 @@ External integrations, third-party APIs, sentiment analysis models, and configur
 Provides concrete implementations of interfaces defined in other layers.
 
 Components:
-- Collectors: Data collection from external APIs (Reddit, FinHub, etc.)
+- Collectors: Data collection from external APIs (HackerNews, FinHub, etc.)
 - Security: API key management and security utilities  
 - Rate Limiter: API throttling and backoff strategies
 - Log System: Centralized logging (Singleton pattern)

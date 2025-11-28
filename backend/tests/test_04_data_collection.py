@@ -22,7 +22,7 @@ Phase 5 Data Collection Pipeline - Comprehensive Test Suite
         )===================================================
 
 This test file validates the complete Phase 5 implementation including:
-- Multi-source data collection (Reddit, FinHub, NewsAPI, MarketAux)
+- Multi-source data collection (HackerNews, FinHub, NewsAPI, MarketAux)
 - API key management and security
 - Data pipeline orchestration
 - Error handling and resilience
@@ -60,7 +60,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 try:
     from app.business.pipeline import DataPipeline, PipelineConfig
     from app.infrastructure.collectors.base_collector import DateRange, CollectionConfig
-    from app.infrastructure.collectors.reddit_collector import RedditCollector
+    from app.infrastructure.collectors.hackernews_collector import HackerNewsCollector
     from app.infrastructure.collectors.finnhub_collector import FinHubCollector
     from app.infrastructure.collectors.newsapi_collector import NewsAPICollector
     from app.infrastructure.collectors.marketaux_collector import MarketauxCollector
@@ -122,9 +122,8 @@ class Phase5TestSuite:
         print("\n🔑 TESTING API KEY CONFIGURATION")
         print("=" * 50)
         
+        # Note: HackerNews uses free Algolia API (no key required)
         required_keys = {
-            'REDDIT_CLIENT_ID': os.getenv('REDDIT_CLIENT_ID'),
-            'REDDIT_CLIENT_SECRET': os.getenv('REDDIT_CLIENT_SECRET'),
             'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY'),
             'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY'),
             'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY')
@@ -149,10 +148,7 @@ class Phase5TestSuite:
         print("=" * 50)
         
         collectors_config = [
-            ('Reddit', RedditCollector, {
-                'client_id': os.getenv('REDDIT_CLIENT_ID'),
-                'client_secret': os.getenv('REDDIT_CLIENT_SECRET')
-            }),
+            ('HackerNews', HackerNewsCollector, {}),  # No API key needed - free Algolia API
             ('FinHub', FinHubCollector, {
                 'api_key': os.getenv('FINNHUB_API_KEY')
             }),
@@ -171,18 +167,9 @@ class Phase5TestSuite:
                 start_time = time.time()
                 
                 # Initialize collector
-                if name == 'Reddit':
-                    if config['client_id'] and config['client_secret']:
-                        collector = collector_class(
-                            client_id=config['client_id'],
-                            client_secret=config['client_secret'],
-                            user_agent="StockAnalysis/1.0"
-                        )
-                    else:
-                        collector_results[name] = False
-                        self.log_test(f"{name} Collector Init", False, 
-                                    {'error': 'Missing credentials'})
-                        continue
+                if name == 'HackerNews':
+                    # HackerNews collector requires no API key
+                    collector = collector_class()
                 else:
                     if config['api_key']:
                         collector = collector_class(api_key=config['api_key'])
@@ -316,12 +303,8 @@ class Phase5TestSuite:
                 return False
             
             # For data quality testing, collect sample data directly from a collector
-            from app.infrastructure.collectors.reddit_collector import RedditCollector
-            collector = RedditCollector(
-                client_id=os.getenv('REDDIT_CLIENT_ID'),
-                client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
-                user_agent=os.getenv('REDDIT_USER_AGENT')
-            )
+            from app.infrastructure.collectors.hackernews_collector import HackerNewsCollector
+            collector = HackerNewsCollector()  # No API key needed
             collection_config = CollectionConfig(
                 symbols=self.test_symbols[:1],  # Just one symbol for testing
                 date_range=self.test_config.date_range,

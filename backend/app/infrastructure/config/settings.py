@@ -30,10 +30,7 @@ class Settings(BaseSettings):
     marketaux_api_key: str = ""
     news_api_key: str = ""
     
-    # Reddit API Configuration
-    reddit_client_id: str = ""
-    reddit_client_secret: str = ""
-    reddit_user_agent: str = "InsightStockDash/1.0"
+    # HackerNews API - No API key required (free and unlimited)
     
     # Application Settings
     app_name: str = "Insight Stock Dashboard"

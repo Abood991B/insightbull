@@ -25,15 +25,15 @@ def test_api_keys():
     print("\n🔧 Testing Update Functionality...")
     
     # Test updating a key
-    test_key = "TEST_REDDIT_CLIENT_ID_12345"
-    loader.update_api_key('REDDIT_CLIENT_ID', test_key)
+    test_key = "TEST_FINNHUB_KEY_12345"
+    loader.update_api_key('FINNHUB_API_KEY', test_key)
     
     # Reload and verify
     updated_keys = loader.load_api_keys()
     
-    if updated_keys.get('REDDIT_CLIENT_ID') == test_key:
+    if updated_keys.get('FINNHUB_API_KEY') == test_key:
         print("✅ Key update successful!")
-        print(f"  Updated REDDIT_CLIENT_ID: {test_key[:4]}••••••••")
+        print(f"  Updated FINNHUB_API_KEY: {test_key[:4]}••••••••")
     else:
         print("❌ Key update failed!")
     

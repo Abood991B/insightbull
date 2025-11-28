@@ -1,12 +1,11 @@
-"""
-Data Collector - Business Layer Orchestration
+"""Data Collector - Business Layer Orchestration
 ==============================================
 
 Coordinates data collection from multiple external sources as specified
 in the FYP Implementation Plan Layer 2: Business Layer.
 
 Implements the DataCollector component that orchestrates:
-- Reddit data collection via PRAW
+- HackerNews community data collection (free, no API key required)
 - Financial news from FinHub, Marketaux, NewsAPI
 - Stock price data from Yahoo Finance
 - Rate limiting and error handling
@@ -24,7 +23,7 @@ import time
 from ..utils.timezone import utc_now, to_naive_utc
 
 from app.infrastructure.collectors import (
-    RedditCollector,
+    HackerNewsCollector,
     FinHubCollector, 
     MarketauxCollector,
     NewsAPICollector
@@ -76,22 +75,12 @@ class DataCollector:
         # Log API key loading process
         self.logger.info("🔐 Loading and decrypting API keys...")
         
-        # Reddit collector - use the mapped key names from SecureAPIKeyLoader
+        # HackerNews collector - no API keys required (free and unlimited)
         api_keys = self.secure_loader.load_api_keys()
-        reddit_client_id = api_keys.get('reddit_client_id', '')
-        reddit_client_secret = api_keys.get('reddit_client_secret', '')
-        reddit_user_agent = api_keys.get('reddit_user_agent', 'InsightStockDash/1.0')
         
-        if reddit_client_id and reddit_client_secret:
-            self.reddit_collector = RedditCollector(
-                client_id=reddit_client_id,
-                client_secret=reddit_client_secret,
-                user_agent=reddit_user_agent
-            )
-            self.logger.info("Reddit collector configured", component="data_collector")
-        else:
-            self.reddit_collector = None
-            self.logger.warning("Reddit collector skipped - API keys not configured", component="data_collector")
+        # HackerNews is always available - no authentication required
+        self.hackernews_collector = HackerNewsCollector()
+        self.logger.info("HackerNews collector configured (no API key required)", component="data_collector")
         
         # FinHub collector
         finnhub_key = api_keys.get('finnhub_api_key', '')
@@ -131,7 +120,7 @@ class DataCollector:
         
         # Count active collectors
         active_collectors = sum(1 for collector in [
-            self.reddit_collector, self.finnhub_collector, 
+            self.hackernews_collector, self.finnhub_collector, 
             self.marketaux_collector, self.newsapi_collector
         ] if collector is not None)
         
@@ -155,7 +144,7 @@ class DataCollector:
         job = CollectionJob(
             job_id=job_id,
             symbols=symbols,
-            sources=["reddit", "finnhub", "marketaux", "newsapi"],
+            sources=["hackernews", "finnhub", "marketaux", "newsapi"],
             date_range=date_range,
             started_at=utc_now()
         )
@@ -172,7 +161,7 @@ class DataCollector:
             
             # Collect data from all sources concurrently
             collection_tasks = [
-                self._collect_reddit_data(symbols, date_range),
+                self._collect_hackernews_data(symbols, date_range),
                 self._collect_finnhub_data(symbols, date_range),
                 self._collect_marketaux_data(symbols, date_range),
                 self._collect_newsapi_data(symbols, date_range)
@@ -181,7 +170,7 @@ class DataCollector:
             results = await asyncio.gather(*collection_tasks, return_exceptions=True)
             
             # Process results
-            source_names = ["reddit", "finnhub", "marketaux", "newsapi"]
+            source_names = ["hackernews", "finnhub", "marketaux", "newsapi"]
             for i, result in enumerate(results):
                 source = source_names[i]
                 if isinstance(result, Exception):
@@ -226,14 +215,14 @@ class DataCollector:
         
         return job
     
-    async def _collect_reddit_data(self, symbols: List[str], 
+    async def _collect_hackernews_data(self, symbols: List[str], 
                                   date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
-        """Collect Reddit data for symbols"""
-        if not self.reddit_collector:
+        """Collect HackerNews data for symbols"""
+        if not self.hackernews_collector:
             return []
         
         try:
-            await self.rate_limiter.acquire("reddit")
+            await self.rate_limiter.acquire("hackernews")
             
             # Import required classes
             from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
@@ -251,7 +240,7 @@ class DataCollector:
             )
             
             # Use the standardized collect_data method
-            result = await self.reddit_collector.collect_data(config)
+            result = await self.hackernews_collector.collect_data(config)
             
             # Convert RawData objects to dictionaries
             return [
@@ -268,7 +257,7 @@ class DataCollector:
             ] if result.success else []
             
         except Exception as e:
-            self.logger.error(f"Reddit collection failed: {str(e)}")
+            self.logger.error(f"HackerNews collection failed: {str(e)}")
             raise
     
     async def _collect_finnhub_data(self, symbols: List[str], 

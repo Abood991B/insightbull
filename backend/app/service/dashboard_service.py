@@ -13,7 +13,7 @@ from sqlalchemy import select, func, text, and_, desc
 import structlog
 from app.utils.timezone import utc_now, to_iso_string, to_naive_utc
 
-from app.data_access.models import Stock, SentimentData, StockPrice, NewsArticle, RedditPost
+from app.data_access.models import Stock, SentimentData, StockPrice, NewsArticle, HackerNewsPost
 from app.infrastructure.log_system import get_logger
 
 

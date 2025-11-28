@@ -39,11 +39,11 @@ class PipelineConfigRequest(BaseModel):
     symbols: List[str] = Field(..., min_length=1, max_length=10, description="Stock symbols to analyze")
     days_back: int = Field(default=7, ge=1, le=30, description="Number of days to collect data for")
     max_items_per_symbol: int = Field(default=100, ge=10, le=500, description="Maximum items per symbol")
-    include_reddit: bool = Field(default=True, description="Include Reddit data collection")
+    include_hackernews: bool = Field(default=True, description="Include Hacker News data collection")
     include_finnhub: bool = Field(default=True, description="Include FinHub data collection") 
     include_newsapi: bool = Field(default=True, description="Include NewsAPI data collection")
     include_marketaux: bool = Field(default=True, description="Include MarketAux data collection")
-    include_comments: bool = Field(default=True, description="Include Reddit comments")
+    include_comments: bool = Field(default=True, description="Include Hacker News comments")
     parallel_collectors: bool = Field(default=True, description="Run collectors in parallel")
 
 
@@ -61,7 +61,6 @@ class ProcessingConfigRequest(BaseModel):
 
 class APIKeysRequest(BaseModel):
     """Request model for API keys configuration"""
-    reddit: Optional[Dict[str, str]] = Field(default=None, description="Reddit API configuration")
     finnhub: Optional[str] = Field(default=None, description="FinHub API key")
     newsapi: Optional[str] = Field(default=None, description="NewsAPI key") 
     marketaux: Optional[str] = Field(default=None, description="MarketAux API key")
@@ -115,11 +114,8 @@ async def configure_pipeline(
     **Admin only** - Configure external API keys for data collectors.
     """
     try:
-        # Convert API keys to expected format
+        # Convert API keys to expected format (HackerNews needs no API key)
         api_keys_dict = {}
-        
-        if api_keys.reddit:
-            api_keys_dict["reddit"] = api_keys.reddit
         
         if api_keys.finnhub:
             api_keys_dict["finnhub"] = api_keys.finnhub
@@ -187,7 +183,7 @@ async def run_pipeline(
             symbols=config.symbols,
             date_range=date_range,
             max_items_per_symbol=config.max_items_per_symbol,
-            include_reddit=config.include_reddit,
+            include_hackernews=config.include_hackernews,
             include_finnhub=config.include_finnhub,
             include_newsapi=config.include_newsapi,
             include_marketaux=config.include_marketaux,

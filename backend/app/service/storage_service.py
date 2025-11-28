@@ -14,7 +14,7 @@ import asyncio
 import structlog
 from app.utils.timezone import utc_now, to_naive_utc
 
-from app.data_access.models import StocksWatchlist, SentimentData, StockPrice, SystemLog, NewsArticle, RedditPost
+from app.data_access.models import StocksWatchlist, SentimentData, StockPrice, SystemLog, NewsArticle, HackerNewsPost
 from app.infrastructure.log_system import get_logger
 from app.presentation.schemas.admin_schemas import StorageMetrics, RetentionPolicy
 from app.data_access.database.retry_utils import commit_with_retry
@@ -64,11 +64,11 @@ class StorageManager:
             )
             news_count = news_count_result.scalar() or 0
             
-            # Get reddit posts count
-            reddit_count_result = await self.db.execute(
-                select(func.count(RedditPost.id))
+            # Get HackerNews posts count
+            hn_count_result = await self.db.execute(
+                select(func.count(HackerNewsPost.id))
             )
-            reddit_count = reddit_count_result.scalar() or 0
+            hn_count = hn_count_result.scalar() or 0
             
             # Get timestamp ranges from sentiment data
             oldest_sentiment_result = await self.db.execute(
@@ -82,7 +82,7 @@ class StorageManager:
             newest_record = newest_sentiment_result.scalar()
             
             # Calculate total records - only count processed data (sentiment + prices)
-            # Note: news_articles and reddit_posts are raw data that gets processed into sentiment_data
+            # Note: news_articles and hn_posts are raw data that gets processed into sentiment_data
             # We keep them for audit/reprocessing but don't count them as separate data points
             total_records = sentiment_count + price_count
             
@@ -90,12 +90,12 @@ class StorageManager:
             # - Sentiment records: ~0.5KB each
             # - Price records: ~0.2KB each  
             # - News articles: ~2KB each (raw storage, kept for audit)
-            # - Reddit posts: ~1KB each (raw storage, kept for audit)
+            # - HackerNews posts: ~1KB each (raw storage, kept for audit)
             estimated_size_mb = (
                 (sentiment_count * 0.0005) + 
                 (price_count * 0.0002) + 
                 (news_count * 0.002) + 
-                (reddit_count * 0.001)
+                (hn_count * 0.001)
             )
             
             return StorageMetrics(
@@ -130,7 +130,7 @@ class StorageManager:
                 "price_records_deleted": 0,
                 "log_records_deleted": 0,
                 "news_records_deleted": 0,
-                "reddit_records_deleted": 0
+                "hn_records_deleted": 0
             }
             
             # Always run cleanup when explicitly requested via admin panel
@@ -167,11 +167,11 @@ class StorageManager:
                 )
                 cleanup_stats["news_records_deleted"] = news_delete_result.rowcount
                 
-                # Clean up old reddit posts (optional - same retention as sentiment)
-                reddit_delete_result = await self.db.execute(
-                    delete(RedditPost).where(RedditPost.created_utc < sentiment_cutoff)
+                # Clean up old HackerNews posts (optional - same retention as sentiment)
+                hn_delete_result = await self.db.execute(
+                    delete(HackerNewsPost).where(HackerNewsPost.created_utc < sentiment_cutoff)
                 )
-                cleanup_stats["reddit_records_deleted"] = reddit_delete_result.rowcount
+                cleanup_stats["hn_records_deleted"] = hn_delete_result.rowcount
                 
                 await commit_with_retry(self.db)
                 

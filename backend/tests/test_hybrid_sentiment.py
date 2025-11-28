@@ -20,16 +20,16 @@ from app.service.sentiment_processing.models.sentiment_model import (
 
 
 class TestHybridVADER:
-    """Test Hybrid VADER model with real Reddit-style posts."""
+    """Test Hybrid VADER model with community-style posts."""
     
     @pytest.mark.asyncio
-    async def test_hybrid_vader_reddit_posts(self):
-        """Test on real Reddit financial posts with slang and emojis."""
+    async def test_hybrid_vader_community_posts(self):
+        """Test on HackerNews-style financial posts with slang and emojis."""
         model = HybridVADERModel()
         await model.ensure_loaded()
         
         test_cases = [
-            # Strong positive with Reddit slang
+            # Strong positive with community slang
             ("$GME to the moon! Diamond hands forever 🚀💎🙌", SentimentLabel.POSITIVE),
             
             # Strong negative
@@ -51,7 +51,7 @@ class TestHybridVADER:
             ("GUH. Rekt again. Should have bought puts 💩", SentimentLabel.NEGATIVE),
         ]
         
-        inputs = [TextInput(text, DataSource.REDDIT, "TEST") for text, _ in test_cases]
+        inputs = [TextInput(text, DataSource.HACKERNEWS, "TEST") for text, _ in test_cases]
         results = await model.analyze(inputs)
         
         # Check results
@@ -105,7 +105,7 @@ class TestHybridVADER:
             ("Consolidation phase, sideways movement", SentimentLabel.NEUTRAL),
         ]
         
-        inputs = [TextInput(text, DataSource.REDDIT, "TEST") for text, _ in test_cases]
+        inputs = [TextInput(text, DataSource.HACKERNEWS, "TEST") for text, _ in test_cases]
         results = await model.analyze(inputs)
         
         print("\n" + "="*60)
@@ -131,7 +131,7 @@ class TestHybridVADER:
             ("Bleeding red 🩸🔴", SentimentLabel.NEGATIVE),
         ]
         
-        inputs = [TextInput(text, DataSource.REDDIT, "TEST") for text, _ in test_cases]
+        inputs = [TextInput(text, DataSource.HACKERNEWS, "TEST") for text, _ in test_cases]
         results = await model.analyze(inputs)
         
         print("\n" + "="*60)
@@ -292,22 +292,22 @@ class TestIntegration:
     """Integration tests for complete sentiment analysis flow."""
     
     @pytest.mark.asyncio
-    async def test_reddit_post_end_to_end(self):
-        """Test complete flow for Reddit post analysis."""
+    async def test_hackernews_post_end_to_end(self):
+        """Test complete flow for HackerNews post analysis."""
         model = HybridVADERModel()
         await model.ensure_loaded()
         
-        reddit_post = "$AAPL to the moon! 🚀 Diamond hands paying off. BTFD was the right move!"
+        hn_post = "$AAPL to the moon! 🚀 Diamond hands paying off. BTFD was the right move!"
         
-        input_obj = TextInput(reddit_post, DataSource.REDDIT, "AAPL")
+        input_obj = TextInput(hn_post, DataSource.HACKERNEWS, "AAPL")
         results = await model.analyze([input_obj])
         
         result = results[0]
         
         print("\n" + "="*60)
-        print("END-TO-END REDDIT POST TEST")
+        print("END-TO-END HACKERNEWS POST TEST")
         print("="*60)
-        print(f"Post: {reddit_post}")
+        print(f"Post: {hn_post}")
         print(f"Sentiment: {result.label.value}")
         print(f"Score: {result.score:.3f}")
         print(f"Confidence: {result.confidence:.3f}")

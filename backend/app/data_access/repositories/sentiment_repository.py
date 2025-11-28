@@ -307,7 +307,7 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
         limit: int = 50
     ) -> List[SentimentData]:
         """
-        Get sentiment data by source (news, reddit, etc.)
+        Get sentiment data by source (news, hackernews, etc.)
         
         Args:
             symbol: Stock symbol

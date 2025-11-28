@@ -41,13 +41,13 @@ class TestSentimentAnalysis:
         """Test TextInput data structure."""
         text_input = TextInput(
             text="Great stock performance! 📈",
-            source=DataSource.REDDIT,
+            source=DataSource.HACKERNEWS,
             stock_symbol="AAPL",
             timestamp=utc_now()
         )
         
         assert text_input.text == "Great stock performance! 📈"
-        assert text_input.source == DataSource.REDDIT
+        assert text_input.source == DataSource.HACKERNEWS
         assert text_input.stock_symbol == "AAPL"
     
     @pytest.mark.asyncio
@@ -91,7 +91,7 @@ class TestSentimentAnalysis:
             
             # Test routing
             social_inputs = [
-                TextInput("Love this stock! 💎", DataSource.REDDIT, "AAPL"),
+                TextInput("Love this stock! 💎", DataSource.HACKERNEWS, "AAPL"),
                 TextInput("Great investment choice", DataSource.NEWSAPI, "MSFT")
             ]
             
@@ -142,8 +142,8 @@ class TestSentimentAnalysis:
             
             # Process some texts
             inputs = [
-                TextInput("Good stock", DataSource.REDDIT, "AAPL"),
-                TextInput("Bad news", DataSource.REDDIT, "TSLA")
+                TextInput("Good stock", DataSource.HACKERNEWS, "AAPL"),
+                TextInput("Bad news", DataSource.HACKERNEWS, "TSLA")
             ]
             
             await engine.analyze(inputs)
@@ -161,7 +161,7 @@ class TestSentimentAnalysis:
     
     def test_data_source_enum(self):
         """Test data source enumeration."""
-        assert DataSource.REDDIT.value == "reddit"
+        assert DataSource.HACKERNEWS.value == "hackernews"
         assert DataSource.FINNHUB.value == "finnhub"
         assert DataSource.NEWSAPI.value == "newsapi"
         assert DataSource.MARKETAUX.value == "marketaux"
@@ -187,7 +187,7 @@ class TestSentimentAnalysis:
 def create_sample_texts():
     """Create sample text inputs for testing."""
     return [
-        TextInput("Bullish on AAPL! 🚀", DataSource.REDDIT, "AAPL"),
+        TextInput("Bullish on AAPL! 🚀", DataSource.HACKERNEWS, "AAPL"),
         TextInput("Apple earnings beat expectations", DataSource.NEWSAPI, "AAPL"),
         TextInput("Market looking volatile today", DataSource.MARKETAUX, "SPY"),
         TextInput("Tesla production challenges continue", DataSource.FINNHUB, "TSLA")

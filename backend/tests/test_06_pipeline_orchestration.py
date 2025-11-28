@@ -69,7 +69,7 @@ class TestPhase7PipelineOrchestration:
                 end_date=utc_now()
             ),
             max_items_per_symbol=5,
-            include_reddit=False,  # Skip external APIs for testing
+            include_hackernews=False,  # Skip external APIs for testing
             include_newsapi=False,
             include_finnhub=False,
             include_marketaux=False
@@ -218,7 +218,7 @@ class TestPhase7EndToEndIntegration:
                 end_date=utc_now()
             ),
             max_items_per_symbol=1,
-            include_reddit=False,  # Skip external APIs
+            include_hackernews=False,  # Skip external APIs
             include_newsapi=False,
             include_finnhub=False,
             include_marketaux=False

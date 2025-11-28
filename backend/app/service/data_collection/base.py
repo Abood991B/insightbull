@@ -42,4 +42,4 @@ class DataCollector(ABC):
 # Implementations extending these base classes:
 # - StockPriceCollector(DataCollector)
 # - NewsCollector(DataCollector)  
-# - RedditCollector(DataCollector)
+# - HackerNewsCollector(DataCollector)

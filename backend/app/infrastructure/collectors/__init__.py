@@ -3,18 +3,18 @@ Data Collection Infrastructure
 =============================
 
 External data collectors implementing the Strategy pattern.
-Supports multiple data sources: Reddit, FinHub, NewsAPI, MarketAux.
+Supports multiple data sources: Hacker News, FinHub, NewsAPI, MarketAux.
 """
 
 from .base_collector import BaseCollector
-from .reddit_collector import RedditCollector
+from .hackernews_collector import HackerNewsCollector
 from .finnhub_collector import FinHubCollector
 from .newsapi_collector import NewsAPICollector
 from .marketaux_collector import MarketauxCollector
 
 __all__ = [
     "BaseCollector",
-    "RedditCollector", 
+    "HackerNewsCollector", 
     "FinHubCollector",
     "NewsAPICollector",
     "MarketauxCollector"

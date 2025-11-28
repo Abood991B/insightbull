@@ -57,7 +57,7 @@ class SentimentData(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks_watchlist.id"), nullable=False)
-    source = Column(String(50), nullable=False)  # reddit, news, financial_reports
+    source = Column(String(50), nullable=False)  # hackernews, news, financial_reports
     sentiment_score = Column(Numeric(precision=5, scale=4), nullable=False)  # Range -1.0000 to 1.0000
     confidence = Column(Numeric(precision=5, scale=4), nullable=False)  # Range 0.0000 to 1.0000
     sentiment_label = Column(String(20), nullable=False, index=True, default="Neutral")  # Positive, Negative, Neutral
@@ -125,21 +125,24 @@ class NewsArticle(Base):
     stock = relationship("StocksWatchlist")
 
 
-class RedditPost(Base):
-    """Reddit posts model."""
-    __tablename__ = "reddit_posts"
+class HackerNewsPost(Base):
+    """Hacker News posts and comments model."""
+    __tablename__ = "hackernews_posts"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     stock_id = Column(UUID(as_uuid=True), ForeignKey("stocks_watchlist.id"), nullable=True)
-    reddit_id = Column(String(50), unique=True, nullable=False)
-    title = Column(String(500), nullable=False)
+    hn_id = Column(String(50), unique=True, nullable=False)
+    title = Column(String(500), nullable=True)  # Nullable for comments
     content = Column(Text)
-    subreddit = Column(String(100), nullable=False)
+    content_type = Column(String(20), nullable=False, default="story")  # story or comment
     author = Column(String(100))
-    score = Column(Integer, default=0)
+    points = Column(Integer, default=0)
     num_comments = Column(Integer, default=0)
     url = Column(String(1000))
-    created_utc = Column(DateTime(timezone=True), nullable=False)  # When post was created on Reddit
+    parent_id = Column(String(50), nullable=True)  # For comments, reference to parent
+    story_id = Column(String(50), nullable=True)  # For comments, reference to parent story
+    story_title = Column(String(500), nullable=True)  # For comments, title of parent story
+    created_utc = Column(DateTime(timezone=True), nullable=False)  # When item was created on HN
     sentiment_score = Column(Numeric(precision=5, scale=4))  # Range -1.0000 to 1.0000
     confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
     stock_mentions = Column(JSON)  # Array of stock symbols mentioned
@@ -168,7 +171,7 @@ __all__ = [
     "SentimentData", 
     "StockPrice", 
     "NewsArticle", 
-    "RedditPost", 
+    "HackerNewsPost", 
     "SystemLog"
 ]
 

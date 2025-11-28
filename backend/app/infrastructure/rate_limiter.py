@@ -117,10 +117,10 @@ class RateLimitHandler:
     
     # Default rate limit configurations for known APIs
     DEFAULT_CONFIGS = {
-        "reddit": RateLimitConfig(
-            requests_per_minute=60,
-            requests_per_hour=3600,
-            burst_limit=10
+        "hackernews": RateLimitConfig(
+            requests_per_minute=120,  # HN API is generous
+            requests_per_hour=7200,
+            burst_limit=20
         ),
         "finnhub": RateLimitConfig(
             requests_per_minute=60,
@@ -147,7 +147,7 @@ class RateLimitHandler:
     
     # Cache TTL by source (in seconds)
     CACHE_TTL = {
-        "reddit": 300,      # 5 minutes
+        "hackernews": 300,  # 5 minutes
         "finnhub": 600,     # 10 minutes
         "newsapi": 900,     # 15 minutes
         "marketaux": 900    # 15 minutes
@@ -155,7 +155,7 @@ class RateLimitHandler:
     
     # Concurrency limits per source
     SEMAPHORE_LIMITS = {
-        "reddit": 3,       # 3 concurrent Reddit requests
+        "hackernews": 5,   # 5 concurrent HN requests
         "finnhub": 5,      # 5 concurrent FinHub requests
         "newsapi": 2,      # 2 concurrent NewsAPI requests
         "marketaux": 3     # 3 concurrent Marketaux requests
@@ -211,7 +211,7 @@ class RateLimitHandler:
         Blocks until it's safe to make a request according to rate limits.
         
         Args:
-            source: API source identifier (reddit, finnhub, etc.)
+            source: API source identifier (hackernews, finnhub, etc.)
         """
         if source not in self.configs:
             self.logger.warning(f"No rate limit config for source: {source}")

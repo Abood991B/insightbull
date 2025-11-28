@@ -22,7 +22,7 @@ logger = structlog.get_logger()
 # Import models to register them with Base metadata (must be after Base import)
 def _import_models():
     """Import all models to register them with SQLAlchemy Base."""
-    from app.data_access.models import Stock, SentimentData, StockPrice, NewsArticle, RedditPost, SystemLog
+    from app.data_access.models import Stock, SentimentData, StockPrice, NewsArticle, HackerNewsPost, SystemLog
 
 # Global engine and session factory
 engine = None

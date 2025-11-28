@@ -1,21 +1,24 @@
 """
-Hybrid VADER Model - Enhanced VADER + Machine Learning Classifier
-=================================================================
+Hybrid VADER Model - Enhanced VADER + Machine Learning Classifier + Sarcasm Detection
+======================================================================================
 
 Combines rule-based Enhanced VADER with a Logistic Regression classifier
-for improved accuracy on Reddit financial sentiment analysis.
+and advanced sarcasm detection for improved accuracy on community-driven
+financial sentiment analysis (Hacker News, forums, etc.).
 
 Architecture:
 1. Enhanced VADER provides domain-enhanced baseline with financial lexicon
-2. Logistic Regression trained on Reddit comments with TF-IDF + VADER features
-3. Confidence-weighted ensemble fusion
+2. Sarcasm detection layer identifies and inverts ironic statements
+3. Logistic Regression trained on community comments with TF-IDF + VADER features
+4. Confidence-weighted ensemble fusion
 
-Target Performance: 91.67% accuracy (validated on real Reddit data)
+Target Performance: 91.67% accuracy (validated on real community data)
 
 This file contains:
 - Enhanced VADER implementation (rule-based component)
+- Sarcasm detection module (pattern-based + contextual)
 - Hybrid VADER implementation (ensemble model)
-- Financial lexicon and Reddit slang processing
+- Financial lexicon and community slang processing
 """
 
 import logging
@@ -69,7 +72,7 @@ logger = logging.getLogger(__name__)
 class EnhancementConfig:
     """Configuration for VADER enhancements."""
     use_financial_lexicon: bool = True
-    use_reddit_slang: bool = True
+    use_community_slang: bool = True
     use_emoji_boost: bool = True
     use_dynamic_thresholds: bool = True
     use_context_awareness: bool = True
@@ -91,7 +94,7 @@ class FinancialLexicon:
         'undervalued': 2.0, 'oversold': 1.5, 'support': 1.0,
         'uptrend': 2.0, 'momentum': 1.5, 'growth': 1.5,
         
-        # Reddit-specific bullish
+        # Community-specific bullish (HN/forum slang)
         'yolo': 2.0, 'diamond hands': 3.0, 'hodl': 2.5, 'apes': 2.0,
         'to the moon': 3.5, 'printing': 2.5, 'brrr': 2.0,
         'lambo': 2.5, 'tendie': 2.5, 'stonks': 2.0,
@@ -107,7 +110,7 @@ class FinancialLexicon:
         'bubble': -2.0, 'bag': -2.0, 'bags': -2.0, 'bagholder': -2.5, 'bagholding': -2.5,
         'down': -1.5, 'loss': -2.0, 'losses': -2.0, 'losing': -2.0,
         
-        # Reddit-specific bearish
+        # Community-specific bearish (HN/forum slang)
         'guh': -3.0, 'loss porn': -2.5, 'paper hands': -2.0,
         'rug pull': -3.0, 'bleeding': -2.5, 'rekt': -3.0,
         'heavy bags': -2.5, 'catching knives': -2.5,
@@ -120,8 +123,8 @@ class FinancialLexicon:
     }
 
 
-class RedditSlangProcessor:
-    """Processor for Reddit-specific slang and abbreviations."""
+class CommunitySlangProcessor:
+    """Processor for community-specific slang and abbreviations (HN/forums)."""
     
     SLANG_MAPPINGS = {
         # Common abbreviations
@@ -198,10 +201,209 @@ class RedditSlangProcessor:
         return 0.0
 
 
+class SarcasmDetector:
+    """
+    Sarcasm and irony detection for financial sentiment analysis.
+    
+    Uses pattern matching and contextual analysis to identify:
+    - Explicit sarcasm markers ("oh great", "thanks for nothing", "/s")
+    - Ironic contrast patterns (positive words + negative context)
+    - Hyperbolic expressions indicating sarcasm
+    - Rhetorical questions with implied negative sentiment
+    
+    When sarcasm is detected with high confidence, the sentiment
+    polarity is inverted to reflect the true intended meaning.
+    """
+    
+    # Explicit sarcasm markers and patterns
+    SARCASM_MARKERS = [
+        # Explicit tags
+        r'/s\b', r'\bsarcasm\b', r'\bironic\b', r'\bironically\b',
+        # Eye-rolling expressions
+        r'\boh great\b', r'\boh wonderful\b', r'\boh fantastic\b', r'\boh perfect\b',
+        r'\boh yeah\b.*\bthat\b.*\bwork', r'\boh sure\b',
+        # Thanks patterns with sarcasm
+        r'\bthanks for nothing\b', r'\bthanks a lot\b.*(?:jerk|idiot|genius)',
+        r'\bgee thanks\b', r'\bthanks,?\s*(?:i guess|whatever)\b',
+        # Yeah right patterns
+        r'\byeah right\b', r'\byeah,?\s*sure\b', r'\bsure,?\s*buddy\b',
+        r'\bsuuure\b', r'\briiiight\b', r'\byeaaaah\b',
+        # Quotes indicating disbelief
+        r'"(?:genius|brilliant|smart|great)"', r"'(?:genius|brilliant|smart|great)'",
+        # Exaggerated positives with context
+        r'\bwhat a surprise\b', r'\bwho could have predicted\b',
+        r'\bwhat a shock\b', r'\bcolor me shocked\b',
+        # Clearly patterns
+        r'\bclearly\b.*\bworking\b', r'\bobviously\b.*\bgreat\b',
+    ]
+    
+    # Ironic contrast patterns (positive word + negative reality)
+    IRONIC_CONTRASTS = [
+        # Great/wonderful + negative context
+        (r'\bgreat\b', [r'\bloss', r'\bcrash', r'\bdump', r'\bdown \d+%', r'\bbankrupt']),
+        (r'\bwonderful\b', [r'\bloss', r'\bcrash', r'\bdown', r'\bbankrupt']),
+        (r'\bfantastic\b', [r'\bloss', r'\bfail', r'\bdown', r'\bcrash']),
+        (r'\bbrilliant\b', [r'\bstrategy\b.*\bloss', r'\bmove\b.*\bcrash', r'\bidea\b.*\bfail']),
+        # Love/enjoy + negative actions (sarcastic when paired with losses)
+        (r'\blove\b', [r'\blosing money', r'\bwatch.*crash', r'\bwatch.*burn', r'\bbag.*hold', r'\d+%\s*loss']),
+        (r'\bloving\b', [r'\bloss', r'\bcrash', r'\bdown', r'\d+%']),  # "Loving these losses"
+        (r'\benjoy\b', [r'\bloss', r'\bcrash', r'\bdown']),
+        # Best + negative context
+        (r'\bbest\b', [r'\bworst', r'\bloss', r'\bcrash', r'\bfail', r'\bdisaster']),
+        # Can't wait + negative event
+        (r"can't wait", [r'\bcrash', r'\bloss', r'\bbankrupt', r'\bfail']),
+    ]
+    
+    # Hyperbolic patterns suggesting sarcasm
+    HYPERBOLIC_PATTERNS = [
+        r'\bmost definitely\b.*\bnot\b',
+        r'\babsolutely\b.*\bno way\b',
+        r'\bsuch a\b.*\bgenius\b',
+        r'\breal winner\b',
+        r'\bgreat job\b.*(?:losing|crash|dump|fail)',
+        r'\bwhat could go wrong\b',
+        r'\bwhat could possibly go wrong\b',
+        r'\bnothing bad will happen\b',
+        r'\bthis is fine\b',
+        r'\beverything is fine\b',
+    ]
+    
+    # Rhetorical questions implying negative sentiment
+    RHETORICAL_QUESTIONS = [
+        r'who thought.*was a good idea',
+        r'what did you expect',
+        r'why would anyone',
+        r'how could this.*worse',
+        r'is anyone surprised',
+        r'shocked.?\s*i tell you',
+    ]
+    
+    def __init__(self):
+        """Initialize sarcasm detector with compiled patterns."""
+        # Compile all patterns for efficiency
+        self._sarcasm_markers = [re.compile(p, re.IGNORECASE) for p in self.SARCASM_MARKERS]
+        self._hyperbolic_patterns = [re.compile(p, re.IGNORECASE) for p in self.HYPERBOLIC_PATTERNS]
+        self._rhetorical_questions = [re.compile(p, re.IGNORECASE) for p in self.RHETORICAL_QUESTIONS]
+        
+        # Compile ironic contrast patterns
+        self._ironic_contrasts = []
+        for positive_word, negative_contexts in self.IRONIC_CONTRASTS:
+            pos_pattern = re.compile(positive_word, re.IGNORECASE)
+            neg_patterns = [re.compile(nc, re.IGNORECASE) for nc in negative_contexts]
+            self._ironic_contrasts.append((pos_pattern, neg_patterns))
+    
+    def detect_sarcasm(self, text: str) -> Dict[str, Any]:
+        """
+        Detect sarcasm in text and return analysis results.
+        
+        Args:
+            text: Text to analyze for sarcasm
+            
+        Returns:
+            Dictionary with:
+            - is_sarcastic: bool indicating sarcasm detection
+            - confidence: float 0-1 indicating detection confidence
+            - markers_found: list of detected sarcasm patterns
+            - should_invert: bool indicating if sentiment should be inverted
+        """
+        if not text:
+            return {
+                'is_sarcastic': False,
+                'confidence': 0.0,
+                'markers_found': [],
+                'should_invert': False
+            }
+        
+        markers_found = []
+        confidence_signals = []
+        
+        # Check explicit sarcasm markers (highest confidence)
+        for pattern in self._sarcasm_markers:
+            if pattern.search(text):
+                markers_found.append(f"explicit: {pattern.pattern}")
+                confidence_signals.append(0.9)  # High confidence for explicit markers
+        
+        # Check hyperbolic patterns (medium-high confidence)
+        for pattern in self._hyperbolic_patterns:
+            if pattern.search(text):
+                markers_found.append(f"hyperbolic: {pattern.pattern}")
+                confidence_signals.append(0.75)
+        
+        # Check rhetorical questions (medium confidence)
+        for pattern in self._rhetorical_questions:
+            if pattern.search(text):
+                markers_found.append(f"rhetorical: {pattern.pattern}")
+                confidence_signals.append(0.7)
+        
+        # Check ironic contrast patterns (medium confidence)
+        for pos_pattern, neg_patterns in self._ironic_contrasts:
+            if pos_pattern.search(text):
+                for neg_pattern in neg_patterns:
+                    if neg_pattern.search(text):
+                        markers_found.append(f"ironic_contrast: {pos_pattern.pattern} + {neg_pattern.pattern}")
+                        confidence_signals.append(0.65)
+                        break  # One match per positive word is enough
+        
+        # Check for quotation marks around positive words (sarcastic emphasis)
+        quote_pattern = re.compile(r'["\'](\w+(?:\s+\w+)?)["\']', re.IGNORECASE)
+        quoted_words = quote_pattern.findall(text)
+        positive_quoted = ['great', 'wonderful', 'genius', 'brilliant', 'smart', 'perfect', 'amazing']
+        for quoted in quoted_words:
+            if quoted.lower() in positive_quoted:
+                markers_found.append(f"quoted_positive: '{quoted}'")
+                confidence_signals.append(0.7)
+        
+        # Calculate overall confidence
+        if confidence_signals:
+            # Use max confidence, boosted slightly by multiple signals
+            base_confidence = max(confidence_signals)
+            boost = min(0.15, 0.05 * (len(confidence_signals) - 1))
+            overall_confidence = min(0.95, base_confidence + boost)
+        else:
+            overall_confidence = 0.0
+        
+        is_sarcastic = overall_confidence >= 0.5
+        
+        # Only invert sentiment if we're confident enough
+        should_invert = overall_confidence >= 0.6
+        
+        return {
+            'is_sarcastic': is_sarcastic,
+            'confidence': overall_confidence,
+            'markers_found': markers_found,
+            'should_invert': should_invert
+        }
+    
+    def invert_sentiment(self, score: float, sarcasm_confidence: float) -> float:
+        """
+        Invert sentiment score based on sarcasm detection.
+        
+        Uses weighted inversion based on confidence - higher confidence
+        means more complete inversion.
+        
+        Args:
+            score: Original sentiment score (-1 to 1)
+            sarcasm_confidence: Confidence in sarcasm detection (0 to 1)
+            
+        Returns:
+            Inverted sentiment score
+        """
+        # Scale inversion by confidence
+        # At 0.6 confidence: partial inversion
+        # At 0.9+ confidence: nearly complete inversion
+        inversion_factor = min(1.0, sarcasm_confidence * 1.2)
+        
+        # Invert the score, weighted by confidence
+        # score * (1 - 2*factor) inverts when factor=1
+        inverted = score * (1 - 2 * inversion_factor)
+        
+        return max(-1.0, min(1.0, inverted))
+
+
 class EnhancedVADERPreprocessor:
     """Advanced text preprocessor for VADER analysis."""
     
-    def __init__(self, slang_processor: RedditSlangProcessor):
+    def __init__(self, slang_processor: CommunitySlangProcessor):
         self.slang_processor = slang_processor
         self.url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
         self.mention_pattern = re.compile(r'@\w+')
@@ -227,9 +429,9 @@ class EnhancedVADERPreprocessor:
         metadata['tickers'] = tickers
         metadata['ticker_count'] = len(tickers)
         
-        # Process Reddit slang
+        # Process community slang
         text = self.slang_processor.process_slang(text)
-        metadata['reddit_slang'] = len([
+        metadata['community_slang'] = len([
             word for word in text.lower().split() 
             if word in self.slang_processor.SLANG_MAPPINGS
         ])
@@ -280,8 +482,9 @@ class VADERModel(SentimentModel):
     
     This is the rule-based component that provides:
     - Financial lexicon integration (75 terms)
-    - Reddit slang and abbreviation processing (40+ phrases)
+    - Community slang and abbreviation processing (40+ phrases)
     - Emoji sentiment boosting (30+ emojis)
+    - Sarcasm detection and sentiment inversion
     - Dynamic threshold adjustment
     - Context-aware analysis
     """
@@ -290,7 +493,8 @@ class VADERModel(SentimentModel):
         self.config = config or EnhancementConfig()
         self.analyzer = None
         self.financial_lexicon = FinancialLexicon()
-        self.slang_processor = RedditSlangProcessor()
+        self.slang_processor = CommunitySlangProcessor()
+        self.sarcasm_detector = SarcasmDetector()  # Sarcasm detection
         self._preprocessor = EnhancedVADERPreprocessor(self.slang_processor)
         
         self.custom_lexicon = {}
@@ -311,7 +515,7 @@ class VADERModel(SentimentModel):
             name="VADER",
             version="1.0.0-enhanced",
             description="VADER with financial domain expertise",
-            supported_sources=[DataSource.REDDIT],
+            supported_sources=[DataSource.HACKERNEWS],
             max_batch_size=100,
             avg_processing_time=7.0
         )
@@ -345,7 +549,7 @@ class VADERModel(SentimentModel):
             raise ModelLoadError(f"Enhanced VADER model loading failed: {str(e)}")
     
     async def _analyze_batch(self, texts: List[str]) -> List[SentimentResult]:
-        """Analyze sentiment with enhancements."""
+        """Analyze sentiment with enhancements and sarcasm detection."""
         if not self.analyzer:
             raise AnalysisError("Enhanced VADER analyzer not loaded")
         
@@ -355,7 +559,13 @@ class VADERModel(SentimentModel):
             start_time = time.time()
             
             try:
+                # Detect sarcasm BEFORE preprocessing (patterns need original text)
+                sarcasm_result = self.sarcasm_detector.detect_sarcasm(text)
+                
                 processed_text, metadata = self._preprocessor.preprocess_with_metadata(text)
+                
+                # Add sarcasm info to metadata
+                metadata['sarcasm'] = sarcasm_result
                 
                 emoji_boost = 0.0
                 if self.config.use_emoji_boost:
@@ -368,6 +578,19 @@ class VADERModel(SentimentModel):
                 
                 if self.config.use_context_awareness:
                     vader_scores = self._apply_context_adjustments(vader_scores, metadata)
+                
+                # Apply sarcasm inversion if detected with high confidence
+                if sarcasm_result['should_invert']:
+                    original_compound = vader_scores['compound']
+                    vader_scores['compound'] = self.sarcasm_detector.invert_sentiment(
+                        vader_scores['compound'],
+                        sarcasm_result['confidence']
+                    )
+                    # Also swap pos/neg scores
+                    vader_scores['pos'], vader_scores['neg'] = vader_scores['neg'], vader_scores['pos']
+                    logger.debug(
+                        f"Sarcasm detected, inverted sentiment: {original_compound:.3f} -> {vader_scores['compound']:.3f}"
+                    )
                 
                 result = self._convert_enhanced_result(vader_scores, metadata, time.time() - start_time)
                 results.append(result)
@@ -437,6 +660,9 @@ class VADERModel(SentimentModel):
             label = SentimentLabel.NEUTRAL
             confidence = neu_score
         
+        # Extract sarcasm detection info
+        sarcasm_info = metadata.get('sarcasm', {})
+        
         return SentimentResult(
             label=label,
             score=compound,
@@ -449,7 +675,10 @@ class VADERModel(SentimentModel):
                 'enhancements': {
                     'emoji_sentiment': metadata.get('emoji_sentiment', 0),
                     'financial_terms': metadata.get('financial_terms', 0),
-                    'reddit_slang': metadata.get('reddit_slang', 0),
+                    'community_slang': metadata.get('community_slang', 0),
+                    'sarcasm_detected': sarcasm_info.get('is_sarcastic', False),
+                    'sarcasm_confidence': sarcasm_info.get('confidence', 0.0),
+                    'sarcasm_inverted': sarcasm_info.get('should_invert', False),
                 }
             },
             processing_time=processing_time * 1000,
@@ -491,12 +720,12 @@ class HybridVADERModel(SentimentModel):
     
     Features:
     - Enhanced VADER for rule-based sentiment with financial domain expertise
-    - Logistic Regression for learning from labeled Reddit data
+    - Logistic Regression for learning from labeled community data (HackerNews/forums)
     - Confidence-weighted ensemble fusion
     - Feature engineering: TF-IDF + VADER scores + metadata
     
     Performance:
-    - Target: 82-87% accuracy on Reddit financial sentiment
+    - Target: 82-87% accuracy on community financial sentiment
     - Improves over Enhanced VADER alone (73-78%)
     - Better handling of ambiguous cases and edge cases
     """
@@ -514,7 +743,7 @@ class HybridVADERModel(SentimentModel):
         # Initialize Enhanced VADER with full configuration
         vader_config = EnhancementConfig(
             use_financial_lexicon=True,
-            use_reddit_slang=True,
+            use_community_slang=True,
             use_emoji_boost=True,
             use_dynamic_thresholds=True,
             use_context_awareness=True
@@ -632,56 +861,71 @@ class HybridVADERModel(SentimentModel):
     
     def _extract_features(self, text: str, vader_result: SentimentResult) -> np.ndarray:
         """
-        Extract hybrid features combining text and VADER signals.
+        Extract hybrid features combining TF-IDF and financial-specific features.
         
-        Features (5010+ dimensions):
-        - TF-IDF vector (5000 dims)
-        - VADER compound score
-        - VADER pos/neg/neu scores
-        - VADER confidence
-        - Emoji sentiment
-        - Financial term count
-        - Text statistics (length, word count, punctuation, caps)
+        Features (3012 dimensions):
+        - TF-IDF vector (3000 dims with bigrams)
+        - Financial features (12 dims)
+        
+        Must match the feature extraction used during training.
         
         Args:
             text: Original text
-            vader_result: VADER analysis result
+            vader_result: VADER analysis result (not used in new version)
             
         Returns:
             Feature vector as numpy array
         """
-        # TF-IDF features (5000 dims)
+        # TF-IDF features (3000 dims)
         tfidf_features = self.vectorizer.transform([text]).toarray()[0]
         
-        # VADER features (5 dims)
-        vader_features = [
-            vader_result.score,  # Compound score (-1 to 1)
-            vader_result.raw_scores.get('positive', 0),
-            vader_result.raw_scores.get('negative', 0),
-            vader_result.raw_scores.get('neutral', 0),
-            vader_result.confidence
+        # Financial-specific features (12 dims) - must match training
+        text_lower = text.lower()
+        
+        # Financial action words
+        bullish_actions = ['buy', 'upgrade', 'outperform', 'overweight', 'accumulate', 
+                           'bullish', 'long', 'calls', 'raise', 'ups', 'starts at buy']
+        bearish_actions = ['sell', 'downgrade', 'underperform', 'underweight', 'reduce',
+                           'bearish', 'short', 'puts', 'cut', 'cuts', 'lower', 'weakness']
+        neutral_actions = ['hold', 'neutral', 'maintain', 'equal-weight', 'in-line']
+        
+        bullish_count = sum(1 for word in bullish_actions if word in text_lower)
+        bearish_count = sum(1 for word in bearish_actions if word in text_lower)
+        neutral_count = sum(1 for word in neutral_actions if word in text_lower)
+        
+        # Price movement indicators
+        price_up = any(w in text_lower for w in ['surge', 'soar', 'jump', 'gain', 'rise', 'climb', 'rally'])
+        price_down = any(w in text_lower for w in ['fall', 'drop', 'slide', 'plunge', 'decline', 'tank', 'crash'])
+        
+        # Analyst actions
+        has_ticker = '$' in text
+        has_upgrade = 'upgrade' in text_lower or 'ups' in text_lower or 'raise' in text_lower
+        has_downgrade = 'downgrade' in text_lower or 'cut' in text_lower or 'lower' in text_lower
+        
+        # Rating words
+        has_buy_rating = any(w in text_lower for w in ['buy', 'outperform', 'overweight'])
+        has_sell_rating = any(w in text_lower for w in ['sell', 'underperform', 'underweight'])
+        has_hold_rating = any(w in text_lower for w in ['hold', 'neutral', 'equal-weight'])
+        
+        financial_features = [
+            bullish_count,
+            bearish_count,
+            neutral_count,
+            int(price_up),
+            int(price_down),
+            int(has_ticker),
+            int(has_upgrade),
+            int(has_downgrade),
+            int(has_buy_rating),
+            int(has_sell_rating),
+            int(has_hold_rating),
+            bullish_count - bearish_count,  # sentiment_direction
         ]
         
-        # Enhancement features from VADER (2 dims)
-        enhancements = vader_result.raw_scores.get('enhancements', {})
-        emoji_sent = enhancements.get('emoji_boost', 0)
-        financial_terms = enhancements.get('financial_terms', 0)
-        
-        # Text statistics (5 dims)
-        text_stats = [
-            len(text),  # Character length
-            len(text.split()),  # Word count
-            text.count('!'),  # Exclamation marks (excitement)
-            text.count('?'),  # Question marks (uncertainty)
-            sum(1 for c in text if c.isupper()) / max(len(text), 1)  # Capital ratio
-        ]
-        
-        # Combine all features (5000 + 5 + 2 + 5 = 5012 dims)
+        # Combine all features (3000 + 12 = 3012 dims)
         all_features = np.concatenate([
             tfidf_features,
-            vader_features,
-            [emoji_sent, financial_terms],
-            text_stats
+            financial_features
         ])
         
         return all_features
@@ -824,10 +1068,10 @@ class HybridVADERModel(SentimentModel):
     async def train_ml_component(self, X_train: List[str], y_train: List[int],
                                  X_val: List[str] = None, y_val: List[int] = None):
         """
-        Train the ML component on labeled Reddit data.
+        Train the ML component on labeled community data.
         
         Args:
-            X_train: List of Reddit comment texts
+            X_train: List of comment texts (HackerNews/forum posts)
             y_train: Labels (0=negative, 1=neutral, 2=positive)
             X_val: Optional validation texts
             y_val: Optional validation labels
@@ -933,8 +1177,8 @@ class HybridVADERModel(SentimentModel):
         return ModelInfo(
             name="Hybrid-VADER",
             version="1.0.0",
-            description="Enhanced VADER + Logistic Regression ensemble for Reddit sentiment",
-            supported_sources=[DataSource.REDDIT],
+            description="Enhanced VADER + Logistic Regression ensemble for community sentiment",
+            supported_sources=[DataSource.HACKERNEWS],
             max_batch_size=32,
             avg_processing_time=15.0  # ms per text
         )

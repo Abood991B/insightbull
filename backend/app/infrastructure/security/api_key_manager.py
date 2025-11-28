@@ -295,11 +295,8 @@ class SecureAPIKeyLoader:
         if self._cache:
             return self._cache
         
-        # Load keys from environment first
+        # Load keys from environment first (HackerNews needs no API key)
         encrypted_keys = {
-            'REDDIT_CLIENT_ID': os.getenv('REDDIT_CLIENT_ID', ''),
-            'REDDIT_CLIENT_SECRET': os.getenv('REDDIT_CLIENT_SECRET', ''),
-            'REDDIT_USER_AGENT': os.getenv('REDDIT_USER_AGENT', 'InsightStockDash/1.0'),
             'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
             'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
             'NEWS_API_KEY': os.getenv('NEWS_API_KEY', ''),  # Alternative name
@@ -315,9 +312,6 @@ class SecureAPIKeyLoader:
         
         # Map keys to expected names (lowercase with underscores)
         mapped_keys = {
-            'reddit_client_id': decrypted_keys.get('REDDIT_CLIENT_ID', ''),
-            'reddit_client_secret': decrypted_keys.get('REDDIT_CLIENT_SECRET', ''),
-            'reddit_user_agent': decrypted_keys.get('REDDIT_USER_AGENT', 'InsightStockDash/1.0'),
             'finnhub_api_key': decrypted_keys.get('FINNHUB_API_KEY', ''),
             'news_api_key': decrypted_keys.get('NEWSAPI_KEY', '') or decrypted_keys.get('NEWS_API_KEY', ''),
             'marketaux_api_key': decrypted_keys.get('MARKETAUX_API_KEY', '')
@@ -353,13 +347,11 @@ def create_encrypted_env_template():
     
     This can be used to encrypt existing API keys for storage.
     """
-    print("🔐 API Key Encryption Utility")
+    print("API Key Encryption Utility")
     print("=" * 40)
     
-    # Load current keys
+    # Load current keys (HackerNews needs no API key)
     current_keys = {
-        'REDDIT_CLIENT_ID': os.getenv('REDDIT_CLIENT_ID', ''),
-        'REDDIT_CLIENT_SECRET': os.getenv('REDDIT_CLIENT_SECRET', ''),
         'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
         'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
         'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', '')
@@ -370,7 +362,7 @@ def create_encrypted_env_template():
     print("Encrypting API keys...")
     encrypted_keys = manager.encrypt_all_keys(current_keys)
     
-    print("\n📄 Encrypted .env template:")
+    print("\nEncrypted .env template:")
     print("# Encrypted API Keys for Phase 5 Pipeline")
     from app.utils.timezone import utc_now
     print("# Generated on:", utc_now().isoformat())

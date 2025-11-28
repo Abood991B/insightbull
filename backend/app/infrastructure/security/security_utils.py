@@ -122,7 +122,7 @@ class SecurityUtils:
         Retrieve API key from environment variables or configuration
         
         Args:
-            env_key: Environment variable name (e.g., 'REDDIT_CLIENT_ID')
+            env_key: Environment variable name (e.g., 'FINNHUB_API_KEY')
             fallback_key: Optional fallback key name
             
         Returns:

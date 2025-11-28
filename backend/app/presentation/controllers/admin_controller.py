@@ -293,10 +293,10 @@ async def get_api_configuration(
         
         services = [
             APIServiceConfig(
-                service_name="Reddit",
-                is_configured=bool(settings.reddit_client_id and settings.reddit_client_secret),
-                status=APIKeyStatus.ACTIVE if settings.reddit_client_id else APIKeyStatus.INACTIVE,
-                rate_limit=100,  # Reddit rate limit
+                service_name="HackerNews",
+                is_configured=True,  # HackerNews is always configured (no API key required)
+                status=APIKeyStatus.ACTIVE,  # Always active
+                rate_limit=500,  # HackerNews rate limit (generous)
                 last_tested=utc_now()
             ),
             APIServiceConfig(
@@ -366,7 +366,7 @@ async def update_api_configuration(
             )
         
         # Validate service name
-        valid_services = ["reddit", "newsapi", "finnhub", "marketaux"]
+        valid_services = ["hackernews", "newsapi", "finnhub", "marketaux"]
         if request.service_name.lower() not in valid_services:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -723,7 +723,7 @@ async def trigger_manual_data_collection(
                 end_date=to_naive_utc(utc_now())
             ),
             max_items_per_symbol=50,
-            include_reddit=True,
+            include_hackernews=True,
             include_finnhub=True,
             include_newsapi=True,
             include_marketaux=True,

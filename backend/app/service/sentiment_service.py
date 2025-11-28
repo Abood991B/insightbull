@@ -13,7 +13,7 @@ from sqlalchemy import select, func, and_, desc, or_
 import structlog
 from app.utils.timezone import utc_now, to_naive_utc
 
-from app.data_access.models import Stock, SentimentData, NewsArticle, RedditPost
+from app.data_access.models import Stock, SentimentData, NewsArticle, HackerNewsPost
 from app.infrastructure.log_system import get_logger
 
 
@@ -292,7 +292,7 @@ class SentimentService:
             return {}
 
     async def _get_recent_mentions(self, stock_symbol: str, cutoff_date: datetime, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get recent mentions from news and reddit."""
+        """Get recent mentions from news and HackerNews."""
         try:
             mentions = []
             
@@ -322,31 +322,31 @@ class SentimentService:
                     "confidence": article.confidence
                 })
             
-            # Get recent reddit posts
-            reddit_result = await self.db.execute(
-                select(RedditPost)
+            # Get recent HackerNews posts
+            hn_result = await self.db.execute(
+                select(HackerNewsPost)
                 .where(and_(
-                    RedditPost.created_utc >= cutoff_date,
+                    HackerNewsPost.created_utc >= cutoff_date,
                     or_(
-                        RedditPost.title.ilike(f"%{stock_symbol}%"),
-                        RedditPost.content.ilike(f"%{stock_symbol}%")
+                        HackerNewsPost.title.ilike(f"%{stock_symbol}%"),
+                        HackerNewsPost.content.ilike(f"%{stock_symbol}%")
                     )
                 ))
-                .order_by(desc(RedditPost.created_utc))
+                .order_by(desc(HackerNewsPost.created_utc))
                 .limit(limit // 2)
             )
             
-            for post in reddit_result.scalars():
+            for post in hn_result.scalars():
                 mentions.append({
-                    "type": "reddit",
+                    "type": "hackernews",
                     "title": post.title,
                     "content": post.content[:200] + "..." if len(post.content or "") > 200 else post.content,
-                    "source": f"r/{post.subreddit}",
-                    "url": post.url,
+                    "source": "Hacker News",
+                    "url": post.url or f"https://news.ycombinator.com/item?id={post.hn_id}",
                     "timestamp": post.created_utc.isoformat(),
                     "sentiment_score": post.sentiment_score,
                     "confidence": post.confidence,
-                    "score": post.score,
+                    "score": post.points,
                     "num_comments": post.num_comments
                 })
             

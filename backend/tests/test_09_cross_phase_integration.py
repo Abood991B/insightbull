@@ -74,7 +74,7 @@ async def test_deep_integration():
     try:
         # Test model imports
         from app.data_access.models import (
-            Stock, SentimentData, StockPrice, NewsArticle, RedditPost, SystemLog
+            Stock, SentimentData, StockPrice, NewsArticle, HackerNewsPost, SystemLog
         )
         print("✅ All database models imported successfully")
         
@@ -116,7 +116,7 @@ async def test_deep_integration():
     print("\n📊 Phase 5: Data Collection Pipeline")
     try:
         # Test actual Phase 5 components
-        from app.infrastructure.collectors.reddit_collector import RedditCollector
+        from app.infrastructure.collectors.hackernews_collector import HackerNewsCollector
         from app.infrastructure.collectors.newsapi_collector import NewsAPICollector
         from app.infrastructure.collectors.marketaux_collector import MarketauxCollector
         from app.infrastructure.collectors.finnhub_collector import FinHubCollector

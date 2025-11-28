@@ -35,8 +35,6 @@ class APIEncryptionTester:
     
     def __init__(self):
         self.test_api_keys = {
-            'REDDIT_CLIENT_ID': 'test_reddit_client_12345',
-            'REDDIT_CLIENT_SECRET': 'test_reddit_secret_67890',
             'FINNHUB_API_KEY': 'test_finnhub_key_abcdef',
             'NEWSAPI_KEY': 'test_newsapi_key_ghijkl',
             'MARKETAUX_API_KEY': 'test_marketaux_key_mnopqr'
@@ -167,21 +165,21 @@ class APIEncryptionTester:
                 )
                 
                 # Test individual key retrieval
-                reddit_key = loader.get_decrypted_key("REDDIT_CLIENT_ID")
+                finnhub_key = loader.get_decrypted_key("FINNHUB_API_KEY")
                 
                 self.log_test(
                     "Individual Key Retrieval",
-                    reddit_key == self.test_api_keys["REDDIT_CLIENT_ID"],
-                    f"Retrieved: {reddit_key}"
+                    finnhub_key == self.test_api_keys["FINNHUB_API_KEY"],
+                    f"Retrieved: {finnhub_key}"
                 )
                 
                 # Test cache functionality
                 loader.clear_cache()
-                reddit_key_2 = loader.get_decrypted_key("REDDIT_CLIENT_ID")
+                finnhub_key_2 = loader.get_decrypted_key("FINNHUB_API_KEY")
                 
                 self.log_test(
                     "Cache Clear and Reload",
-                    reddit_key_2 == self.test_api_keys["REDDIT_CLIENT_ID"],
+                    finnhub_key_2 == self.test_api_keys["FINNHUB_API_KEY"],
                     "Cache cleared and reloaded successfully"
                 )
                 
@@ -212,7 +210,7 @@ class APIEncryptionTester:
             
             # Count active collectors
             active_collectors = sum(1 for collector_attr in [
-                'reddit_collector', 'finnhub_collector', 
+                'hackernews_collector', 'finnhub_collector', 
                 'marketaux_collector', 'newsapi_collector'
             ] if getattr(collector, collector_attr) is not None)
             
@@ -224,7 +222,7 @@ class APIEncryptionTester:
             
             # Test collector status
             collectors_status = {}
-            for collector_name in ['reddit_collector', 'finnhub_collector', 'marketaux_collector', 'newsapi_collector']:
+            for collector_name in ['hackernews_collector', 'finnhub_collector', 'marketaux_collector', 'newsapi_collector']:
                 collector_obj = getattr(collector, collector_name)
                 collectors_status[collector_name] = collector_obj is not None
             
@@ -244,8 +242,6 @@ class APIEncryptionTester:
         try:
             # Check current environment
             current_keys = {
-                'REDDIT_CLIENT_ID': os.getenv('REDDIT_CLIENT_ID'),
-                'REDDIT_CLIENT_SECRET': os.getenv('REDDIT_CLIENT_SECRET'),
                 'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY'),
                 'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY'),
                 'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY'),

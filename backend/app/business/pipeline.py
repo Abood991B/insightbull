@@ -25,7 +25,7 @@ from .processor import TextProcessor, ProcessingConfig, ProcessingResult
 from ..infrastructure.collectors.base_collector import (
     BaseCollector, CollectionConfig, CollectionResult, DateRange, RawData
 )
-from ..infrastructure.collectors.reddit_collector import RedditCollector
+from ..infrastructure.collectors.hackernews_collector import HackerNewsCollector
 from ..infrastructure.collectors.finnhub_collector import FinHubCollector  
 from ..infrastructure.collectors.newsapi_collector import NewsAPICollector
 from ..infrastructure.collectors.marketaux_collector import MarketauxCollector
@@ -38,7 +38,7 @@ from ..infrastructure.log_system import get_logger
 from ..service.sentiment_processing import get_sentiment_engine, EngineConfig
 from ..service.sentiment_processing import TextInput, DataSource, SentimentResult
 # Database Models for Storage
-from ..data_access.models import SentimentData, Stock, NewsArticle, RedditPost
+from ..data_access.models import SentimentData, Stock, NewsArticle, HackerNewsPost
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ..data_access.database.connection import get_db
@@ -72,7 +72,7 @@ class PipelineConfig:
     symbols: List[str]
     date_range: DateRange
     max_items_per_symbol: int = 100
-    include_reddit: bool = True
+    include_hackernews: bool = True
     include_finnhub: bool = True
     include_newsapi: bool = True
     include_marketaux: bool = True
@@ -325,15 +325,14 @@ class DataPipeline:
             api_keys: Dictionary of API keys for each service
         """
         try:
-            # Reddit collector
-            if "reddit" in api_keys:
-                reddit_config = api_keys["reddit"]
-                self._collectors["reddit"] = RedditCollector(
-                    client_id=reddit_config.get("client_id"),
-                    client_secret=reddit_config.get("client_secret"),
-                    user_agent=reddit_config.get("user_agent", "StockSentimentBot/1.0"),
+            # Hacker News collector (no API key required)
+            try:
+                self._collectors["hackernews"] = HackerNewsCollector(
                     rate_limiter=self.rate_limiter
                 )
+                self.logger.info("Hacker News collector configured", component="pipeline")
+            except Exception as e:
+                self.logger.warning(f"Failed to configure Hacker News collector: {str(e)}", component="pipeline")
             
             # FinHub collector
             if "finnhub" in api_keys:
@@ -368,7 +367,7 @@ class DataPipeline:
         
         Uses SecureAPIKeyLoader to decrypt API keys for enhanced security.
         Environment variables expected:
-        - REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
+        - (HackerNews does not require API keys)
         - NEWSAPI_KEY
         - FINNHUB_API_KEY
         - MARKETAUX_API_KEY
@@ -391,24 +390,15 @@ class DataPipeline:
             # Load decrypted API keys using SecureAPIKeyLoader (same as DataCollector)
             api_keys = secure_loader.load_api_keys()
             
-            # Reddit collector
-            reddit_client_id = api_keys.get('reddit_client_id')
-            reddit_client_secret = api_keys.get('reddit_client_secret')
-            reddit_user_agent = api_keys.get('reddit_user_agent')
-            
-            if reddit_client_id and reddit_client_secret:
-                try:
-                    self._collectors["reddit"] = RedditCollector(
-                        client_id=reddit_client_id,
-                        client_secret=reddit_client_secret,
-                        user_agent=reddit_user_agent,
-                        rate_limiter=self.rate_limiter
-                    )
-                    self.logger.info("Reddit collector configured", component="pipeline")
-                except Exception as e:
-                    self.logger.warning(f"Failed to configure Reddit collector: {str(e)}", component="pipeline")
-            else:
-                self.logger.warning("Reddit collector skipped - API keys not configured", component="pipeline")
+            # Hacker News collector (no API key required)
+            try:
+                self._collectors["hackernews"] = HackerNewsCollector(
+                    rate_limiter=self.rate_limiter
+                )
+                collectors_configured += 1
+                self.logger.info("Hacker News collector configured", component="pipeline")
+            except Exception as e:
+                self.logger.warning(f"Failed to configure Hacker News collector: {str(e)}", component="pipeline")
             
             # FinHub collector
             finnhub_api_key = api_keys.get('finnhub_api_key')
@@ -521,7 +511,7 @@ class DataPipeline:
                         "end": config.date_range.end_date.isoformat() if config.date_range else None
                     },
                     "config": {
-                        "include_reddit": config.include_reddit,
+                        "include_hackernews": config.include_hackernews,
                         "include_finnhub": config.include_finnhub,
                         "max_items_per_symbol": config.max_items_per_symbol,
                         "include_comments": config.include_comments
@@ -585,7 +575,7 @@ class DataPipeline:
                 extra={
                     "pipeline_id": pipeline_id,
                     "total_items": total_collected,
-                    "reddit_items": collection_summary.get("REDDIT", {}).get("items_collected", 0),
+                    "hackernews_items": collection_summary.get("HACKERNEWS", {}).get("items_collected", 0),
                     "finnhub_items": collection_summary.get("FINNHUB", {}).get("items_collected", 0),
                     "newsapi_items": collection_summary.get("NEWSAPI", {}).get("items_collected", 0),
                     "marketaux_items": collection_summary.get("MARKETAUX", {}).get("items_collected", 0),
@@ -602,7 +592,7 @@ class DataPipeline:
                 result.status = PipelineStatus.CANCELLED
                 return result
 
-            # Step 1.5: Store Raw Data (News Articles and Reddit Posts)
+            # Step 1.5: Store Raw Data (News Articles and Hacker News Posts)
             self.logger.log_pipeline_operation(
                 "raw_data_storage_phase_start",
                 {"pipeline_id": pipeline_id}
@@ -787,8 +777,8 @@ class DataPipeline:
         # Determine which collectors to use
         collectors_to_run = []
         
-        if config.include_reddit and "reddit" in self._collectors:
-            collectors_to_run.append(("reddit", self._collectors["reddit"]))
+        if config.include_hackernews and "hackernews" in self._collectors:
+            collectors_to_run.append(("hackernews", self._collectors["hackernews"]))
         
         if config.include_finnhub and "finnhub" in self._collectors:
             collectors_to_run.append(("finnhub", self._collectors["finnhub"]))
@@ -1183,7 +1173,7 @@ class DataPipeline:
 
     async def _store_raw_data(self, collection_results: Dict[str, CollectionResult], correlation_id: str) -> int:
         """
-        Store raw news articles and Reddit posts in their respective tables.
+        Store raw news articles and Hacker News posts in their respective tables.
         
         Args:
             collection_results: Results from data collection
@@ -1269,74 +1259,66 @@ class DataPipeline:
                                 )
                                 session.add(news_article)
                                 
-                            elif source_name.lower() == 'reddit':
-                                # Extract reddit_id from metadata (where Reddit collector stores it)
+                            elif source_name.lower() == 'hackernews':
+                                # Extract hn_id from metadata (where HackerNews collector stores it)
                                 metadata = getattr(raw_data, 'metadata', {}) or {}
                                 
                                 # DEBUG: Log metadata to check if all_symbols is present
                                 self.logger.debug(
-                                    f"Reddit post metadata keys: {list(metadata.keys())}",
+                                    f"Hacker News post metadata keys: {list(metadata.keys())}",
                                     extra={"all_symbols_present": 'all_symbols' in metadata, "all_symbols_value": metadata.get('all_symbols')}
                                 )
                                 
-                                # Try multiple sources for reddit_id
-                                reddit_id = (
-                                    getattr(raw_data, 'post_id', '') or 
-                                    getattr(raw_data, 'reddit_id', '') or
-                                    metadata.get('post_id', '') or
-                                    metadata.get('reddit_id', '')
+                                # Try multiple sources for hn_id
+                                hn_id = (
+                                    getattr(raw_data, 'hn_id', '') or 
+                                    getattr(raw_data, 'post_id', '') or
+                                    metadata.get('hn_id', '') or
+                                    metadata.get('objectID', '')
                                 )
                                 
-                                # Extract URL and use it as fallback identifier
+                                # Extract URL
                                 url = getattr(raw_data, 'url', '')
                                 
-                                # Skip if both reddit_id and URL are empty (prevents UNIQUE constraint failures)
-                                if not reddit_id and not url:
+                                # Skip if hn_id is empty (prevents UNIQUE constraint failures)
+                                if not hn_id:
                                     self.logger.warning(
-                                        f"Skipping Reddit post with no ID or URL",
+                                        f"Skipping Hacker News post with no ID",
                                         extra={"source": source_name, "correlation_id": correlation_id}
                                     )
                                     continue
                                 
-                                # If no reddit_id, extract from URL (e.g., https://reddit.com/r/stocks/comments/abc123/...)
-                                if not reddit_id and url:
-                                    import re
-                                    match = re.search(r'/comments/([a-z0-9]+)/', url)
-                                    if match:
-                                        reddit_id = match.group(1)
-                                    else:
-                                        # Use URL hash as last resort
-                                        import hashlib
-                                        reddit_id = hashlib.md5(url.encode()).hexdigest()[:16]
-                                
                                 from sqlalchemy import select
                                 existing_post = await session.execute(
-                                    select(RedditPost).where(RedditPost.reddit_id == reddit_id)
+                                    select(HackerNewsPost).where(HackerNewsPost.hn_id == hn_id)
                                 )
                                 if existing_post.scalar_one_or_none():
                                     skipped_duplicate_urls += 1
                                     self.logger.debug(
-                                        f"Skipped duplicate Reddit post: {reddit_id}",
+                                        f"Skipped duplicate Hacker News post: {hn_id}",
                                         extra={"source": source_name, "correlation_id": correlation_id}
                                     )
                                     continue  # Skip duplicate
                                 
-                                # Store as Reddit post
+                                # Store as Hacker News post
                                 created_utc = getattr(raw_data, 'timestamp', None)
                                 if created_utc is None:
                                     created_utc = utc_now()  # Use UTC timezone
                                 created_utc = ensure_utc(created_utc)  # Ensure timezone-aware
                                 
                                 # Extract metadata fields
-                                subreddit = metadata.get('subreddit', '')
                                 author = metadata.get('author', '')
-                                score = metadata.get('score', 0)
-                                num_comments = metadata.get('num_comments', 0)
+                                points = metadata.get('points', 0) or 0
+                                num_comments = metadata.get('num_comments', 0) or 0
+                                content_type = metadata.get('content_type', 'story')  # story or comment
+                                parent_id = metadata.get('parent_id', None)
+                                story_id = metadata.get('story_id', None)
+                                story_title = metadata.get('story_title', None)
                                 
                                 # Extract title from metadata or first line
                                 title = metadata.get('title', '')
-                                if not title:
-                                    # Extract from first line of text
+                                if not title and content_type == 'story':
+                                    # Extract from first line of text for stories
                                     text_lines = raw_data.text.split('\n', 1)
                                     title = text_lines[0] if text_lines else ''
                                 
@@ -1352,26 +1334,29 @@ class DataPipeline:
                                 
                                 # DEBUG: Log what we're about to store
                                 self.logger.info(
-                                    f"Creating RedditPost - Title: {title[:50]}, stock_mentions: {all_symbols_value}, "
+                                    f"Creating HackerNewsPost - Title: {title[:50] if title else 'N/A'}, stock_mentions: {all_symbols_value}, "
                                     f"metadata has all_symbols: {'all_symbols' in metadata}",
-                                    extra={"reddit_id": reddit_id, "url": url[:80] if url else "N/A"}
+                                    extra={"hn_id": hn_id, "url": url[:80] if url else "N/A"}
                                 )
                                 
-                                reddit_post = RedditPost(
+                                hn_post = HackerNewsPost(
                                     stock_id=stock.id,
-                                    reddit_id=reddit_id,
-                                    title=title[:500],  # Limit title length
+                                    hn_id=hn_id,
+                                    title=title[:500] if title else None,  # Limit title length, nullable for comments
                                     content=content[:10000],  # Limit content length
-                                    url=url,
-                                    subreddit=subreddit,
+                                    content_type=content_type,
                                     author=author,
-                                    score=score,
+                                    points=points,
                                     num_comments=num_comments,
-                                    created_utc=created_utc,  # When post was created on Reddit
+                                    url=url,
+                                    parent_id=parent_id,
+                                    story_id=story_id,
+                                    story_title=story_title[:500] if story_title else None,
+                                    created_utc=created_utc,  # When item was created on HN
                                     # sentiment_score and confidence will be updated later after sentiment analysis
                                     stock_mentions=all_symbols_value
                                 )
-                                session.add(reddit_post)
+                                session.add(hn_post)
                             
                             await session.commit()
                             stored_count += 1
@@ -1626,7 +1611,7 @@ class DataPipeline:
         # If it's a string, map it to DataSource enum
         if isinstance(collector_source, str):
             collector_mapping = {
-                'reddit': DataSource.REDDIT,
+                'hackernews': DataSource.HACKERNEWS,
                 'finnhub': DataSource.FINNHUB,
                 'newsapi': DataSource.NEWSAPI,
                 'marketaux': DataSource.MARKETAUX
@@ -1724,7 +1709,7 @@ class DataPipeline:
                         await sentiment_repository.create(sentiment_data)
                         stored_count += 1
                         
-                        # ALSO update the corresponding news_articles or reddit_posts record with sentiment
+                        # ALSO update the corresponding news_articles or hackernews_posts record with sentiment
                         await self._update_raw_data_with_sentiment(
                             session,
                             sentiment_result,
@@ -1752,7 +1737,7 @@ class DataPipeline:
         stock: 'StocksWatchlist'
     ) -> None:
         """
-        Update news_articles or reddit_posts with sentiment scores.
+        Update news_articles or hackernews_posts with sentiment scores.
         
         Args:
             session: Database session
@@ -1761,7 +1746,7 @@ class DataPipeline:
         """
         try:
             from sqlalchemy import update, select
-            from ..data_access.models import NewsArticle, RedditPost
+            from ..data_access.models import NewsArticle, HackerNewsPost
             
             # Get source information
             source_str = str(sentiment_result.raw_data.source.value) if hasattr(sentiment_result.raw_data.source, 'value') else str(sentiment_result.raw_data.source)
@@ -1782,12 +1767,12 @@ class DataPipeline:
             stock_mentions = metadata.get('all_symbols', None)
             
             # Update the appropriate table based on source
-            if source_lower == 'reddit':
-                # Update reddit_posts
+            if source_lower == 'hackernews':
+                # Update hackernews_posts
                 stmt = (
-                    update(RedditPost)
-                    .where(RedditPost.url == url)
-                    .where(RedditPost.stock_id == stock.id)
+                    update(HackerNewsPost)
+                    .where(HackerNewsPost.url == url)
+                    .where(HackerNewsPost.stock_id == stock.id)
                     .values(
                         sentiment_score=sentiment_score,
                         confidence=confidence,
@@ -1798,14 +1783,14 @@ class DataPipeline:
                 
                 if result.rowcount > 0:
                     self.logger.debug(
-                        f"Updated Reddit post with sentiment: URL={url[:80]}, sentiment={sentiment_score:.4f}",
-                        extra={"operation": "sentiment_update", "source": "reddit", "stock_id": str(stock.id)}
+                        f"Updated Hacker News post with sentiment: URL={url[:80]}, sentiment={sentiment_score:.4f}",
+                        extra={"operation": "sentiment_update", "source": "hackernews", "stock_id": str(stock.id)}
                     )
                 else:
                     # Post was skipped as duplicate during raw storage phase - this is expected
                     self.logger.debug(
-                        f"Skipped sentiment update - Reddit post not in database (duplicate filtered): URL={url[:80]}",
-                        extra={"operation": "duplicate_skip", "source": "reddit", "stock_id": str(stock.id)}
+                        f"Skipped sentiment update - Hacker News post not in database (duplicate filtered): URL={url[:80]}",
+                        extra={"operation": "duplicate_skip", "source": "hackernews", "stock_id": str(stock.id)}
                     )
                     
             elif source_lower in ['newsapi', 'finnhub', 'marketaux']:
@@ -1937,7 +1922,7 @@ class DataPipeline:
                 symbols=ordered_symbols,
                 date_range=date_range,
                 max_items_per_symbol=100,
-                include_reddit=True,
+                include_hackernews=True,
                 include_finnhub=True,
                 include_newsapi=True,
                 include_marketaux=True,
@@ -2041,19 +2026,19 @@ class DataPipeline:
                 )
                 news_articles = news_result.fetchall()
                 
-                # 2. Find Reddit posts without sentiment analysis  
-                reddit_result = await db.execute(
-                    select(RedditPost.id, RedditPost.title, RedditPost.content, RedditPost.stock_id)
+                # 2. Find Hacker News posts without sentiment analysis  
+                hn_result = await db.execute(
+                    select(HackerNewsPost.id, HackerNewsPost.title, HackerNewsPost.content, HackerNewsPost.stock_id)
                     .where(
-                        RedditPost.created_utc >= cutoff_time,
-                        RedditPost.sentiment_score.is_(None),  # Not yet analyzed
-                        RedditPost.stock_id.in_(stock_ids.values())
+                        HackerNewsPost.created_utc >= cutoff_time,
+                        HackerNewsPost.sentiment_score.is_(None),  # Not yet analyzed
+                        HackerNewsPost.stock_id.in_(stock_ids.values())
                     )
                     .limit(500)  # Process in batches
                 )
-                reddit_posts = reddit_result.fetchall()
+                hn_posts = hn_result.fetchall()
                 
-                total_items = len(news_articles) + len(reddit_posts)
+                total_items = len(news_articles) + len(hn_posts)
                 
                 if total_items == 0:
                     self.logger.info("No unprocessed items found for sentiment analysis")
@@ -2065,7 +2050,7 @@ class DataPipeline:
                         "hours_back": hours_back
                     }
                 
-                self.logger.info(f"Found {len(news_articles)} news articles and {len(reddit_posts)} Reddit posts to process")
+                self.logger.info(f"Found {len(news_articles)} news articles and {len(hn_posts)} Hacker News posts to process")
                 
                 # 3. Prepare sentiment analysis inputs
                 sentiment_inputs = []
@@ -2084,17 +2069,17 @@ class DataPipeline:
                             }
                         ))
                 
-                # Process Reddit posts
-                for post in reddit_posts:
-                    text_content = f"{post.title}\n\n{post.content or ''}"[:2000]  # Limit text length
+                # Process Hacker News posts
+                for post in hn_posts:
+                    text_content = f"{post.title or ''}\n\n{post.content or ''}"[:2000]  # Limit text length
                     if len(text_content.strip()) > 10:  # Skip very short content
                         sentiment_inputs.append(TextInput(
                             text=text_content,
-                            source=DataSource.REDDIT,
+                            source=DataSource.HACKERNEWS,
                             metadata={
                                 "post_id": post.id,
                                 "stock_id": post.stock_id,
-                                "type": "reddit"
+                                "type": "hackernews"
                             }
                         ))
                 
@@ -2118,11 +2103,11 @@ class DataPipeline:
                                         confidence=result.confidence
                                     )
                                 )
-                            elif metadata["type"] == "reddit":
-                                # Update Reddit post
+                            elif metadata["type"] == "hackernews":
+                                # Update Hacker News post
                                 await db.execute(
-                                    update(RedditPost)
-                                    .where(RedditPost.id == metadata["post_id"])
+                                    update(HackerNewsPost)
+                                    .where(HackerNewsPost.id == metadata["post_id"])
                                     .values(
                                         sentiment_score=result.score,
                                         confidence=result.confidence

@@ -108,8 +108,8 @@ async def trigger_manual_collection(
                 start_date=to_naive_utc(utc_now() - timedelta(days=1)),
                 end_date=to_naive_utc(utc_now())
             ),
-            max_items_per_symbol=5,  # Smaller batch for testing
-            include_reddit=True,
+            max_items_per_symbol=50,  # Increased for more comprehensive data collection
+            include_hackernews=True,
             include_finnhub=True,
             include_newsapi=True,
             include_marketaux=True,
@@ -327,12 +327,13 @@ async def get_sentiment_engine_metrics(
                     "session_count": vader_usage,
                     "database_count": vader_count or 0,
                     "percentage_of_total": round((vader_usage / total_usage * 100) if total_usage > 0 else 0, 2),
-                    "used_for": ["Reddit", "Social Media"],
+                    "used_for": ["HackerNews", "Social Media"],
                     "features": [
                         "75 financial terms (bullish/bearish)",
-                        "40 Reddit slang phrases (BTFD, diamond hands, etc.)",
-                        "30 emoji mappings (🚀📈💎🙌)",
+                        "40 community slang phrases (BTFD, diamond hands, etc.)",
+                        "30 emoji mappings",
                         "ML ensemble (Logistic Regression)",
+                        "Sarcasm detection (15+ patterns)",
                         "Negative percentage detection (Down 40%)",
                         "Dynamic thresholds",
                         "Context-aware adjustments"
@@ -1227,7 +1228,7 @@ async def get_collector_health(
     try:
         logger.info("Admin requesting collector health", admin_user=current_admin.email)
         
-        from app.data_access.models import NewsArticle, RedditPost
+        from app.data_access.models import NewsArticle, HackerNewsPost
         from sqlalchemy import select, func
         from datetime import timedelta
         from app.infrastructure.security.api_key_manager import SecureAPIKeyLoader
@@ -1246,12 +1247,12 @@ async def get_collector_health(
         # Get data from last 24 hours to show recent activity
         last_24_hours = utc_now() - timedelta(hours=24)
         
-        # Query Reddit posts from last 24 hours (use created_utc, not created_at)
-        reddit_result = await db.execute(
-            select(func.count()).select_from(RedditPost)
-            .where(RedditPost.created_utc >= last_24_hours)
+        # Query HackerNews posts from last 24 hours
+        hn_result = await db.execute(
+            select(func.count()).select_from(HackerNewsPost)
+            .where(HackerNewsPost.created_utc >= last_24_hours)
         )
-        reddit_count = reddit_result.scalar() or 0
+        hn_count = hn_result.scalar() or 0
         
         # Query news articles by source from last 24 hours (use published_at, not created_at)
         finnhub_result = await db.execute(
@@ -1278,12 +1279,12 @@ async def get_collector_health(
         # Define collectors with their configuration requirements
         collectors = [
             {
-                "name": "Reddit",
-                "internal_name": "reddit",
-                "source": "reddit",
-                "items_collected": reddit_count,
-                "api_key_required": True,
-                "api_key_configured": bool(keys.get('reddit_client_id') and keys.get('reddit_client_secret'))
+                "name": "HackerNews",
+                "internal_name": "hackernews",
+                "source": "community",
+                "items_collected": hn_count,
+                "api_key_required": False,  # HackerNews API is free and unlimited
+                "api_key_configured": True  # Always available
             },
             {
                 "name": "FinHub",
@@ -1777,7 +1778,7 @@ async def get_database_schema(
         
         from app.data_access.models import (
             StocksWatchlist, SentimentData, StockPrice, NewsArticle,
-            RedditPost, SystemLog
+            HackerNewsPost, SystemLog
         )
         
         # Get database inspector
@@ -1796,7 +1797,7 @@ async def get_database_schema(
             'sentiment_data': SentimentData,
             'stock_prices': StockPrice,
             'news_articles': NewsArticle,
-            'reddit_posts': RedditPost,
+            'hackernews_posts': HackerNewsPost,
             'system_logs': SystemLog
         }
         
@@ -1896,7 +1897,7 @@ async def get_table_data(
         
         from app.data_access.models import (
             StocksWatchlist, SentimentData, StockPrice, NewsArticle,
-            RedditPost, SystemLog
+            HackerNewsPost, SystemLog
         )
         from sqlalchemy import select, func, text
         
@@ -1906,7 +1907,7 @@ async def get_table_data(
             'sentiment_data': SentimentData,
             'stock_prices': StockPrice,
             'news_articles': NewsArticle,
-            'reddit_posts': RedditPost,
+            'hackernews_posts': HackerNewsPost,
             'system_logs': SystemLog
         }
         
@@ -1983,7 +1984,7 @@ async def get_database_statistics(
         
         from app.data_access.models import (
             StocksWatchlist, SentimentData, StockPrice, NewsArticle,
-            RedditPost, SystemLog
+            HackerNewsPost, SystemLog
         )
         from sqlalchemy import select, func
         import os
@@ -1996,7 +1997,7 @@ async def get_database_statistics(
             'sentiment_data': SentimentData,
             'stock_prices': StockPrice,
             'news_articles': NewsArticle,
-            'reddit_posts': RedditPost,
+            'hackernews_posts': HackerNewsPost,
             'system_logs': SystemLog
         }
         

@@ -429,7 +429,7 @@ async def _get_system_status(
     total_records = await sentiment_repo.get_total_count()
     
     # Active data sources - all 4 sources
-    active_sources = ["Reddit", "NewsAPI", "FinHub", "Marketaux"]
+    active_sources = ["HackerNews", "NewsAPI", "FinHub", "Marketaux"]
     
     # Convert last_collection to aware UTC for proper API serialization
     last_collection_aware = ensure_utc(last_collection) if last_collection else None

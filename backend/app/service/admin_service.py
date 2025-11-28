@@ -160,51 +160,14 @@ class AdminService(WatchlistSubject):
             # Load all API keys
             keys = key_loader.load_api_keys()
             
-            # Get Reddit keys
-            reddit_client_id = keys.get('reddit_client_id', '')
-            reddit_client_secret = keys.get('reddit_client_secret', '')
-            reddit_user_agent = keys.get('reddit_user_agent', 'InsightStockDash/1.0')
-            
-            # Get other API keys
+            # Get API keys for services that require them
             finnhub_key = keys.get('finnhub_api_key', '')
             newsapi_key = keys.get('news_api_key', '')
             marketaux_key = keys.get('marketaux_api_key', '')
 
-            # Test Reddit connection if credentials are available
-            reddit_status = "inactive"
-            reddit_last_test = None
-            reddit_error = None
-            if reddit_client_id and reddit_client_secret:
-                try:
-                    from app.infrastructure.collectors.reddit_collector import RedditCollector
-                    reddit_collector = RedditCollector(
-                        client_id=reddit_client_id,
-                        client_secret=reddit_client_secret,
-                        user_agent=reddit_user_agent
-                    )
-                    is_valid = await reddit_collector.validate_connection()
-                    reddit_status = "active" if is_valid else "error"
-                    reddit_last_test = utc_now().isoformat()
-                    
-                    if is_valid:
-                        self.logger.info(
-                            "Reddit connection validated successfully",
-                            extra={"operation": "api_validation", "service": "reddit", "status": "success"}
-                        )
-                    else:
-                        reddit_error = "API validation returned false - check credentials"
-                        self.logger.warning(
-                            f"Reddit validation failed: {reddit_error}",
-                            extra={"operation": "api_validation", "service": "reddit", "status": "failed"}
-                        )
-                except Exception as e:
-                    reddit_status = "error"
-                    reddit_last_test = utc_now().isoformat()
-                    reddit_error = str(e)
-                    self.logger.error(
-                        f"Reddit connection test exception: {reddit_error}",
-                        extra={"operation": "api_validation", "service": "reddit", "status": "error", "error_type": type(e).__name__}
-                    )
+            # HackerNews is always available - no API key required
+            hackernews_status = "active"
+            hackernews_last_test = utc_now().isoformat()
 
             # Test FinHub connection if key is available
             finnhub_status = "inactive"
@@ -305,13 +268,11 @@ class AdminService(WatchlistSubject):
             # Build API configuration structure expected by frontend
             return {
                 "apis": {
-                    "reddit": {
-                        "status": reddit_status,
-                        "last_test": reddit_last_test,
-                        "client_id": reddit_client_id,
-                        "client_secret": reddit_client_secret,
-                        "user_agent": reddit_user_agent,
-                        "error": reddit_error if reddit_status == "error" else None
+                    "hackernews": {
+                        "status": hackernews_status,
+                        "last_test": hackernews_last_test,
+                        "api_key_required": False,
+                        "error": None
                     },
                     "finnhub": {
                         "status": finnhub_status,
@@ -334,8 +295,8 @@ class AdminService(WatchlistSubject):
                 },
                 "summary": {
                     "total_apis": 4,
-                    "configured": sum(1 for key in [reddit_client_id, finnhub_key, newsapi_key, marketaux_key] if key),
-                    "active": sum(1 for key in [reddit_client_id, finnhub_key, marketaux_key] if key) + (1 if newsapi_key else 0)
+                    "configured": sum(1 for key in [finnhub_key, newsapi_key, marketaux_key] if key) + 1,  # +1 for HackerNews always configured
+                    "active": sum(1 for status in [hackernews_status, finnhub_status, newsapi_status, marketaux_status] if status == "active")
                 }
             }
             
@@ -361,17 +322,7 @@ class AdminService(WatchlistSubject):
             service = config_update.service
             keys = config_update.keys
             
-            if service == "reddit":
-                if "client_id" in keys:
-                    key_loader.update_api_key("REDDIT_CLIENT_ID", keys["client_id"])
-                    updated_keys.append("reddit_client_id")
-                if "client_secret" in keys:
-                    key_loader.update_api_key("REDDIT_CLIENT_SECRET", keys["client_secret"])
-                    updated_keys.append("reddit_client_secret")
-                if "user_agent" in keys:
-                    key_loader.update_api_key("REDDIT_USER_AGENT", keys["user_agent"])
-                    updated_keys.append("reddit_user_agent")
-            elif service == "finnhub":
+            if service == "finnhub":
                 if "api_key" in keys:
                     key_loader.update_api_key("FINNHUB_API_KEY", keys["api_key"])
                     updated_keys.append("finnhub_api_key")

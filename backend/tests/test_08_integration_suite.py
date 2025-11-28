@@ -180,7 +180,7 @@ class TestPhase9PipelineTesting:
                 end_date=utc_now()
             ),
             max_items_per_symbol=5,
-            include_reddit=True,
+            include_hackernews=True,
             include_finnhub=True,
             include_newsapi=True,
             include_marketaux=True
@@ -225,7 +225,7 @@ class TestPhase9PipelineTesting:
         
         for text, expected_label in test_cases:
             # Create input
-            text_input = TextInput(text, DataSource.REDDIT, "AAPL")
+            text_input = TextInput(text, DataSource.HACKERNEWS, "AAPL")
             
             # Analyze sentiment
             results = await engine.analyze([text_input])
@@ -254,7 +254,7 @@ class TestPhase9PipelineTesting:
                 end_date=utc_now()
             ),
             max_items_per_symbol=3,  # Small number for performance test
-            include_reddit=True,
+            include_hackernews=True,
             include_finnhub=False,  # Disable some collectors for speed
             include_newsapi=False,
             include_marketaux=False
@@ -286,7 +286,7 @@ class TestPhase9PipelineTesting:
                     end_date=utc_now() - timedelta(days=1)  # Invalid date range
                 ),
                 max_items_per_symbol=1,
-                include_reddit=False,
+                include_hackernews=False,
                 include_finnhub=False,
                 include_newsapi=False,
                 include_marketaux=False
@@ -304,7 +304,7 @@ class TestPhase9PipelineTesting:
                     end_date=utc_now()  # Valid date range
                 ),
                 max_items_per_symbol=0,
-                include_reddit=False,
+                include_hackernews=False,
                 include_finnhub=False,
                 include_newsapi=False,
                 include_marketaux=False
@@ -494,7 +494,7 @@ async def test_phase9_complete_integration():
         engine = SentimentEngine() 
         from app.service.sentiment_processing import TextInput, DataSource
         
-        test_input = TextInput("Great stock performance!", DataSource.REDDIT, "AAPL")
+        test_input = TextInput("Great stock performance!", DataSource.HACKERNEWS, "AAPL")
         results = await engine.analyze([test_input])
         assert len(results) > 0
         print("✅ Sentiment analysis working")

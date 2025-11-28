@@ -7,7 +7,7 @@ from app.service.sentiment_processing.models.sentiment_model import TextInput, D
 
 
 async def test_enhanced_vader():
-    """Test Enhanced VADER with Reddit-style texts."""
+    """Test Enhanced VADER with community-style texts."""
     
     # Initialize engine
     engine = get_sentiment_engine(EngineConfig())
@@ -16,19 +16,19 @@ async def test_enhanced_vader():
     # Test cases showcasing Enhanced VADER features
     test_cases = [
         # Financial lexicon + emoji boost
-        ("GME to the moon! Diamond hands forever 🚀💎🙌", DataSource.REDDIT),
+        ("GME to the moon! Diamond hands forever 🚀💎🙌", DataSource.HACKERNEWS),
         
         # Bearish terms + emoji
-        ("Market crash incoming. Bloodbath ahead 📉", DataSource.REDDIT),
+        ("Market crash incoming. Bloodbath ahead 📉", DataSource.HACKERNEWS),
         
-        # Reddit slang
-        ("BTFD! This is the way. YOLO calls on $TSLA", DataSource.REDDIT),
+        # Community slang
+        ("BTFD! This is the way. YOLO calls on $TSLA", DataSource.HACKERNEWS),
         
         # Negative slang
-        ("Paper hands selling. This is a rug pull. GUH", DataSource.REDDIT),
+        ("Paper hands selling. This is a rug pull. GUH", DataSource.HACKERNEWS),
         
         # Mixed sentiment
-        ("Uncertain market conditions. Could go either way.", DataSource.REDDIT),
+        ("Uncertain market conditions. Could go either way.", DataSource.HACKERNEWS),
     ]
     
     inputs = [TextInput(text, source) for text, source in test_cases]
@@ -59,7 +59,7 @@ async def test_enhanced_vader():
     print("\n" + "="*70)
     print("Enhanced VADER Features Active:")
     print("  ✓ Financial Lexicon (55+ terms)")
-    print("  ✓ Reddit Slang Processing (40+ mappings)")
+    print("  ✓ Community Slang Processing (40+ mappings)")
     print("  ✓ Emoji Sentiment Boost (30+ emojis)")
     print("  ✓ Dynamic Thresholds")
     print("  ✓ Context Awareness")

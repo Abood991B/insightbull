@@ -350,19 +350,35 @@ async def _get_stock_overview(stock, sentiment_repo, price_repo, start_date):
         sentiment_scores = [float(s.sentiment_score) for s in sentiment_records]
         avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
     
-    # Determine market status (simplified)
+    # Determine market status with pre-market and after-hours
     eastern = pytz.timezone('US/Eastern')
     now_et = datetime.now(eastern)
-    is_market_open = (
-        now_et.weekday() < 5 and  # Monday = 0, Friday = 4
-        9 <= now_et.hour < 16  # 9 AM to 4 PM ET
-    )
+    current_time = now_et.hour * 60 + now_et.minute  # Minutes since midnight
+    
+    # Market hours in minutes since midnight (Eastern Time)
+    PRE_MARKET_START = 4 * 60       # 4:00 AM ET
+    MARKET_OPEN = 9 * 60 + 30       # 9:30 AM ET
+    MARKET_CLOSE = 16 * 60          # 4:00 PM ET
+    AFTER_HOURS_END = 20 * 60       # 8:00 PM ET
+    
+    is_weekday = now_et.weekday() < 5  # Monday = 0, Friday = 4
+    
+    if not is_weekday:
+        market_status = "Closed"
+    elif PRE_MARKET_START <= current_time < MARKET_OPEN:
+        market_status = "Pre-Market"
+    elif MARKET_OPEN <= current_time < MARKET_CLOSE:
+        market_status = "Open"
+    elif MARKET_CLOSE <= current_time < AFTER_HOURS_END:
+        market_status = "After-Hours"
+    else:
+        market_status = "Closed"
     
     return {
         "current_price": round(current_price, 2),
         "sentiment_score": round(avg_sentiment, 3),
         "price_change_24h": round(price_change_24h, 2),
-        "market_status": "Open" if is_market_open else "Closed",
+        "market_status": market_status,
         "company_name": stock.name,
         "sector": stock.sector
     }

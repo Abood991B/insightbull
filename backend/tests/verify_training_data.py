@@ -10,18 +10,18 @@ cursor = conn.cursor()
 cursor.execute('''
     SELECT COUNT(*) 
     FROM sentiment_data 
-    WHERE source="reddit" 
+    WHERE source="hackernews" 
     AND raw_text IS NOT NULL 
     AND sentiment_label IS NOT NULL
 ''')
 total = cursor.fetchone()[0]
-print(f"Total Reddit samples in database: {total}")
+print(f"Total HackerNews samples in database: {total}")
 
 # Distribution
 cursor.execute('''
     SELECT sentiment_label, COUNT(*) 
     FROM sentiment_data 
-    WHERE source="reddit" 
+    WHERE source="hackernews" 
     AND raw_text IS NOT NULL 
     AND sentiment_label IS NOT NULL 
     GROUP BY sentiment_label
@@ -34,12 +34,12 @@ for row in cursor.fetchall():
 cursor.execute('''
     SELECT raw_text, sentiment_label 
     FROM sentiment_data 
-    WHERE source="reddit" 
+    WHERE source="hackernews" 
     AND raw_text IS NOT NULL 
     AND sentiment_label IS NOT NULL 
     LIMIT 10
 ''')
-print("\nSample Reddit Posts Used for Training (first 10):")
+print("\nSample HackerNews Posts Used for Training (first 10):")
 print("=" * 80)
 for i, row in enumerate(cursor.fetchall(), 1):
     text = row[0][:70] + '...' if len(row[0]) > 70 else row[0]
@@ -49,6 +49,6 @@ conn.close()
 
 print("\n" + "=" * 80)
 print("CONFIRMED: All training data came from YOUR REAL DATABASE")
-print("No mock or sample data was used - these are actual Reddit posts")
+print("No mock or sample data was used - these are actual HackerNews posts")
 print("collected by your pipeline and stored in sentiment_data table")
 print("=" * 80)

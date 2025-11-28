@@ -19,7 +19,7 @@ from app.utils.timezone import utc_now, ensure_utc, to_iso_string, to_naive_utc
 # System metrics will use basic Python capabilities without psutil dependency
 SYSTEM_START_TIME = time.time()
 
-from app.data_access.models import SystemLog, SentimentData, StocksWatchlist, NewsArticle, RedditPost
+from app.data_access.models import SystemLog, SentimentData, StocksWatchlist, NewsArticle, HackerNewsPost
 from app.infrastructure.log_system import get_logger
 
 
@@ -151,13 +151,13 @@ class SystemService:
                 key_loader = SecureAPIKeyLoader()
                 keys = key_loader.load_api_keys()
                 
-                # Check if at least some API keys are configured
-                has_reddit = bool(keys.get('reddit_client_id') and keys.get('reddit_client_secret'))
+                # Check if at least some API keys are configured (HackerNews needs no key)
+                has_hackernews = True  # Always available - no API key needed
                 has_finnhub = bool(keys.get('finnhub_api_key'))
                 has_news = bool(keys.get('news_api_key'))
                 has_marketaux = bool(keys.get('marketaux_api_key'))
                 
-                if has_reddit or has_finnhub or has_news or has_marketaux:
+                if has_hackernews or has_finnhub or has_news or has_marketaux:
                     services["data_collection"] = "healthy"
                 else:
                     services["data_collection"] = "unhealthy"
@@ -221,7 +221,7 @@ class SystemService:
             )
             
             # Calculate total records - only count sentiment_data (processed records)
-            # Note: news_articles and reddit_posts are raw data that gets processed into sentiment_data
+            # Note: news_articles and hn_posts are raw data that gets processed into sentiment_data
             # Counting all three would be double-counting the same data
             total_records = db_metrics.get("total_sentiment_data", 0)
             
@@ -256,10 +256,10 @@ class SystemService:
                 "uptime_seconds": uptime_seconds,
                 "active_stocks": int(active_stocks_count or 0),
                 "total_records": total_records,
-                # Flatten sentiment_breakdown, news_articles, reddit_posts, price_records to top level
+                # Flatten sentiment_breakdown, news_articles, hn_posts, price_records to top level
                 "sentiment_breakdown": db_metrics.get("sentiment_breakdown", {"positive": 0, "neutral": 0, "negative": 0}),
                 "news_articles": db_metrics.get("news_articles", 0),
-                "reddit_posts": db_metrics.get("reddit_posts", 0),
+                "hn_posts": db_metrics.get("hn_posts", 0),
                 "price_records": db_metrics.get("price_records", 0),
                 "price_updates": db_metrics.get("price_records", 0),  # Add price_updates field for frontend compatibility
                 "last_collection": last_collection_display,
@@ -285,7 +285,7 @@ class SystemService:
             stock_count = await self.db.scalar(select(func.count()).select_from(StocksWatchlist))
             sentiment_count = await self.db.scalar(select(func.count()).select_from(SentimentData))
             news_count = await self.db.scalar(select(func.count()).select_from(NewsArticle))
-            reddit_count = await self.db.scalar(select(func.count()).select_from(RedditPost))
+            hn_count = await self.db.scalar(select(func.count()).select_from(HackerNewsPost))
             
             # Get sentiment breakdown by label (case-insensitive)
             positive_count = await self.db.scalar(
@@ -335,14 +335,14 @@ class SystemService:
                 "total_stocks": int(stock_count or 0),
                 "total_sentiment_data": int(sentiment_count or 0),
                 "total_news_articles": int(news_count or 0),
-                "total_reddit_posts": int(reddit_count or 0),
+                "total_hn_posts": int(hn_count or 0),
                 "sentiment_breakdown": {
                     "positive": int(positive_count or 0),
                     "neutral": int(neutral_count or 0),
                     "negative": int(negative_count or 0)
                 },
                 "news_articles": int(news_count or 0),
-                "reddit_posts": int(reddit_count or 0),
+                "hn_posts": int(hn_count or 0),
                 "price_records": int(price_count or 0),
                 # Note: last_collection and last_price_update are returned at top level in _get_system_metrics
                 # Removed from here to avoid duplication in frontend display

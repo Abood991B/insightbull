@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class DataSource(Enum):
     """Supported data sources"""
-    REDDIT = "reddit"
+    HACKERNEWS = "hackernews"
     FINNHUB = "finnhub"
     NEWSAPI = "newsapi"
     MARKETAUX = "marketaux"
@@ -83,7 +83,7 @@ class CollectionConfig:
     max_items_per_symbol: int = 100
     include_comments: bool = True
     language: str = "en"
-    min_score: Optional[int] = None  # Reddit upvotes, news engagement
+    min_score: Optional[int] = None  # HackerNews points, news engagement
     
     def __post_init__(self):
         if not self.symbols:

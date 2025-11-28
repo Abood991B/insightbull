@@ -108,10 +108,10 @@ class SentimentEngine:
         self._active_jobs: Dict[str, AnalysisJob] = {}
         
         # Model routing configuration
-        # Model routing configuration - Hybrid VADER for social media, FinBERT for financial sources
-        # Following FYP specification: "VADER IS FOR REDDIT AND FINBERT FOR THE OTHER 3 SOURCES(MARKETAUX, NEWSAPI, FINHUB)"
+        # Model routing configuration - Hybrid VADER for community discussions, FinBERT for financial sources
+        # Following FYP specification: "VADER IS FOR HACKERNEWS AND FINBERT FOR THE OTHER 3 SOURCES(MARKETAUX, NEWSAPI, FINHUB)"
         self._model_routing = {
-            DataSource.REDDIT: "Hybrid-VADER",      # Social media -> Hybrid VADER
+            DataSource.HACKERNEWS: "Hybrid-VADER", # Community discussions -> Hybrid VADER
             DataSource.FINNHUB: "FinBERT",   # Financial news -> FinBERT
             DataSource.MARKETAUX: "FinBERT", # Financial news -> FinBERT  
             DataSource.NEWSAPI: "FinBERT"    # Financial news -> FinBERT
@@ -477,7 +477,7 @@ if __name__ == "__main__":
         
         # Test inputs from different sources
         test_inputs = [
-            TextInput("I love this stock! Great investment!", DataSource.REDDIT, stock_symbol="AAPL"),
+            TextInput("I love this stock! Great investment!", DataSource.HACKERNEWS, stock_symbol="AAPL"),
             TextInput("Apple Inc. reported strong quarterly earnings today.", DataSource.NEWS, stock_symbol="AAPL"),
             TextInput("Market conditions are uncertain...", DataSource.TWITTER),
             TextInput("Tesla announces breakthrough in battery technology.", DataSource.FINNHUB, stock_symbol="TSLA"),

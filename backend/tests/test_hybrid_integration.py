@@ -25,19 +25,19 @@ async def test_hybrid_vader_integration():
     for source, model in engine._model_routing.items():
         print(f"   - {source.value}: {model}")
     
-    # Test Reddit sentiment (should use Hybrid VADER)
-    print("\n4. Testing Reddit sentiment analysis (Hybrid VADER)...")
-    reddit_texts = [
+    # Test HackerNews sentiment (should use Hybrid VADER)
+    print("\n4. Testing HackerNews sentiment analysis (Hybrid VADER)...")
+    hn_texts = [
         "GME to the moon! Diamond hands forever!",
         "Market crash incoming. Bearish sentiment.",
         "Uncertain market conditions."
     ]
     
-    inputs = [TextInput(text, DataSource.REDDIT) for text in reddit_texts]
+    inputs = [TextInput(text, DataSource.HACKERNEWS) for text in hn_texts]
     results = await engine.analyze(inputs)
     
     print("\n   Results:")
-    for text, result in zip(reddit_texts, results):
+    for text, result in zip(hn_texts, results):
         print(f"\n   Text: {text[:60]}")
         print(f"   - Prediction: {result.label.value}")
         print(f"   - Score: {result.score:.3f}")
@@ -62,16 +62,16 @@ async def test_hybrid_vader_integration():
         print("\n[ERROR] Hybrid VADER model NOT found in engine")
         sys.exit(1)
     
-    if engine._model_routing[DataSource.REDDIT] == "Hybrid-VADER":
-        print("[SUCCESS] Reddit is routed to Hybrid VADER")
+    if engine._model_routing[DataSource.HACKERNEWS] == "Hybrid-VADER":
+        print("[SUCCESS] HackerNews is routed to Hybrid VADER")
     else:
-        print(f"[ERROR] Reddit routing incorrect: {engine._model_routing[DataSource.REDDIT]}")
+        print(f"[ERROR] HackerNews routing incorrect: {engine._model_routing[DataSource.HACKERNEWS]}")
         sys.exit(1)
     
     if results[0].model_name == "Hybrid-VADER":
-        print("[SUCCESS] Reddit analysis uses Hybrid VADER model")
+        print("[SUCCESS] HackerNews analysis uses Hybrid VADER model")
     else:
-        print(f"[ERROR] Reddit analysis used wrong model: {results[0].model_name}")
+        print(f"[ERROR] HackerNews analysis used wrong model: {results[0].model_name}")
         sys.exit(1)
     
     print("\n[SUCCESS] All integration checks passed!")

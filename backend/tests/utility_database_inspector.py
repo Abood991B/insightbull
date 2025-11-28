@@ -120,7 +120,7 @@ def check_database_contents():
         print("⏰ Recent Activity Check:")
         print("-" * 25)
         
-        recent_tables = ['sentiment_data', 'news_articles', 'reddit_posts', 'stock_prices']
+        recent_tables = ['sentiment_data', 'news_articles', 'hackernews_posts', 'stock_prices']
         for table in recent_tables:
             try:
                 cursor.execute(f"""

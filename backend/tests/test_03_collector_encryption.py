@@ -39,7 +39,7 @@ async def test_data_collector_encryption():
         print("\n2. Checking collector initialization status...")
         
         collectors_info = [
-            ("Reddit", collector.reddit_collector),
+            ("HackerNews", collector.hackernews_collector),
             ("FinHub", collector.finnhub_collector),
             ("MarketAux", collector.marketaux_collector),
             ("NewsAPI", collector.newsapi_collector)
@@ -61,8 +61,8 @@ async def test_data_collector_encryption():
         if hasattr(collector, 'secure_loader'):
             print("   ✅ SecureAPIKeyLoader is integrated")
             
-            # Test key retrieval
-            test_keys = ['REDDIT_CLIENT_ID', 'FINNHUB_API_KEY', 'NEWSAPI_KEY', 'MARKETAUX_API_KEY']
+            # Test key retrieval (HackerNews has no API key - free and unlimited)
+            test_keys = ['FINNHUB_API_KEY', 'NEWSAPI_KEY', 'MARKETAUX_API_KEY']
             for key_name in test_keys:
                 key_value = collector.secure_loader.get_decrypted_key(key_name)
                 if key_value:
@@ -84,7 +84,7 @@ async def test_data_collector_encryption():
         }
         
         collection_methods = [
-            ("Reddit", collector._collect_reddit_data),
+            ("HackerNews", collector._collect_hackernews_data),
             ("FinHub", collector._collect_finnhub_data),
             ("MarketAux", collector._collect_marketaux_data),
             ("NewsAPI", collector._collect_newsapi_data)
@@ -104,9 +104,8 @@ async def test_data_collector_encryption():
         print("\n5. Environment and encryption validation...")
         
         # Check if environment variables are properly loaded
+        # Note: HackerNews uses free Algolia API with no key required
         env_status = {
-            'REDDIT_CLIENT_ID': bool(os.getenv('REDDIT_CLIENT_ID')),
-            'REDDIT_CLIENT_SECRET': bool(os.getenv('REDDIT_CLIENT_SECRET')),
             'FINNHUB_API_KEY': bool(os.getenv('FINNHUB_API_KEY')),
             'NEWSAPI_KEY': bool(os.getenv('NEWSAPI_KEY')),
             'MARKETAUX_API_KEY': bool(os.getenv('MARKETAUX_API_KEY')),
@@ -152,8 +151,9 @@ def show_detailed_collector_status():
     print("\n📋 Collector Requirements Check:")
     print("-" * 40)
     
+    # Note: HackerNews uses free Algolia API (no key required)
     requirements = {
-        'Reddit': ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET'],
+        'HackerNews': [],  # Free Algolia API - no credentials needed
         'FinHub': ['FINNHUB_API_KEY'],
         'NewsAPI': ['NEWSAPI_KEY'],
         'MarketAux': ['MARKETAUX_API_KEY']
@@ -161,8 +161,13 @@ def show_detailed_collector_status():
     
     for collector_name, required_keys in requirements.items():
         print(f"\n{collector_name} Collector:")
-        all_keys_present = True
         
+        if not required_keys:
+            print(f"  ✅ No API key required (free Algolia API)")
+            print(f"  → Status: READY")
+            continue
+        
+        all_keys_present = True
         for key in required_keys:
             value = os.getenv(key)
             if value:

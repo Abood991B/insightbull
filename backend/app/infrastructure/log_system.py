@@ -182,7 +182,7 @@ class LogSystem:
             "Observer registered",
             "Watchlist observer",
             "Administrator initiated system logs export",
-            "Reddit collector configured",
+            "HackerNews collector configured",
             "FinHub collector configured", 
             "NewsAPI collector configured",
             "MarketAux collector configured",

@@ -5,7 +5,7 @@ Train Hybrid VADER ML Component
 Trains the Logistic Regression component of Hybrid VADER on labeled data.
 
 Data Sources (in priority order):
-1. Real-world Reddit posts from database with sentiment labels
+1. Real-world HackerNews posts from database with sentiment labels
 2. CSV file with labeled data (if --data-path provided)
 3. Synthetic sample data (fallback for testing)
 
@@ -35,7 +35,7 @@ from sqlalchemy import select
 
 
 # Sample training data (synthetic examples for demonstration)
-# In production, replace with your 1000 labeled Reddit comments from FYP evaluation
+# In production, replace with your 1000 labeled community comments from FYP evaluation
 SAMPLE_TRAINING_DATA = [
     # Positive examples (label=2)
     ("GME to the moon! Diamond hands forever 🚀💎🙌", 2),
@@ -109,7 +109,7 @@ async def load_database_data():
     """
     Load real-world sentiment data from database.
     
-    Extracts Reddit posts with their sentiment labels for training.
+    Extracts HackerNews posts with their sentiment labels for training.
     
     Returns:
         List of (text, label) tuples
@@ -122,10 +122,10 @@ async def load_database_data():
     await init_database()
     
     async with get_db_session() as session:
-        # Query all sentiment data from Reddit source with labels
+        # Query all sentiment data from HackerNews source with labels
         result = await session.execute(
             select(SentimentData)
-            .where(SentimentData.source == 'reddit')
+            .where(SentimentData.source == 'hackernews')
             .where(SentimentData.raw_text.isnot(None))
             .where(SentimentData.sentiment_label.isnot(None))
             .order_by(SentimentData.created_at.desc())
@@ -166,13 +166,13 @@ def load_csv_data(csv_path: str):
     
     Expected format:
     - Column 'text': Text content
-    - Column 'label': Integer label (0=negative, 1=neutral, 2=positive)
+    - Column 'label': Integer (0, 1, 2) OR string ('negative', 'neutral', 'positive')
     
     Args:
         csv_path: Path to CSV file
         
     Returns:
-        List of (text, label) tuples
+        List of (text, label) tuples where label is int (0, 1, 2)
     """
     print(f"Loading data from CSV: {csv_path}")
     
@@ -182,7 +182,35 @@ def load_csv_data(csv_path: str):
     if 'text' not in df.columns or 'label' not in df.columns:
         raise ValueError("CSV must have 'text' and 'label' columns")
     
-    data = [(row['text'], row['label']) for _, row in df.iterrows()]
+    # Map string labels to integers if needed
+    label_map = {
+        'negative': 0, 'neg': 0,
+        'neutral': 1, 'neu': 1,
+        'positive': 2, 'pos': 2
+    }
+    
+    data = []
+    for _, row in df.iterrows():
+        text = str(row['text']).strip()
+        label = row['label']
+        
+        # Skip empty texts
+        if not text or len(text) < 5:
+            continue
+        
+        # Convert string labels to integers
+        if isinstance(label, str):
+            label = label.lower().strip()
+            if label in label_map:
+                label = label_map[label]
+            else:
+                continue  # Skip unknown labels
+        else:
+            label = int(label)
+            if label not in [0, 1, 2]:
+                continue
+        
+        data.append((text, label))
     
     print(f"Loaded {len(data)} samples from CSV")
     
@@ -190,7 +218,7 @@ def load_csv_data(csv_path: str):
     from collections import Counter
     labels = [label for _, label in data]
     dist = Counter(labels)
-    print(f"  Distribution: Negative={dist[0]}, Neutral={dist[1]}, Positive={dist[2]}")
+    print(f"  Distribution: Negative={dist.get(0, 0)}, Neutral={dist.get(1, 0)}, Positive={dist.get(2, 0)}")
     
     return data
 
@@ -206,7 +234,7 @@ async def load_training_data(data_path: str = None, use_db_only: bool = False,
     Load training data from multiple sources.
     
     Priority:
-    1. Database data (real-world Reddit posts)
+    1. Database data (real-world HackerNews posts)
     2. CSV file (if provided)
     3. Sample data (if needed to reach min_samples)
     
@@ -252,7 +280,7 @@ async def load_training_data(data_path: str = None, use_db_only: bool = False,
             f"Insufficient training data: {len(all_data)} samples "
             f"(minimum required: {min_samples})\n"
             f"Options:\n"
-            f"  1. Run the data collection pipeline to gather more Reddit data\n"
+            f"  1. Run the data collection pipeline to gather more HackerNews data\n"
             f"  2. Provide a CSV file with --data-path\n"
             f"  3. Lower --min-samples threshold"
         )
@@ -362,7 +390,7 @@ async def train_hybrid_model(data_path: str = None, use_db_only: bool = False,
     ]
     
     from app.service.sentiment_processing.models.sentiment_model import TextInput, DataSource
-    inputs = [TextInput(text, DataSource.REDDIT) for text in test_texts]
+    inputs = [TextInput(text, DataSource.HACKERNEWS) for text in test_texts]
     predictions = await model.analyze(inputs)
     
     for text, result in zip(test_texts, predictions):
@@ -404,7 +432,7 @@ Examples:
   python train_hybrid_vader.py --use-db-only
   
   # Use database + CSV data
-  python train_hybrid_vader.py --data-path labeled_reddit.csv
+  python train_hybrid_vader.py --data-path labeled_data.csv
   
   # Require at least 500 samples
   python train_hybrid_vader.py --min-samples 500

@@ -26,7 +26,7 @@ class SentimentDataPoint(BaseModel):
     score: float = Field(..., description="Sentiment score (-1.0 to 1.0)")
     label: str = Field(..., description="Sentiment label (Positive/Neutral/Negative)")
     confidence: Optional[float] = Field(None, description="Model confidence score")
-    source: str = Field(..., description="Data source (reddit, news, etc.)")
+    source: str = Field(..., description="Data source (hackernews, news, etc.)")
 
 
 class StockMetrics(BaseModel):
