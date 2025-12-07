@@ -287,7 +287,7 @@ async def _calculate_stock_metrics(
     
     # Calculate sentiment metrics
     if sentiment_history:
-        sentiment_scores = [float(s.sentiment_score) for s in sentiment_history]
+        sentiment_scores = [float(s.score) for s in sentiment_history]
         avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
         sentiment_volatility = _calculate_standard_deviation(sentiment_scores)
     else:
@@ -302,7 +302,10 @@ async def _calculate_stock_metrics(
         price_change_percent = ((latest_price - oldest_price) / oldest_price) * 100
     
     # Calculate data quality score (simplified)
-    expected_records = max(1, (utc_now() - start_date).days * 24)  # Hourly expected
+    # Use naive UTC for both to avoid timezone comparison issues
+    now_naive = to_naive_utc(utc_now())
+    start_naive = start_date if start_date.tzinfo is None else to_naive_utc(start_date)
+    expected_records = max(1, (now_naive - start_naive).days * 24)  # Hourly expected
     actual_records = len(sentiment_history)
     data_quality_score = min(1.0, actual_records / expected_records)
     

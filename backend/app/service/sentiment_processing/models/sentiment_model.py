@@ -3,7 +3,7 @@ Sentiment Analysis Models
 ========================
 
 Implementation of the Strategy pattern for sentiment analysis.
-Supports dual-model approach: FinBERT for financial news, VADER for social media.
+Uses FinBERT-Tone (yiyanghkust/finbert-tone) unified model for all sources.
 
 Following FYP Report specification for SY-FR3 (Perform Sentiment Analysis).
 """

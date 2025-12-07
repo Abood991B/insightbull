@@ -2,8 +2,8 @@
 Phase 5: Sentiment Analysis Engine Tests
 ========================================
 
-Essential tests for the dual-model sentiment analysis implementation.
-Covers VADER (social media) and FinBERT (financial news) integration.
+Essential tests for the FinBERT sentiment analysis implementation.
+Uses ProsusAI/finbert model with optional Gemini AI verification.
 """
 
 import pytest
@@ -13,7 +13,7 @@ from datetime import datetime
 
 # Import sentiment analysis components
 from app.service.sentiment_processing import (
-    SentimentResult, SentimentLabel, TextInput, DataSource, HybridVADERModel, FinBERTModel, SentimentEngine, EngineConfig
+    SentimentResult, SentimentLabel, TextInput, DataSource, FinBERTModel, SentimentEngine, EngineConfig
 )
 from app.utils.timezone import utc_now
 
@@ -27,123 +27,100 @@ class TestSentimentAnalysis:
             label=SentimentLabel.POSITIVE,
             score=0.75,
             confidence=0.85,
-            raw_scores={'pos': 0.75, 'neg': 0.1, 'neu': 0.15},
+            raw_scores={'positive': 0.75, 'negative': 0.1, 'neutral': 0.15},
             processing_time=25.0,
-            model_name="VADER"
+            model_name="FinBERT"
         )
         
         assert result.label == SentimentLabel.POSITIVE
         assert result.score == 0.75
         assert result.confidence == 0.85
-        assert result.model_name == "VADER"
+        assert result.model_name == "FinBERT"
     
     def test_text_input_structure(self):
         """Test TextInput data structure."""
         text_input = TextInput(
-            text="Great stock performance! 📈",
-            source=DataSource.HACKERNEWS,
+            text="Apple reports strong quarterly earnings",
+            source=DataSource.NEWSAPI,
             stock_symbol="AAPL",
             timestamp=utc_now()
         )
         
-        assert text_input.text == "Great stock performance! 📈"
-        assert text_input.source == DataSource.HACKERNEWS
+        assert text_input.text == "Apple reports strong quarterly earnings"
+        assert text_input.source == DataSource.NEWSAPI
         assert text_input.stock_symbol == "AAPL"
     
     @pytest.mark.asyncio
-    async def test_vader_model_basic(self):
-        """Test VADER model basic functionality."""
-        # Skip - VADERModel no longer standalone (now part of Hybrid VADER)
-        # Test uses mocks anyway, Hybrid VADER tested via integration tests
-        pass
-    
-    @pytest.mark.asyncio
-    async def test_sentiment_engine_routing(self):
-        """Test sentiment engine model routing."""
+    async def test_sentiment_engine_with_finbert(self):
+        """Test sentiment engine with FinBERT model."""
         config = EngineConfig(
-            enable_vader=True,
-            enable_finbert=True,  # Enable FinBERT for proper routing testing
+            enable_finbert=True,
             default_batch_size=4
         )
         
-        with patch('app.service.sentiment_processing.models.hybrid_vader_model.SentimentIntensityAnalyzer') as mock_analyzer, \
-             patch('app.service.sentiment_processing.models.finbert_model.pipeline') as mock_pipeline:
-            # Mock VADER
-            mock_vader_instance = Mock()
-            mock_vader_instance.polarity_scores.return_value = {
-                'compound': 0.5,
-                'pos': 0.6,
-                'neu': 0.3,
-                'neg': 0.1
-            }
-            mock_analyzer.return_value = mock_vader_instance
-            
+        with patch('app.service.sentiment_processing.models.finbert_model.pipeline') as mock_pipeline:
             # Mock FinBERT pipeline
             mock_finbert_pipeline = Mock()
             mock_finbert_pipeline.return_value = [{
                 'label': 'positive',
-                'score': 0.8
+                'score': 0.85
             }]
             mock_pipeline.return_value = mock_finbert_pipeline
             
             engine = SentimentEngine(config)
             await engine.initialize()
             
-            # Test routing
-            social_inputs = [
-                TextInput("Love this stock! 💎", DataSource.HACKERNEWS, "AAPL"),
-                TextInput("Great investment choice", DataSource.NEWSAPI, "MSFT")
+            # Test analysis
+            inputs = [
+                TextInput("Great investment opportunity", DataSource.NEWSAPI, "AAPL"),
+                TextInput("Strong earnings report", DataSource.FINNHUB, "MSFT")
             ]
             
-            results = await engine.analyze(social_inputs)
+            results = await engine.analyze(inputs)
             
             assert len(results) == 2
             for result in results:
-                # With both models enabled, expect proper routing to Hybrid-VADER or FinBERT
-                assert result.model_name in ["Hybrid-VADER", "FinBERT"]
+                assert result.model_name == "FinBERT"
                 assert result.label in [SentimentLabel.POSITIVE, SentimentLabel.NEGATIVE, SentimentLabel.NEUTRAL]
     
     @pytest.mark.asyncio
     async def test_engine_health_check(self):
         """Test engine health monitoring."""
-        config = EngineConfig(enable_vader=True, enable_finbert=False)
+        config = EngineConfig(enable_finbert=True)
         
-        with patch('app.service.sentiment_processing.models.hybrid_vader_model.SentimentIntensityAnalyzer') as mock_analyzer:
-            # Properly mock the analyzer to avoid initialization issues
-            mock_instance = Mock()
-            mock_analyzer.return_value = mock_instance
+        with patch('app.service.sentiment_processing.models.finbert_model.pipeline') as mock_pipeline:
+            mock_finbert_pipeline = Mock()
+            mock_finbert_pipeline.return_value = [{'label': 'neutral', 'score': 0.7}]
+            mock_pipeline.return_value = mock_finbert_pipeline
             
             engine = SentimentEngine(config)
             await engine.initialize()
             
             health = await engine.health_check()
             
-            # Health may be degraded if models have issues, but engine should be initialized
             assert health['engine_initialized'] is True
             assert isinstance(health['available_models'], list)
     
     @pytest.mark.asyncio  
     async def test_engine_statistics(self):
         """Test engine performance statistics."""
-        config = EngineConfig(enable_vader=True, enable_finbert=False)
+        config = EngineConfig(enable_finbert=True)
         
-        with patch('app.service.sentiment_processing.models.hybrid_vader_model.SentimentIntensityAnalyzer') as mock_analyzer:
-            mock_instance = Mock()
-            mock_instance.polarity_scores.return_value = {
-                'compound': 0.3,
-                'pos': 0.4,
-                'neu': 0.4,
-                'neg': 0.2
-            }
-            mock_analyzer.return_value = mock_instance
+        with patch('app.service.sentiment_processing.models.finbert_model.pipeline') as mock_pipeline:
+            mock_finbert_pipeline = Mock()
+            mock_finbert_pipeline.return_value = [{
+                'label': 'positive',
+                'score': 0.75
+            }]
+            mock_pipeline.return_value = mock_finbert_pipeline
             
             engine = SentimentEngine(config)
             await engine.initialize()
             
             # Process some texts
             inputs = [
-                TextInput("Good stock", DataSource.HACKERNEWS, "AAPL"),
-                TextInput("Bad news", DataSource.HACKERNEWS, "TSLA")
+                TextInput("Good stock performance", DataSource.NEWSAPI, "AAPL"),
+                TextInput("Weak earnings forecast", DataSource.FINNHUB, "TSLA")
             ]
             
             await engine.analyze(inputs)
@@ -151,7 +128,7 @@ class TestSentimentAnalysis:
             stats = engine.get_stats()
             assert stats.total_texts_processed >= 2
             assert stats.success_rate == 100.0
-            assert 'Hybrid-VADER' in stats.model_usage
+            assert 'FinBERT' in stats.model_usage
     
     def test_sentiment_labels_enum(self):
         """Test sentiment label enumeration."""
@@ -169,14 +146,12 @@ class TestSentimentAnalysis:
     def test_engine_config(self):
         """Test engine configuration."""
         config = EngineConfig(
-            enable_vader=True,
             enable_finbert=True,
             finbert_use_gpu=False,
             max_concurrent_batches=3,
             default_batch_size=16
         )
         
-        assert config.enable_vader is True
         assert config.enable_finbert is True
         assert config.finbert_use_gpu is False
         assert config.max_concurrent_batches == 3
@@ -187,10 +162,10 @@ class TestSentimentAnalysis:
 def create_sample_texts():
     """Create sample text inputs for testing."""
     return [
-        TextInput("Bullish on AAPL! 🚀", DataSource.HACKERNEWS, "AAPL"),
-        TextInput("Apple earnings beat expectations", DataSource.NEWSAPI, "AAPL"),
-        TextInput("Market looking volatile today", DataSource.MARKETAUX, "SPY"),
-        TextInput("Tesla production challenges continue", DataSource.FINNHUB, "TSLA")
+        TextInput("Apple reports record quarterly revenue", DataSource.NEWSAPI, "AAPL"),
+        TextInput("Tesla faces production challenges", DataSource.FINNHUB, "TSLA"),
+        TextInput("Microsoft cloud growth accelerates", DataSource.MARKETAUX, "MSFT"),
+        TextInput("NVIDIA demand exceeds expectations", DataSource.NEWSAPI, "NVDA")
     ]
 
 
@@ -208,39 +183,41 @@ if __name__ == "__main__":
     # Run a quick validation test
     async def quick_test():
         """Quick validation of core functionality."""
-        print("🧪 Running Phase 6 sentiment analysis validation...")
+        print("Testing Phase 5 sentiment analysis validation...")
         
         # Test data structures
         sample_result = SentimentResult(
             label=SentimentLabel.POSITIVE,
             score=0.8,
             confidence=0.9,
-            raw_scores={'pos': 0.8, 'neg': 0.1, 'neu': 0.1},
+            raw_scores={'positive': 0.8, 'negative': 0.1, 'neutral': 0.1},
             processing_time=10.0,
-            model_name="TestModel"
+            model_name="FinBERT"
         )
         assert_valid_sentiment_result(sample_result)
         
-        # Test VADER with mocked analyzer
-        with patch('app.service.sentiment_processing.models.hybrid_vader_model.SentimentIntensityAnalyzer') as mock_analyzer:
-            mock_instance = Mock()
-            mock_instance.polarity_scores.return_value = {
-                'compound': 0.5,
-                'pos': 0.6,
-                'neu': 0.3,
-                'neg': 0.1
-            }
-            mock_analyzer.return_value = mock_instance
+        # Test FinBERT with mocked pipeline
+        with patch('app.service.sentiment_processing.models.finbert_model.pipeline') as mock_pipeline:
+            mock_finbert_pipeline = Mock()
+            mock_finbert_pipeline.return_value = [{'label': 'positive', 'score': 0.85}]
+            mock_pipeline.return_value = mock_finbert_pipeline
             
-            # Skip - VADERModel no longer standalone (now part of Hybrid VADER)
-            pass
+            config = EngineConfig(enable_finbert=True)
+            engine = SentimentEngine(config)
+            await engine.initialize()
+            
+            inputs = [TextInput("Test text", DataSource.NEWSAPI, "AAPL")]
+            results = await engine.analyze(inputs)
+            
+            assert len(results) == 1
+            assert results[0].model_name == "FinBERT"
         
-        print("✅ Phase 6 sentiment analysis validation complete!")
+        print("Phase 5 sentiment analysis validation complete!")
         return True
     
     # Run the quick test
     success = asyncio.run(quick_test())
     if success:
-        print("🎯 All essential tests passed - Phase 6 implementation validated!")
+        print("All essential tests passed - Phase 5 implementation validated!")
     else:
-        print("❌ Validation failed")
+        print("Validation failed")

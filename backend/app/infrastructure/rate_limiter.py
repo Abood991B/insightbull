@@ -116,49 +116,104 @@ class RateLimitHandler:
     """
     
     # Default rate limit configurations for known APIs
+    # Configured based on actual API documentation and free tier limits
     DEFAULT_CONFIGS = {
+        # HackerNews Algolia API - No official limits, very generous
+        # Recommended: Be courteous, 2 req/sec is safe
         "hackernews": RateLimitConfig(
-            requests_per_minute=120,  # HN API is generous
+            requests_per_minute=120,   # 2 req/sec
             requests_per_hour=7200,
-            burst_limit=20
+            burst_limit=10,            # Conservative burst
+            backoff_strategy=BackoffStrategy.LINEAR,
+            initial_delay=0.5,
+            max_delay=30.0,
+            max_retries=3
         ),
+        
+        # GDELT DOC 2.0 API - Free, no auth required
+        # No official limits but be courteous (1-2 req/sec recommended)
+        # Returns up to 250 articles per request
+        "gdelt": RateLimitConfig(
+            requests_per_minute=60,    # 1 req/sec (courteous)
+            requests_per_hour=3600,
+            burst_limit=5,
+            backoff_strategy=BackoffStrategy.LINEAR,
+            initial_delay=1.0,
+            max_delay=60.0,
+            max_retries=3
+        ),
+        
+        # Finnhub API - Free tier: 60 calls/minute
+        # Premium has higher limits
         "finnhub": RateLimitConfig(
-            requests_per_minute=60,
-            requests_per_hour=3000,
-            burst_limit=5
+            requests_per_minute=30,    # Conservative (50% of limit)
+            requests_per_hour=1500,    # ~25/min sustained
+            burst_limit=5,
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+            initial_delay=1.0,
+            max_delay=120.0,
+            max_retries=3
         ),
+        
+        # NewsAPI Free tier: 100 requests/day, 1000 requests for dev
+        # Very limited - must be conservative
         "newsapi": RateLimitConfig(
-            requests_per_minute=5,  # Free tier limit
-            requests_per_hour=100,
-            burst_limit=2
+            requests_per_minute=2,     # Very conservative (100/day = ~4/hr)
+            requests_per_hour=50,      # Leave buffer for retries
+            burst_limit=1,             # No bursting allowed
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+            initial_delay=2.0,
+            max_delay=300.0,           # 5 min max delay
+            max_retries=2              # Fewer retries to conserve quota
         ),
+        
+        # Marketaux API - Free tier: 100 requests/day
+        # Supports batch requests (up to 10 symbols per request)
         "marketaux": RateLimitConfig(
-            requests_per_minute=10,
-            requests_per_hour=100,
-            burst_limit=3
+            requests_per_minute=5,     # ~100/day = 4/hr, be conservative
+            requests_per_hour=50,
+            burst_limit=2,
+            backoff_strategy=BackoffStrategy.EXPONENTIAL,
+            initial_delay=2.0,
+            max_delay=300.0,
+            max_retries=2
         )
     }
     
-    # High-priority stocks (high trading volume)
+    # High-priority stocks (high trading volume, most searched)
     HIGH_PRIORITY_SYMBOLS = {
         "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", 
         "META", "TSLA", "NFLX"
     }
     
     # Cache TTL by source (in seconds)
+    # Longer TTL for rate-limited APIs, shorter for free APIs
     CACHE_TTL = {
-        "hackernews": 300,  # 5 minutes
-        "finnhub": 600,     # 10 minutes
-        "newsapi": 900,     # 15 minutes
-        "marketaux": 900    # 15 minutes
+        "hackernews": 180,   # 3 minutes (fast updates, generous API)
+        "gdelt": 300,        # 5 minutes (updates every 15 min)
+        "finnhub": 600,      # 10 minutes (conserve quota)
+        "newsapi": 1800,     # 30 minutes (very limited quota)
+        "marketaux": 1800    # 30 minutes (very limited quota)
     }
     
     # Concurrency limits per source
+    # Higher for free APIs, lower for rate-limited ones
     SEMAPHORE_LIMITS = {
-        "hackernews": 5,   # 5 concurrent HN requests
-        "finnhub": 5,      # 5 concurrent FinHub requests
-        "newsapi": 2,      # 2 concurrent NewsAPI requests
-        "marketaux": 3     # 3 concurrent Marketaux requests
+        "hackernews": 5,    # 5 concurrent requests (generous API)
+        "gdelt": 3,         # 3 concurrent (be courteous)
+        "finnhub": 3,       # 3 concurrent (moderate limit)
+        "newsapi": 1,       # 1 concurrent (very limited)
+        "marketaux": 2      # 2 concurrent (limited but supports batching)
+    }
+    
+    # Optimal items per symbol for each source
+    # Based on API capabilities and typical response sizes
+    OPTIMAL_ITEMS_PER_SYMBOL = {
+        "hackernews": 25,   # Stories + comments combined
+        "gdelt": 30,        # Returns up to 250/request, be selective
+        "finnhub": 20,      # Company news is well-curated
+        "newsapi": 10,      # Limited quota, quality over quantity
+        "marketaux": 15     # Moderate, supports batching
     }
     
     def __init__(self, custom_configs: Optional[Dict[str, RateLimitConfig]] = None):
@@ -671,3 +726,87 @@ class RateLimitHandler:
             except:
                 pass
         return dict(counts)
+    
+    def get_optimal_items_per_symbol(self, source: str) -> int:
+        """
+        Get the optimal number of items to fetch per symbol for a source.
+        
+        Based on API limits, response quality, and quota conservation.
+        
+        Args:
+            source: API source identifier
+            
+        Returns:
+            Recommended max items per symbol
+        """
+        return self.OPTIMAL_ITEMS_PER_SYMBOL.get(source, 15)
+    
+    def get_collection_strategy(self, source: str, num_symbols: int) -> Dict[str, Any]:
+        """
+        Get recommended collection strategy for a source based on number of symbols.
+        
+        Returns strategy with batch size, parallel vs sequential, delays, etc.
+        
+        Args:
+            source: API source identifier
+            num_symbols: Number of symbols to collect
+            
+        Returns:
+            Strategy configuration dict
+        """
+        config = self.configs.get(source)
+        if not config:
+            return {"mode": "sequential", "batch_size": 1, "delay_between_batches": 1.0}
+        
+        strategies = {
+            "hackernews": {
+                "mode": "parallel",
+                "batch_size": 10,              # Process 10 symbols at once
+                "delay_between_batches": 0.1,  # Very generous API
+                "delay_between_symbols": 0.1,
+                "max_concurrent": 5
+            },
+            "gdelt": {
+                "mode": "sequential",          # Be courteous to free API
+                "batch_size": 1,
+                "delay_between_batches": 0.5,
+                "delay_between_symbols": 0.5,
+                "max_concurrent": 3
+            },
+            "finnhub": {
+                "mode": "parallel",
+                "batch_size": 5,               # Process 5 at a time
+                "delay_between_batches": 1.0,  # Respect rate limits
+                "delay_between_symbols": 0.2,
+                "max_concurrent": 3
+            },
+            "newsapi": {
+                "mode": "sequential",          # Very limited quota
+                "batch_size": 1,
+                "delay_between_batches": 5.0,  # 12 req/min max
+                "delay_between_symbols": 5.0,
+                "max_concurrent": 1
+            },
+            "marketaux": {
+                "mode": "batch",               # Supports batch requests
+                "batch_size": 10,              # Up to 10 symbols per request
+                "delay_between_batches": 3.0,
+                "delay_between_symbols": 0,    # Batched, no per-symbol delay
+                "max_concurrent": 2
+            }
+        }
+        
+        strategy = strategies.get(source, {
+            "mode": "sequential",
+            "batch_size": 1,
+            "delay_between_batches": 2.0,
+            "delay_between_symbols": 1.0,
+            "max_concurrent": 1
+        })
+        
+        # Adjust based on number of symbols
+        if num_symbols > 15 and source in ["newsapi", "marketaux"]:
+            # For many symbols with limited APIs, increase delays
+            strategy["delay_between_batches"] *= 1.5
+        
+        return strategy

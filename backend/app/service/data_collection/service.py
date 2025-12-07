@@ -25,7 +25,8 @@ from app.infrastructure.collectors import (
     HackerNewsCollector,
     FinHubCollector,
     NewsAPICollector,
-    MarketauxCollector
+    MarketauxCollector,
+    GDELTCollector
 )
 from app.infrastructure import get_logger
 from app.infrastructure.security.security_utils import SecurityUtils
@@ -65,6 +66,7 @@ class DataCollectionService:
         self.security = SecurityUtils()
         self.collectors = {
             'hackernews': HackerNewsCollector(),  # No API key required
+            'gdelt': GDELTCollector(),  # No API key required - free and unlimited
             'finnhub': FinHubCollector(
                 api_key=self.security.get_api_key("FINNHUB_API_KEY", "finnhub_api_key")
             ),
@@ -94,7 +96,7 @@ class DataCollectionService:
         - Handle errors gracefully
         """
         if sources is None:
-            sources = ['hackernews', 'finnhub', 'newsapi']
+            sources = ['hackernews', 'gdelt', 'finnhub', 'newsapi']
         
         # Validate business rules
         symbols = self._validate_symbols(symbols)
@@ -130,6 +132,10 @@ class DataCollectionService:
                 # Apply business logic based on source type
                 if source == 'hackernews':
                     data = await self._collect_hackernews_with_rules(
+                        collector, symbol, days_back, max_items
+                    )
+                elif source == 'gdelt':
+                    data = await self._collect_gdelt_with_rules(
                         collector, symbol, days_back, max_items
                     )
                 elif source in ['finnhub', 'newsapi', 'marketaux']:
@@ -215,6 +221,54 @@ class DataCollectionService:
             self.logger.warning(f"Failed to collect from Hacker News for {symbol}: {e}")
             return []
     
+    async def _collect_gdelt_with_rules(
+        self,
+        collector: GDELTCollector,
+        symbol: str,
+        days_back: int,
+        max_items: int
+    ) -> List[Dict[str, Any]]:
+        """Apply business rules for GDELT data collection"""
+        from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
+        
+        # Create collection config
+        date_range = DateRange.last_days(days_back)
+        config = CollectionConfig(
+            symbols=[symbol],
+            date_range=date_range,
+            max_items_per_symbol=max_items,
+            include_comments=False  # GDELT doesn't have comments
+        )
+        
+        try:
+            result = await collector.collect_data(config)
+            
+            if result.success and result.data:
+                # Convert RawData objects to dicts and apply validation
+                validated_data = self._validate_gdelt_items([
+                    {
+                        'title': item.metadata.get('title', item.text),
+                        'content': item.text,
+                        'content_type': item.content_type,
+                        'domain': item.metadata.get('domain', ''),
+                        'source_country': item.metadata.get('source_country', ''),
+                        'language': item.metadata.get('language', 'English'),
+                        'is_trusted_source': item.metadata.get('is_trusted_source', False),
+                        'url': item.url,
+                        'timestamp': item.timestamp,
+                        'all_symbols': item.metadata.get('all_symbols', [symbol])
+                    }
+                    for item in result.data
+                ])
+                return validated_data
+            else:
+                self.logger.warning(f"GDELT collection failed for {symbol}: {result.error_message}")
+                return []
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to collect from GDELT for {symbol}: {e}")
+            return []
+    
     async def _collect_news_with_rules(
         self,
         collector: Union[FinHubCollector, NewsAPICollector, MarketauxCollector],
@@ -274,6 +328,21 @@ class DataCollectionService:
             
             # Must have either title or content with reasonable length
             if (len(title) > 5 or len(content) > 20) and item.get('points', 0) >= 0:
+                validated.append(item)
+        
+        return validated
+    
+    def _validate_gdelt_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Business validation for GDELT news items"""
+        validated = []
+        
+        for item in items:
+            # Business rules for GDELT content
+            title = item.get('title', '') or ''
+            content = item.get('content', '') or ''
+            
+            # Must have title with reasonable length
+            if len(title) > 10 or len(content) > 20:
                 validated.append(item)
         
         return validated

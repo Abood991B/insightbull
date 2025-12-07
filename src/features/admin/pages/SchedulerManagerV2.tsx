@@ -811,7 +811,7 @@ const SchedulerManagerV2 = () => {
             <strong>Pipeline Execution Model:</strong> All schedules run the FULL pipeline 
             (Data Collection -&gt; Sentiment Analysis -&gt; Storage) as an atomic operation. 
             This ensures data consistency and proper sentiment analysis of fresh data.
-            Each run processes all 4 collectors (NewsAPI, FinHub, Hacker News, MarketAux*) sequentially.
+            Each run processes all 5 collectors (NewsAPI, FinHub, Hacker News, GDELT, MarketAux*) sequentially.
           </AlertDescription>
         </Alert>
       </div>

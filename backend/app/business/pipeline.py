@@ -29,6 +29,7 @@ from ..infrastructure.collectors.hackernews_collector import HackerNewsCollector
 from ..infrastructure.collectors.finnhub_collector import FinHubCollector  
 from ..infrastructure.collectors.newsapi_collector import NewsAPICollector
 from ..infrastructure.collectors.marketaux_collector import MarketauxCollector
+from ..infrastructure.collectors.gdelt_collector import GDELTCollector
 from ..infrastructure.rate_limiter import RateLimitHandler, RequestPriority
 from ..data_access.repositories.sentiment_repository import SentimentDataRepository
 from ..data_access.repositories.stock_repository import StockRepository
@@ -68,14 +69,25 @@ class PipelineStatus(Enum):
 
 @dataclass
 class PipelineConfig:
-    """Configuration for pipeline execution"""
+    """
+    Configuration for pipeline execution.
+    
+    Note: max_items_per_symbol is a baseline value. The pipeline automatically
+    adjusts items per symbol for each data source based on:
+    - API rate limits and quotas
+    - Watchlist size (more symbols = fewer items per symbol)
+    - Source-specific optimal settings
+    
+    See collector_settings.py for per-source configuration.
+    """
     symbols: List[str]
     date_range: DateRange
-    max_items_per_symbol: int = 100
+    max_items_per_symbol: int = 20  # Baseline, adjusted per source
     include_hackernews: bool = True
     include_finnhub: bool = True
     include_newsapi: bool = True
     include_marketaux: bool = True
+    include_gdelt: bool = True
     include_comments: bool = True
     parallel_collectors: bool = True
     processing_config: Optional[ProcessingConfig] = None
@@ -90,20 +102,25 @@ class PipelineConfig:
         cls,
         symbols: Optional[List[str]] = None,
         date_range: Optional[DateRange] = None,
-        max_items_per_symbol: int = 10,
+        max_items_per_symbol: int = 20,
         **kwargs
     ) -> 'PipelineConfig':
         """
         Create pipeline configuration with provided symbols (dynamic watchlist required).
         
+        The pipeline automatically optimizes per-source settings based on:
+        - Number of symbols in watchlist
+        - API rate limits and daily quotas
+        - Source-specific best practices
+        
         Args:
             symbols: List of stock symbols (required - use dynamic watchlist)
-            date_range: Date range for collection (defaults to near real-time)
-            max_items_per_symbol: Maximum items per symbol (default: 10)
+            date_range: Date range for collection (defaults to 5-day near real-time)
+            max_items_per_symbol: Baseline max items (default: 20, adjusted per source)
             **kwargs: Additional configuration parameters
             
         Returns:
-            PipelineConfig with provided symbols
+            PipelineConfig with optimized settings
         """
         if date_range is None:
             date_range = DateRange.near_realtime()
@@ -209,9 +226,8 @@ class DataPipeline:
         self.stock_repository = stock_repository
         self._repository_initialized = False
         
-        # Initialize sentiment analysis engine with Enhanced VADER & Ensemble FinBERT (singleton)
+        # Initialize sentiment analysis engine with FinBERT-Tone (singleton)
         sentiment_config = EngineConfig(
-            enable_vader=True,
             enable_finbert=True,
             use_ensemble_finbert=False,  # Set to True for +1-2% FinBERT accuracy (requires more GPU memory)
             finbert_use_gpu=True,  # Will auto-detect if GPU is available
@@ -445,6 +461,16 @@ class DataPipeline:
             else:
                 self.logger.warning("MarketAux collector skipped - API key not configured", component="pipeline")
             
+            # GDELT collector (no API key required - free and unlimited)
+            try:
+                self._collectors["gdelt"] = GDELTCollector(
+                    rate_limiter=self.rate_limiter
+                )
+                collectors_configured += 1
+                self.logger.info("GDELT collector configured (no API key required)", component="pipeline")
+            except Exception as e:
+                self.logger.warning(f"Failed to configure GDELT collector: {str(e)}", component="pipeline")
+            
             # Clear decrypted keys from memory for security
             # Cache cleared automatically
             
@@ -579,6 +605,7 @@ class DataPipeline:
                     "finnhub_items": collection_summary.get("FINNHUB", {}).get("items_collected", 0),
                     "newsapi_items": collection_summary.get("NEWSAPI", {}).get("items_collected", 0),
                     "marketaux_items": collection_summary.get("MARKETAUX", {}).get("items_collected", 0),
+                    "gdelt_items": collection_summary.get("GDELT", {}).get("items_collected", 0),
                     "successful_sources": successful_collectors,
                     "total_sources": len(result.collector_stats)
                 }
@@ -764,48 +791,95 @@ class DataPipeline:
         return result
     
     async def _collect_data(self, config: PipelineConfig) -> Dict[str, CollectionResult]:
-        """Collect data from all configured sources with optional enhanced parallel collection"""
-        # Reorder symbols fairly before passing to collectors
-        fair_symbols = await self._get_fair_ordered_symbols(config.symbols)
-        collection_config = CollectionConfig(
-            symbols=fair_symbols,
-            date_range=config.date_range,
-            max_items_per_symbol=config.max_items_per_symbol,
-            include_comments=config.include_comments
+        """Collect data from all configured sources with optimized per-source settings"""
+        # Import collector settings for optimized configuration
+        from app.infrastructure.collectors.collector_settings import (
+            get_collector_settings, get_optimal_pipeline_config
         )
         
-        # Determine which collectors to use
+        # Reorder symbols fairly before passing to collectors
+        fair_symbols = await self._get_fair_ordered_symbols(config.symbols)
+        
+        # Get optimal configuration based on watchlist size
+        optimal_config = get_optimal_pipeline_config(len(fair_symbols))
+        
+        # Log pipeline optimization info
+        self.logger.info(
+            f"Pipeline optimized for {len(fair_symbols)} symbols",
+            component="pipeline",
+            estimated_time_minutes=optimal_config["estimated_time_minutes"],
+            total_requests=optimal_config["total_estimated_requests"]
+        )
+        
+        # Get collector enable/disable configuration
+        from app.service.collector_config_service import get_collector_config_service
+        collector_config_service = get_collector_config_service()
+        
+        # Determine which collectors to use (respecting admin enable/disable settings)
         collectors_to_run = []
         
         if config.include_hackernews and "hackernews" in self._collectors:
-            collectors_to_run.append(("hackernews", self._collectors["hackernews"]))
+            if collector_config_service.is_collector_enabled("hackernews"):
+                collectors_to_run.append(("hackernews", self._collectors["hackernews"]))
+            else:
+                self.logger.info("HackerNews collector is disabled by admin configuration", component="pipeline")
         
         if config.include_finnhub and "finnhub" in self._collectors:
-            collectors_to_run.append(("finnhub", self._collectors["finnhub"]))
+            if collector_config_service.is_collector_enabled("finnhub"):
+                collectors_to_run.append(("finnhub", self._collectors["finnhub"]))
+            else:
+                self.logger.info("FinHub collector is disabled by admin configuration", component="pipeline")
         
         if config.include_newsapi and "newsapi" in self._collectors:
-            collectors_to_run.append(("newsapi", self._collectors["newsapi"]))
+            if collector_config_service.is_collector_enabled("newsapi"):
+                collectors_to_run.append(("newsapi", self._collectors["newsapi"]))
+            else:
+                self.logger.info("NewsAPI collector is disabled by admin configuration", component="pipeline")
         
         if config.include_marketaux and "marketaux" in self._collectors:
-            collectors_to_run.append(("marketaux", self._collectors["marketaux"]))
+            if collector_config_service.is_collector_enabled("marketaux"):
+                collectors_to_run.append(("marketaux", self._collectors["marketaux"]))
+            else:
+                self.logger.info("Marketaux collector is disabled by admin configuration", component="pipeline")
+        
+        if config.include_gdelt and "gdelt" in self._collectors:
+            if collector_config_service.is_collector_enabled("gdelt"):
+                collectors_to_run.append(("gdelt", self._collectors["gdelt"]))
+            else:
+                self.logger.info("GDELT collector is disabled by admin configuration", component="pipeline")
         
         # Run collectors in parallel or sequential mode
         if config.parallel_collectors:
             # Run collectors in parallel (standard mode)
             tasks = []
             for name, collector in collectors_to_run:
+                # Get source-specific optimal items per symbol
+                source_max_items = optimal_config["max_items_per_symbol"].get(
+                    name, config.max_items_per_symbol
+                )
+                
+                # Create source-specific collection config
+                source_settings = get_collector_settings(name)
+                source_collection_config = CollectionConfig(
+                    symbols=fair_symbols,
+                    date_range=config.date_range,
+                    max_items_per_symbol=source_max_items,
+                    include_comments=source_settings.include_comments if source_settings else config.include_comments
+                )
+                
                 task = asyncio.create_task(
-                    self._run_collector_with_timeout(name, collector, collection_config)
+                    self._run_collector_with_timeout(name, collector, source_collection_config)
                 )
                 tasks.append(task)
             
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Process results
+            # Process results and track quota usage
             collection_results = {}
             for i, (name, _) in enumerate(collectors_to_run):
                 if isinstance(results[i], Exception):
-                    self.logger.error(f"Collector {name} failed: {str(results[i])}")
+                    # Handle error - check for rate limits
+                    await self._handle_collection_error(name, results[i])
                     collection_results[name] = CollectionResult(
                         source=name,
                         success=False,
@@ -814,18 +888,45 @@ class DataPipeline:
                     )
                 else:
                     collection_results[name] = results[i]
+                    # Record quota usage for successful collections
+                    if results[i].success:
+                        await self._record_quota_usage(name, len(fair_symbols))
+                    elif results[i].error_message:
+                        # Collection returned but with error - check for rate limits
+                        await self._handle_collection_error(name, Exception(results[i].error_message))
         else:
-            # Run collectors sequentially
+            # Run collectors sequentially with source-specific configs
             collection_results = {}
             for name, collector in collectors_to_run:
                 if self._cancel_requested:
                     break
                 
                 try:
-                    result = await self._run_collector_with_timeout(name, collector, collection_config)
+                    # Get source-specific optimal items per symbol
+                    source_max_items = optimal_config["max_items_per_symbol"].get(
+                        name, config.max_items_per_symbol
+                    )
+                    
+                    # Create source-specific collection config
+                    source_settings = get_collector_settings(name)
+                    source_collection_config = CollectionConfig(
+                        symbols=fair_symbols,
+                        date_range=config.date_range,
+                        max_items_per_symbol=source_max_items,
+                        include_comments=source_settings.include_comments if source_settings else config.include_comments
+                    )
+                    
+                    result = await self._run_collector_with_timeout(name, collector, source_collection_config)
                     collection_results[name] = result
+                    # Record quota usage for successful collections
+                    if result.success:
+                        await self._record_quota_usage(name, len(fair_symbols))
+                    elif result.error_message:
+                        # Collection returned but with error - check for rate limits
+                        await self._handle_collection_error(name, Exception(result.error_message))
                 except Exception as e:
-                    self.logger.error(f"Collector {name} failed: {str(e)}")
+                    # Handle error - check for rate limits
+                    await self._handle_collection_error(name, e)
                     collection_results[name] = CollectionResult(
                         source=name,
                         success=False,
@@ -834,6 +935,100 @@ class DataPipeline:
                     )
         
         return collection_results
+    
+    async def _record_quota_usage(self, source: str, num_symbols: int):
+        """
+        Record API quota usage after successful collection.
+        
+        Args:
+            source: Source name (newsapi, marketaux, etc.)
+            num_symbols: Number of symbols collected
+        """
+        try:
+            from app.service.quota_tracking_service import get_quota_tracking_service
+            quota_service = get_quota_tracking_service()
+            
+            # Calculate requests made based on source
+            if source == "marketaux":
+                # Marketaux uses batch mode (10 symbols per request)
+                requests = (num_symbols + 9) // 10
+            else:
+                # Other sources: 1 request per symbol
+                requests = num_symbols
+            
+            result = quota_service.record_usage(source, requests)
+            
+            if result.get("tracked"):
+                if result.get("auto_disabled"):
+                    self.logger.warning(
+                        f"Source {source} auto-disabled due to quota exhaustion",
+                        component="pipeline",
+                        source=source,
+                        usage=result.get("current_usage"),
+                        limit=result.get("daily_limit")
+                    )
+                elif result.get("warning"):
+                    self.logger.info(
+                        f"Quota warning for {source}: {result.get('usage_percent')}% used",
+                        component="pipeline",
+                        source=source,
+                        remaining=result.get("remaining")
+                    )
+        except Exception as e:
+            # Don't fail collection due to quota tracking errors
+            self.logger.debug(f"Quota tracking for {source} failed: {e}")
+    
+    async def _handle_collection_error(self, source: str, error: Exception) -> None:
+        """
+        Handle collection errors, detecting rate limits and disabling sources.
+        
+        This method checks if the error is a rate limit (429) error and
+        automatically disables the source to prevent further failed requests.
+        The pipeline continues with other sources.
+        
+        Args:
+            source: Source name that failed
+            error: The exception that occurred
+        """
+        error_str = str(error).lower()
+        
+        # Detect rate limit errors (429, quota exceeded, rate limit, too many requests)
+        rate_limit_indicators = [
+            "429", "rate limit", "rate-limit", "ratelimit",
+            "too many requests", "quota exceeded", "daily limit",
+            "request limit", "exceeded"
+        ]
+        
+        is_rate_limit = any(indicator in error_str for indicator in rate_limit_indicators)
+        
+        if is_rate_limit:
+            try:
+                from app.service.quota_tracking_service import get_quota_tracking_service
+                quota_service = get_quota_tracking_service()
+                
+                result = quota_service.handle_rate_limit_error(source, str(error))
+                
+                self.logger.error(
+                    f"Rate limit detected for {source} - source disabled for today",
+                    component="pipeline",
+                    source=source,
+                    error=str(error),
+                    action=result.get("action"),
+                    resets_at=result.get("resets_at")
+                )
+            except Exception as quota_error:
+                self.logger.warning(
+                    f"Failed to handle rate limit for {source}: {quota_error}",
+                    component="pipeline"
+                )
+        else:
+            # Regular error - just log it
+            self.logger.error(
+                f"Collection error for {source}: {error}",
+                component="pipeline",
+                source=source,
+                error_type=type(error).__name__
+            )
 
     async def _get_fair_ordered_symbols(self, symbols: List[str]) -> List[str]:
         """Compute fair order using rotation and lightweight priority scoring."""
@@ -1116,6 +1311,27 @@ class DataPipeline:
                             else:
                                 return "Neutral"
                         
+                        # Clean and truncate raw_text for storage
+                        # Only store the cleaned, essential text (max 1000 chars)
+                        cleaned_text = None
+                        if result.raw_text:
+                            cleaned_text = self.text_processor.process_text(result.raw_text)
+                            cleaned_text = cleaned_text[:1000] if cleaned_text else None
+                        
+                        # Build minimal metadata - only what's actually used
+                        # Remove: processor_version (unused), correlation_id (debug only), label (redundant)
+                        essential_metadata = {}
+                        
+                        # Only include content_type if present (story/comment for HN)
+                        content_type = getattr(result, 'content_type', None)
+                        if content_type:
+                            essential_metadata["content_type"] = content_type
+                        
+                        # Only include original_timestamp if different from created_at
+                        orig_ts = getattr(result, 'original_timestamp', None)
+                        if orig_ts:
+                            essential_metadata["original_timestamp"] = orig_ts
+                        
                         # Create sentiment record using repository
                         sentiment_data = {
                             "stock_id": stock.id,
@@ -1124,17 +1340,9 @@ class DataPipeline:
                             "confidence": result.confidence,
                             "sentiment_label": get_sentiment_label(result.sentiment_score),
                             "model_used": getattr(result, 'model_used', 'unknown'),
-                            "raw_text": result.raw_text[:5000] if result.raw_text else None,  # Limit text size
-                            "created_at": datetime.now(timezone.utc),  # When sentiment analysis was performed
-                            "additional_metadata": {
-                                "processed_at": result.timestamp.isoformat() if result.timestamp else None,
-                                "processor_version": "1.0",
-                                "correlation_id": correlation_id,
-                                "label": getattr(result, 'label', None),
-                                "source_url": getattr(result, 'source_url', None),
-                                "content_type": getattr(result, 'content_type', None),
-                                "original_timestamp": getattr(result, 'original_timestamp', None)
-                            }
+                            "raw_text": cleaned_text,  # Cleaned and limited to 1000 chars
+                            "created_at": datetime.now(timezone.utc),
+                            "additional_metadata": essential_metadata if essential_metadata else None
                         }
                         
                         await sentiment_repository.create(sentiment_data)
@@ -1154,7 +1362,6 @@ class DataPipeline:
                 {
                     "total_processed": len(processing_results),
                     "successfully_stored": stored_count,
-                    "correlation_id": correlation_id,
                     "storage_rate": stored_count / len(processing_results) if processing_results else 0
                 }
             )
@@ -1215,7 +1422,7 @@ class DataPipeline:
                                 stock = await stock_repository.create(stock_data)
                             
                             # Store based on source type
-                            if source_name.lower() in ['newsapi', 'marketaux', 'finnhub']:
+                            if source_name.lower() in ['newsapi', 'marketaux', 'finnhub', 'gdelt']:
                                 # Check for duplicate URL before storing
                                 url = getattr(raw_data, 'url', '')
                                 if url:
@@ -1246,14 +1453,18 @@ class DataPipeline:
                                     # Extract from first line of text
                                     title = full_text.split('\n')[0][:500]
                                 
+                                # Clean and truncate content for storage efficiency
+                                # We only need enough text for sentiment analysis (already done) and display
+                                cleaned_content = self.text_processor.process_text(full_text) if full_text else ""
+                                
                                 news_article = NewsArticle(
                                     stock_id=stock.id,
                                     title=title[:500],
-                                    content=full_text[:10000],  # Use full text as content
+                                    content=cleaned_content[:2000],  # Reduced from 10000 - cleaned text sufficient for display
                                     url=url,
                                     source=source_name.lower(),
                                     published_at=published_at,  # When article was published by source
-                                    author=metadata.get('author', ''),
+                                    author=metadata.get('author', '') or None,  # Store None instead of empty string
                                     # sentiment_score and confidence will be updated later after sentiment analysis
                                     stock_mentions=metadata.get('all_symbols', None)
                                 )
@@ -1262,12 +1473,6 @@ class DataPipeline:
                             elif source_name.lower() == 'hackernews':
                                 # Extract hn_id from metadata (where HackerNews collector stores it)
                                 metadata = getattr(raw_data, 'metadata', {}) or {}
-                                
-                                # DEBUG: Log metadata to check if all_symbols is present
-                                self.logger.debug(
-                                    f"Hacker News post metadata keys: {list(metadata.keys())}",
-                                    extra={"all_symbols_present": 'all_symbols' in metadata, "all_symbols_value": metadata.get('all_symbols')}
-                                )
                                 
                                 # Try multiple sources for hn_id
                                 hn_id = (
@@ -1294,10 +1499,6 @@ class DataPipeline:
                                 )
                                 if existing_post.scalar_one_or_none():
                                     skipped_duplicate_urls += 1
-                                    self.logger.debug(
-                                        f"Skipped duplicate Hacker News post: {hn_id}",
-                                        extra={"source": source_name, "correlation_id": correlation_id}
-                                    )
                                     continue  # Skip duplicate
                                 
                                 # Store as Hacker News post
@@ -1306,14 +1507,8 @@ class DataPipeline:
                                     created_utc = utc_now()  # Use UTC timezone
                                 created_utc = ensure_utc(created_utc)  # Ensure timezone-aware
                                 
-                                # Extract metadata fields
-                                author = metadata.get('author', '')
-                                points = metadata.get('points', 0) or 0
-                                num_comments = metadata.get('num_comments', 0) or 0
+                                # Extract only essential metadata fields
                                 content_type = metadata.get('content_type', 'story')  # story or comment
-                                parent_id = metadata.get('parent_id', None)
-                                story_id = metadata.get('story_id', None)
-                                story_title = metadata.get('story_title', None)
                                 
                                 # Extract title from metadata or first line
                                 title = metadata.get('title', '')
@@ -1322,8 +1517,8 @@ class DataPipeline:
                                     text_lines = raw_data.text.split('\n', 1)
                                     title = text_lines[0] if text_lines else ''
                                 
-                                # Content is the full text
-                                content = raw_data.text
+                                # Clean and truncate content for storage efficiency
+                                cleaned_content = self.text_processor.process_text(raw_data.text) if raw_data.text else ""
                                 
                                 # Extract all_symbols from metadata for stock_mentions
                                 all_symbols_value = metadata.get('all_symbols', None)
@@ -1332,26 +1527,16 @@ class DataPipeline:
                                 if all_symbols_value is not None and len(all_symbols_value) == 0:
                                     all_symbols_value = None
                                 
-                                # DEBUG: Log what we're about to store
-                                self.logger.info(
-                                    f"Creating HackerNewsPost - Title: {title[:50] if title else 'N/A'}, stock_mentions: {all_symbols_value}, "
-                                    f"metadata has all_symbols: {'all_symbols' in metadata}",
-                                    extra={"hn_id": hn_id, "url": url[:80] if url else "N/A"}
-                                )
-                                
                                 hn_post = HackerNewsPost(
                                     stock_id=stock.id,
                                     hn_id=hn_id,
                                     title=title[:500] if title else None,  # Limit title length, nullable for comments
-                                    content=content[:10000],  # Limit content length
+                                    content=cleaned_content[:2000],  # Reduced from 10000 - cleaned text sufficient
                                     content_type=content_type,
-                                    author=author,
-                                    points=points,
-                                    num_comments=num_comments,
-                                    url=url,
-                                    parent_id=parent_id,
-                                    story_id=story_id,
-                                    story_title=story_title[:500] if story_title else None,
+                                    author=metadata.get('author', '') or None,  # Store None instead of empty string
+                                    points=metadata.get('points', 0) or 0,
+                                    num_comments=metadata.get('num_comments', 0) or 0,
+                                    url=url or None,  # Store None instead of empty string
                                     created_utc=created_utc,  # When item was created on HN
                                     # sentiment_score and confidence will be updated later after sentiment analysis
                                     stock_mentions=all_symbols_value
@@ -1677,14 +1862,16 @@ class DataPipeline:
                         if await sentiment_repository.exists_by_content_hash(stock.id, source_str, content_hash):
                             continue  # Skip duplicate content
                         
-                        # Determine sentiment label based on score
-                        def get_sentiment_label(score: float) -> str:
-                            if score >= 0.1:
-                                return "Positive"
-                            elif score <= -0.1:
-                                return "Negative"
-                            else:
-                                return "Neutral"
+                        # Get the model's actual predicted label (not derived from score!)
+                        # The model returns the label directly - use it instead of score-based thresholds
+                        model_label = sentiment_result.sentiment_result.label
+                        if hasattr(model_label, 'value'):
+                            sentiment_label = model_label.value  # Extract string from enum
+                        else:
+                            sentiment_label = str(model_label)
+                        
+                        # Normalize to title case for consistency (Positive, Negative, Neutral)
+                        sentiment_label = sentiment_label.capitalize()
                         
                         # Convert to database model format (now with proper model_used column)
                         sentiment_data = {
@@ -1692,13 +1879,13 @@ class DataPipeline:
                             'source': source_str,
                             'sentiment_score': sentiment_result.sentiment_result.score,
                             'confidence': sentiment_result.sentiment_result.confidence,
-                            'sentiment_label': get_sentiment_label(sentiment_result.sentiment_result.score),
+                            'sentiment_label': sentiment_label,  # Use model's actual prediction!
                             'model_used': sentiment_result.sentiment_result.model_name,  # Use actual model name from result
                             'raw_text': sentiment_result.processing_result.processed_text[:1000],  # First 1000 chars
                             'content_hash': content_hash,  # SHA-256 hash for duplicate prevention
                             'created_at': datetime.now(timezone.utc),  # When sentiment analysis was performed
                             'additional_metadata': {
-                                'label': sentiment_result.sentiment_result.label.value if hasattr(sentiment_result.sentiment_result.label, 'value') else str(sentiment_result.sentiment_result.label),
+                                'label': sentiment_label,  # Same as sentiment_label for consistency
                                 'source_url': getattr(sentiment_result.raw_data, 'url', None),
                                 'content_type': getattr(sentiment_result.raw_data, 'content_type', 'text'),
                                 'original_timestamp': sentiment_result.raw_data.timestamp.isoformat() if sentiment_result.raw_data.timestamp else None
@@ -1926,6 +2113,7 @@ class DataPipeline:
                 include_finnhub=True,
                 include_newsapi=True,
                 include_marketaux=True,
+                include_gdelt=True,
                 parallel_collectors=True
             )
             

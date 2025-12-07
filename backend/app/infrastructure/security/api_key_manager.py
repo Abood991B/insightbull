@@ -300,7 +300,8 @@ class SecureAPIKeyLoader:
             'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
             'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
             'NEWS_API_KEY': os.getenv('NEWS_API_KEY', ''),  # Alternative name
-            'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', '')
+            'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', ''),
+            'GEMINI_API_KEY': os.getenv('GEMINI_API_KEY', '')  # AI verification
         }
         
         # Override with keys from persistent storage if they exist
@@ -314,7 +315,8 @@ class SecureAPIKeyLoader:
         mapped_keys = {
             'finnhub_api_key': decrypted_keys.get('FINNHUB_API_KEY', ''),
             'news_api_key': decrypted_keys.get('NEWSAPI_KEY', '') or decrypted_keys.get('NEWS_API_KEY', ''),
-            'marketaux_api_key': decrypted_keys.get('MARKETAUX_API_KEY', '')
+            'marketaux_api_key': decrypted_keys.get('MARKETAUX_API_KEY', ''),
+            'gemini_api_key': decrypted_keys.get('GEMINI_API_KEY', '')
         }
         
         # Cache mapped keys
@@ -354,7 +356,8 @@ def create_encrypted_env_template():
     current_keys = {
         'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
         'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
-        'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', '')
+        'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', ''),
+        'GEMINI_API_KEY': os.getenv('GEMINI_API_KEY', '')  # AI verification
     }
     
     manager = APIKeyManager()

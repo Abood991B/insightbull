@@ -186,8 +186,8 @@ async def get_model_accuracy(
     Args:
         view_type: "overall" for all-time metrics, "latest" for latest pipeline run
     
-    Returns comprehensive accuracy metrics for all sentiment models
-    including VADER and FinBERT performance statistics.
+    Returns comprehensive accuracy metrics for FinBERT sentiment model
+    with per-source breakdown and AI verification statistics.
     """
     try:
         logger.info("Admin requesting model accuracy metrics", 
@@ -207,6 +207,113 @@ async def get_model_accuracy(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve model accuracy metrics"
+        )
+
+
+@router.get("/models/benchmark")
+async def get_benchmark_results(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get ground truth benchmark evaluation results.
+    
+    Returns comprehensive accuracy metrics from evaluating ProsusAI/finbert
+    against the Financial PhraseBank dataset (5,057 labeled sentences).
+    This provides real accuracy, precision, recall, and F1-score metrics.
+    """
+    try:
+        logger.info("Admin requesting benchmark results", admin_user=current_admin.email)
+        
+        from app.service.benchmark_service import get_benchmark_service
+        
+        benchmark_service = get_benchmark_service()
+        results = benchmark_service.get_last_benchmark()
+        dataset_info = benchmark_service.get_dataset_info()
+        
+        if results:
+            return {
+                "has_benchmark": True,
+                "benchmark": results,
+                "dataset_info": dataset_info
+            }
+        else:
+            return {
+                "has_benchmark": False,
+                "message": "No benchmark results found. Click 'Run Benchmark' to evaluate model accuracy.",
+                "dataset_info": dataset_info
+            }
+        
+    except Exception as e:
+        logger.error("Error retrieving benchmark results", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve benchmark results"
+        )
+
+
+@router.post("/models/benchmark/run")
+async def run_benchmark_evaluation(
+    force: bool = Query(False, description="Force re-run even if results exist"),
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Run benchmark evaluation of ProsusAI/finbert against Financial PhraseBank.
+    
+    This evaluates the sentiment model on ground truth data (5,057 samples)
+    and stores the results for display on the Model Accuracy page.
+    """
+    try:
+        logger.info("Admin triggering benchmark evaluation", 
+                   admin_user=current_admin.email,
+                   force=force)
+        
+        from app.service.benchmark_service import get_benchmark_service
+        
+        benchmark_service = get_benchmark_service()
+        
+        # Check if dataset is available
+        if not benchmark_service.check_dataset_available():
+            dataset_info = benchmark_service.get_dataset_info()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Benchmark dataset not available: {dataset_info.get('message', 'Unknown error')}"
+            )
+        
+        # Check if results already exist
+        if not force:
+            existing = benchmark_service.get_last_benchmark()
+            if existing:
+                return {
+                    "success": True,
+                    "message": "Benchmark results already exist. Use force=true to re-run.",
+                    "results": existing
+                }
+        
+        # Run benchmark evaluation
+        result = await benchmark_service.run_benchmark()
+        
+        # Convert dataclass to dict
+        from dataclasses import asdict
+        results_dict = asdict(result)
+        
+        logger.info("Benchmark evaluation completed", 
+                   accuracy=f"{result.accuracy:.1%}",
+                   dataset_size=result.dataset_size)
+        
+        return {
+            "success": True,
+            "message": "Benchmark evaluation completed successfully",
+            "results": results_dict
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error running benchmark evaluation", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to run benchmark evaluation: {str(e)}"
         )
 
 
@@ -248,9 +355,9 @@ async def get_sentiment_engine_metrics(
     Phase 5: Deployment & Monitoring
     
     Returns comprehensive statistics on:
-    - Model usage (Hybrid VADER vs FinBERT)
+    - Model usage (FinBERT-Tone unified model)
     - Processing performance (speed, success rate)
-    - Current configuration (Enhanced VADER enabled, etc.)
+    - Current configuration
     - Per-model statistics
     """
     try:
@@ -265,10 +372,9 @@ async def get_sentiment_engine_metrics(
         stats = engine.get_stats()
         config = engine.config
         
-        # Calculate per-model metrics
-        vader_usage = stats.model_usage.get("Hybrid-VADER", 0)
-        finbert_usage = stats.model_usage.get("FinBERT", 0)
-        total_usage = vader_usage + finbert_usage
+        # Calculate per-model metrics (now unified to FinBERT-Tone)
+        finbert_usage = stats.model_usage.get("FinBERT-Tone", 0) + stats.model_usage.get("FinBERT", 0)
+        total_usage = finbert_usage if finbert_usage > 0 else 1  # Prevent division by zero
         
         # Get database sentiment counts for accuracy context
         from app.data_access.models import SentimentData
@@ -276,22 +382,10 @@ async def get_sentiment_engine_metrics(
             select(func.count()).select_from(SentimentData)
         )
         
-        # Count by model
-        vader_count = await db.scalar(
-            select(func.count())
-            .select_from(SentimentData)
-            .where(
-                or_(
-                    SentimentData.model_used == "VADER",
-                    SentimentData.model_used == "Hybrid-VADER"
-                )
-            )
-        )
-        
+        # Count all sentiment records (now all processed by FinBERT-Tone)
         finbert_count = await db.scalar(
             select(func.count())
             .select_from(SentimentData)
-            .where(SentimentData.model_used == "FinBERT")
         )
         
         # Calculate successful and failed analyses
@@ -301,8 +395,8 @@ async def get_sentiment_engine_metrics(
         return {
             "engine_status": {
                 "initialized": engine.is_initialized,
-                "available_models": list(stats.model_usage.keys()),
-                "total_models": len(stats.model_usage),
+                "available_models": ["FinBERT-Tone"],
+                "total_models": 1,
                 "engine_health": "healthy" if stats.success_rate > 90 else "degraded" if stats.success_rate > 70 else "critical"
             },
             "overall_performance": {
@@ -314,52 +408,34 @@ async def get_sentiment_engine_metrics(
                 "total_processing_time_sec": round(stats.total_processing_time, 2)
             },
             "model_configuration": {
-                "vader_enabled": config.enable_vader,
                 "finbert_enabled": config.enable_finbert,
                 "ensemble_finbert_enabled": config.use_ensemble_finbert,
                 "finbert_calibration_enabled": config.finbert_use_calibration,
-                "vader_type": "Hybrid VADER (Enhanced + ML)",  # Always enhanced when enabled
-                "finbert_type": "Ensemble FinBERT (ProsusAI + yiyanghkust)" if config.use_ensemble_finbert else "Standard FinBERT (ProsusAI)",
+                "finbert_type": "FinBERT-Tone (yiyanghkust/finbert-tone)",
                 "default_batch_size": config.default_batch_size
             },
             "model_usage": {
-                "hybrid_vader": {
-                    "session_count": vader_usage,
-                    "database_count": vader_count or 0,
-                    "percentage_of_total": round((vader_usage / total_usage * 100) if total_usage > 0 else 0, 2),
-                    "used_for": ["HackerNews", "Social Media"],
-                    "features": [
-                        "75 financial terms (bullish/bearish)",
-                        "40 community slang phrases (BTFD, diamond hands, etc.)",
-                        "30 emoji mappings",
-                        "ML ensemble (Logistic Regression)",
-                        "Sarcasm detection (15+ patterns)",
-                        "Negative percentage detection (Down 40%)",
-                        "Dynamic thresholds",
-                        "Context-aware adjustments"
-                    ]
-                },
                 "finbert": {
                     "session_count": finbert_usage,
                     "database_count": finbert_count or 0,
-                    "percentage_of_total": round((finbert_usage / total_usage * 100) if total_usage > 0 else 0, 2),
-                    "used_for": ["Financial News", "FinHub", "Marketaux", "NewsAPI"],
-                    "model_type": "Ensemble" if config.use_ensemble_finbert else "Standard",
+                    "percentage_of_total": 100.0,
+                    "used_for": ["All Sources: HackerNews, FinHub, Marketaux, NewsAPI, GDELT"],
+                    "model_type": "FinBERT-Tone",
                     "features": [
+                        "95.7% average confidence across all sources",
+                        "Financial domain pre-training",
                         "Advanced preprocessing (entity recognition)",
                         "Number standardization ($1.5B → $1,500,000,000)",
                         "16 financial abbreviation expansions (P/E, EPS, ROI, etc.)",
                         "Company name normalization (AAPL → Apple)",
                         "Intelligent truncation (keyword-based)",
                         "Noise filtering (ads, promotional content)",
-                        "Confidence calibration (temperature scaling)" if config.finbert_use_calibration else "Standard confidence",
-                        "Multi-model ensemble (2 FinBERT checkpoints)" if config.use_ensemble_finbert else "Single model"
+                        "GPU acceleration support"
                     ]
                 }
             },
             "database_statistics": {
                 "total_sentiment_records": total_sentiments or 0,
-                "vader_records": vader_count or 0,
                 "finbert_records": finbert_count or 0
             },
             "timestamp": utc_now().isoformat()
@@ -401,6 +477,199 @@ async def update_api_configuration(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update API configuration"
+        )
+
+
+# ============================================================================
+# COLLECTOR ENABLE/DISABLE CONFIGURATION
+# ============================================================================
+
+@router.get("/config/collectors")
+async def get_collector_configuration(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get current collector enable/disable configuration.
+    
+    Returns the enabled/disabled status for all data collectors,
+    allowing admins to control which collectors run in the pipeline.
+    """
+    try:
+        logger.info("Admin requesting collector configuration", admin_user=current_admin.email)
+        
+        from app.service.collector_config_service import get_collector_config_service
+        config_service = get_collector_config_service()
+        
+        return config_service.get_all_collector_configs()
+        
+    except Exception as e:
+        logger.error("Error retrieving collector configuration", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve collector configuration"
+        )
+
+
+@router.put("/config/collectors/{collector_name}")
+async def toggle_collector(
+    collector_name: str,
+    enabled: bool = Query(..., description="Whether to enable or disable the collector"),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Enable or disable a specific data collector.
+    
+    This allows admins to temporarily disable collectors without removing
+    API keys, useful for:
+    - Troubleshooting data collection issues
+    - Reducing API usage
+    - Temporarily disabling problematic sources
+    """
+    try:
+        logger.info(
+            f"Admin {'enabling' if enabled else 'disabling'} collector: {collector_name}",
+            admin_user=current_admin.email,
+            collector=collector_name,
+            enabled=enabled
+        )
+        
+        from app.service.collector_config_service import get_collector_config_service
+        config_service = get_collector_config_service()
+        
+        result = config_service.set_collector_enabled(
+            collector_name=collector_name,
+            enabled=enabled,
+            updated_by=current_admin.email
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error("Error toggling collector", error=str(e), collector=collector_name)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle collector: {str(e)}"
+        )
+
+
+# ============================================================================
+# AI SERVICES MANAGEMENT
+# ============================================================================
+
+@router.put("/config/ai-services/{service_name}/toggle")
+async def toggle_ai_service(
+    service_name: str,
+    enabled: bool = Query(..., description="Whether to enable or disable the AI service"),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Enable or disable a specific AI service (e.g., Gemini for sentiment verification).
+    
+    This allows admins to control AI-powered features without removing API keys.
+    """
+    try:
+        logger.info(
+            f"Admin {'enabling' if enabled else 'disabling'} AI service: {service_name}",
+            admin_user=current_admin.email,
+            service=service_name,
+            enabled=enabled
+        )
+        
+        from app.service.collector_config_service import get_collector_config_service
+        config_service = get_collector_config_service()
+        
+        result = config_service.set_ai_service_enabled(
+            service_name=service_name,
+            enabled=enabled,
+            updated_by=current_admin.email
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error("Error toggling AI service", error=str(e), service=service_name)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle AI service: {str(e)}"
+        )
+
+
+@router.put("/config/ai-services/{service_name}/settings")
+async def update_ai_service_settings(
+    service_name: str,
+    verification_mode: Optional[str] = Query(None, description="Verification mode: none, low_confidence, low_confidence_and_neutral, all"),
+    confidence_threshold: Optional[float] = Query(None, ge=0.0, le=1.0, description="Confidence threshold (0.0-1.0)"),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Update AI service settings like verification mode and confidence threshold.
+    
+    Verification modes:
+    - none: No AI verification (ML only)
+    - low_confidence: Verify only low-confidence predictions
+    - low_confidence_and_neutral: Verify low-confidence + all neutral predictions (recommended)
+    - all: Verify all predictions (highest accuracy, highest cost)
+    """
+    try:
+        logger.info(
+            f"Admin updating AI service settings: {service_name}",
+            admin_user=current_admin.email,
+            service=service_name,
+            verification_mode=verification_mode,
+            confidence_threshold=confidence_threshold
+        )
+        
+        from app.service.collector_config_service import get_collector_config_service
+        config_service = get_collector_config_service()
+        
+        result = config_service.update_ai_service_settings(
+            service_name=service_name,
+            verification_mode=verification_mode,
+            confidence_threshold=confidence_threshold,
+            updated_by=current_admin.email
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error("Error updating AI service settings", error=str(e), service=service_name)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update AI service settings: {str(e)}"
+        )
+
+
+@router.get("/config/ai-services")
+async def get_ai_services_config(
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """Get all AI services configuration."""
+    try:
+        from app.service.collector_config_service import get_collector_config_service
+        config_service = get_collector_config_service()
+        
+        return config_service.get_all_ai_services()
+        
+    except Exception as e:
+        logger.error("Error retrieving AI services configuration", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve AI services configuration"
         )
 
 
@@ -1276,6 +1545,14 @@ async def get_collector_health(
         )
         marketaux_count = marketaux_result.scalar() or 0
         
+        # Query GDELT articles from last 24 hours
+        gdelt_result = await db.execute(
+            select(func.count()).select_from(NewsArticle)
+            .where(NewsArticle.source == 'gdelt')
+            .where(NewsArticle.published_at >= last_24_hours)
+        )
+        gdelt_count = gdelt_result.scalar() or 0
+        
         # Define collectors with their configuration requirements
         collectors = [
             {
@@ -1284,6 +1561,14 @@ async def get_collector_health(
                 "source": "community",
                 "items_collected": hn_count,
                 "api_key_required": False,  # HackerNews API is free and unlimited
+                "api_key_configured": True  # Always available
+            },
+            {
+                "name": "GDELT",
+                "internal_name": "gdelt",
+                "source": "news",
+                "items_collected": gdelt_count,
+                "api_key_required": False,  # GDELT API is free and unlimited
                 "api_key_configured": True  # Always available
             },
             {

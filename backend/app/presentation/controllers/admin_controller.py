@@ -224,28 +224,16 @@ async def get_model_accuracy(
         
         sentiment_engine = get_sentiment_engine()
         
-        # Get model statistics from sentiment engine
+        # Get model statistics from sentiment engine (FinBERT only)
         models = []
-        if "VADER" in sentiment_engine.models:
-            vader_stats = sentiment_engine.models["VADER"].get_model_info()
-            models.append(ModelMetrics(
-                name="VADER",
-                accuracy=0.82,  # Based on VADER's typical performance
-                precision=0.79,
-                recall=0.85,
-                f1_score=0.82,
-                total_predictions=sentiment_engine.stats.model_usage.get("VADER", 0),
-                last_evaluated=utc_now()
-            ))
-        
         if "FinBERT" in sentiment_engine.models:
             finbert_stats = sentiment_engine.models["FinBERT"].get_model_info()
             models.append(ModelMetrics(
                 name="FinBERT",
-                accuracy=0.89,  # Based on FinBERT's typical performance
-                precision=0.91,
-                recall=0.87,
-                f1_score=0.89,
+                accuracy=0.883,  # Based on ProsusAI/finbert benchmark on Financial PhraseBank
+                precision=0.884,
+                recall=0.883,
+                f1_score=0.880,
                 total_predictions=sentiment_engine.stats.model_usage.get("FinBERT", 0),
                 last_evaluated=utc_now()
             ))
@@ -297,6 +285,13 @@ async def get_api_configuration(
                 is_configured=True,  # HackerNews is always configured (no API key required)
                 status=APIKeyStatus.ACTIVE,  # Always active
                 rate_limit=500,  # HackerNews rate limit (generous)
+                last_tested=utc_now()
+            ),
+            APIServiceConfig(
+                service_name="GDELT",
+                is_configured=True,  # GDELT is always configured (no API key required)
+                status=APIKeyStatus.ACTIVE,  # Always active - free and unlimited
+                rate_limit=0,  # No rate limit (unlimited)
                 last_tested=utc_now()
             ),
             APIServiceConfig(
@@ -366,7 +361,7 @@ async def update_api_configuration(
             )
         
         # Validate service name
-        valid_services = ["hackernews", "newsapi", "finnhub", "marketaux"]
+        valid_services = ["hackernews", "gdelt", "newsapi", "finnhub", "marketaux"]
         if request.service_name.lower() not in valid_services:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

@@ -61,7 +61,7 @@ class SentimentData(Base):
     sentiment_score = Column(Numeric(precision=5, scale=4), nullable=False)  # Range -1.0000 to 1.0000
     confidence = Column(Numeric(precision=5, scale=4), nullable=False)  # Range 0.0000 to 1.0000
     sentiment_label = Column(String(20), nullable=False, index=True, default="Neutral")  # Positive, Negative, Neutral
-    model_used = Column(String(50), nullable=True)  # VADER, FinBERT (nullable for migration compatibility)
+    model_used = Column(String(50), nullable=True)  # FinBERT (ProsusAI/finbert) - nullable for migration compatibility
     raw_text = Column(Text)
     additional_metadata = Column(JSON)  # Additional metadata: source_url, content_type, original_timestamp, label
     content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection
@@ -139,9 +139,6 @@ class HackerNewsPost(Base):
     points = Column(Integer, default=0)
     num_comments = Column(Integer, default=0)
     url = Column(String(1000))
-    parent_id = Column(String(50), nullable=True)  # For comments, reference to parent
-    story_id = Column(String(50), nullable=True)  # For comments, reference to parent story
-    story_title = Column(String(500), nullable=True)  # For comments, title of parent story
     created_utc = Column(DateTime(timezone=True), nullable=False)  # When item was created on HN
     sentiment_score = Column(Numeric(precision=5, scale=4))  # Range -1.0000 to 1.0000
     confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000

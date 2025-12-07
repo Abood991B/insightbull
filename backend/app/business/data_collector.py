@@ -6,6 +6,7 @@ in the FYP Implementation Plan Layer 2: Business Layer.
 
 Implements the DataCollector component that orchestrates:
 - HackerNews community data collection (free, no API key required)
+- GDELT global news collection (free, no API key required)
 - Financial news from FinHub, Marketaux, NewsAPI
 - Stock price data from Yahoo Finance
 - Rate limiting and error handling
@@ -26,7 +27,8 @@ from app.infrastructure.collectors import (
     HackerNewsCollector,
     FinHubCollector, 
     MarketauxCollector,
-    NewsAPICollector
+    NewsAPICollector,
+    GDELTCollector
 )
 from app.infrastructure.rate_limiter import RateLimitHandler
 from app.infrastructure.log_system import get_logger
@@ -118,10 +120,15 @@ class DataCollector:
             self.newsapi_collector = None
             self.logger.warning("NewsAPI collector skipped - API key not configured", component="data_collector")
         
+        # GDELT collector - no API keys required (free and unlimited)
+        self.gdelt_collector = GDELTCollector(rate_limiter=self.rate_limiter)
+        self.logger.info("GDELT collector configured (no API key required)", component="data_collector")
+        
         # Count active collectors
         active_collectors = sum(1 for collector in [
             self.hackernews_collector, self.finnhub_collector, 
-            self.marketaux_collector, self.newsapi_collector
+            self.marketaux_collector, self.newsapi_collector,
+            self.gdelt_collector
         ] if collector is not None)
         
         self.logger.info(f"Auto-configured {active_collectors} collectors with encrypted API keys")
@@ -144,7 +151,7 @@ class DataCollector:
         job = CollectionJob(
             job_id=job_id,
             symbols=symbols,
-            sources=["hackernews", "finnhub", "marketaux", "newsapi"],
+            sources=["hackernews", "finnhub", "marketaux", "newsapi", "gdelt"],
             date_range=date_range,
             started_at=utc_now()
         )
@@ -164,13 +171,14 @@ class DataCollector:
                 self._collect_hackernews_data(symbols, date_range),
                 self._collect_finnhub_data(symbols, date_range),
                 self._collect_marketaux_data(symbols, date_range),
-                self._collect_newsapi_data(symbols, date_range)
+                self._collect_newsapi_data(symbols, date_range),
+                self._collect_gdelt_data(symbols, date_range)
             ]
             
             results = await asyncio.gather(*collection_tasks, return_exceptions=True)
             
             # Process results
-            source_names = ["hackernews", "finnhub", "marketaux", "newsapi"]
+            source_names = ["hackernews", "finnhub", "marketaux", "newsapi", "gdelt"]
             for i, result in enumerate(results):
                 source = source_names[i]
                 if isinstance(result, Exception):
@@ -390,6 +398,50 @@ class DataCollector:
             
         except Exception as e:
             self.logger.error(f"NewsAPI collection failed: {str(e)}")
+            raise
+    
+    async def _collect_gdelt_data(self, symbols: List[str], 
+                                  date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
+        """Collect GDELT global news data"""
+        if not self.gdelt_collector:
+            return []
+        
+        try:
+            await self.rate_limiter.acquire("gdelt")
+            
+            # Import required classes
+            from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
+            
+            # Create proper configuration
+            date_range_obj = DateRange(
+                start_date=date_range['start'],
+                end_date=date_range['end']
+            )
+            config = CollectionConfig(
+                symbols=symbols,
+                date_range=date_range_obj,
+                max_items_per_symbol=50  # GDELT has high volume, collect more
+            )
+            
+            # Use the standardized collect_data method
+            result = await self.gdelt_collector.collect_data(config)
+            
+            # Convert RawData objects to dictionaries
+            return [
+                {
+                    'source': data.source.value,
+                    'content_type': data.content_type,
+                    'text': data.text,
+                    'timestamp': data.timestamp,
+                    'stock_symbol': data.stock_symbol,
+                    'url': data.url,
+                    'metadata': data.metadata or {}
+                }
+                for data in result.data
+            ] if result.success else []
+            
+        except Exception as e:
+            self.logger.error(f"GDELT collection failed: {str(e)}")
             raise
     
     def get_job_status(self, job_id: str) -> Optional[CollectionJob]:

@@ -216,25 +216,13 @@ const SystemHealthAlerts: React.FC<SystemHealthAlertsProps> = ({
 
     // Check model accuracy (if available)
     if (modelAccuracy) {
-      // Check VADER accuracy
-      if (modelAccuracy.model_metrics.vader_sentiment.accuracy < 0.65) {
-        generatedAlerts.push({
-          id: 'vader-accuracy-low',
-          severity: 'warning',
-          title: 'VADER Model Accuracy Low',
-          description: `VADER accuracy is ${(modelAccuracy.model_metrics.vader_sentiment.accuracy * 100).toFixed(1)}%. Consider retraining.`,
-          category: 'model',
-          timestamp: modelAccuracy.last_evaluation,
-        });
-      }
-
-      // Check FinBERT accuracy
+      // Check ProsusAI/finbert accuracy
       if (modelAccuracy.model_metrics.finbert_sentiment.accuracy < 0.70) {
         generatedAlerts.push({
           id: 'finbert-accuracy-low',
           severity: 'warning',
-          title: 'FinBERT Model Accuracy Low',
-          description: `FinBERT accuracy is ${(modelAccuracy.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%. Consider retraining.`,
+          title: 'Sentiment Model Accuracy Low',
+          description: `ProsusAI/finbert accuracy is ${(modelAccuracy.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%. Consider checking data quality or enabling Gemini AI verification.`,
           category: 'model',
           timestamp: modelAccuracy.last_evaluation,
         });

@@ -26,6 +26,7 @@ import asyncio
 import logging
 import aiohttp
 from app.utils.timezone import utc_now
+from app.infrastructure.log_system import get_logger
 
 from .base_collector import (
     BaseCollector, 
@@ -36,7 +37,9 @@ from .base_collector import (
     CollectionError
 )
 
+# Use structured logging system for consistent log management
 logger = logging.getLogger(__name__)
+structured_logger = get_logger()
 
 
 class HackerNewsCollector(BaseCollector):
@@ -111,9 +114,26 @@ class HackerNewsCollector(BaseCollector):
                 f"{self.BASE_URL}/search",
                 params={"query": "test", "hitsPerPage": 1}
             ) as response:
-                return response.status == 200
+                is_valid = response.status == 200
+                if is_valid:
+                    structured_logger.info(
+                        "HackerNews API connection validated successfully",
+                        component="hackernews_collector",
+                        api_endpoint=self.BASE_URL
+                    )
+                else:
+                    structured_logger.warning(
+                        f"HackerNews API returned non-200 status: {response.status}",
+                        component="hackernews_collector",
+                        status_code=response.status
+                    )
+                return is_valid
         except Exception as e:
-            self.logger.error(f"HN connection validation failed: {str(e)}")
+            structured_logger.error(
+                f"HackerNews connection validation failed: {str(e)}",
+                component="hackernews_collector",
+                error_type=type(e).__name__
+            )
             return False
     
     async def collect_data(self, config: CollectionConfig) -> CollectionResult:
@@ -131,6 +151,16 @@ class HackerNewsCollector(BaseCollector):
         start_time = utc_now()
         collected_data = []
         
+        # Log collection start with structured logging
+        structured_logger.info(
+            f"Starting HackerNews data collection for {len(config.symbols)} symbols",
+            component="hackernews_collector",
+            symbols=config.symbols,
+            date_range_start=config.date_range.start_date.isoformat(),
+            date_range_end=config.date_range.end_date.isoformat(),
+            include_comments=config.include_comments
+        )
+        
         try:
             self._validate_config(config)
             await self._apply_rate_limit()
@@ -144,19 +174,31 @@ class HackerNewsCollector(BaseCollector):
             # Execute all symbol collections in parallel
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Process results
-            for result in results:
+            # Process results and track errors
+            error_count = 0
+            for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    self.logger.error(f"HN symbol collection failed: {str(result)}")
+                    error_count += 1
+                    structured_logger.error(
+                        f"HackerNews collection failed for symbol: {config.symbols[i]}",
+                        component="hackernews_collector",
+                        symbol=config.symbols[i],
+                        error=str(result)
+                    )
                     continue
                 if isinstance(result, list):
                     collected_data.extend(result)
             
             execution_time = (utc_now() - start_time).total_seconds()
             
-            self.logger.info(
-                f"HN collection complete: {len(collected_data)} items "
-                f"for {len(config.symbols)} symbols in {execution_time:.2f}s"
+            # Log collection completion with stats
+            structured_logger.info(
+                f"HackerNews collection complete: {len(collected_data)} items collected",
+                component="hackernews_collector",
+                items_collected=len(collected_data),
+                symbols_processed=len(config.symbols),
+                symbols_with_errors=error_count,
+                execution_time_seconds=round(execution_time, 2)
             )
             
             return CollectionResult(
@@ -168,8 +210,15 @@ class HackerNewsCollector(BaseCollector):
             
         except Exception as e:
             execution_time = (utc_now() - start_time).total_seconds()
-            error_msg = f"HN collection failed: {str(e)}"
-            self.logger.error(error_msg)
+            error_msg = f"HackerNews collection failed: {str(e)}"
+            
+            structured_logger.error(
+                error_msg,
+                component="hackernews_collector",
+                symbols=config.symbols,
+                execution_time_seconds=round(execution_time, 2),
+                error_type=type(e).__name__
+            )
             
             return CollectionResult(
                 source=self.source,
@@ -209,11 +258,27 @@ class HackerNewsCollector(BaseCollector):
                 )
                 collected_data.extend(comments)
             
+            # Log per-symbol collection stats
+            if collected_data:
+                structured_logger.debug(
+                    f"HackerNews collected {len(collected_data)} items for {symbol}",
+                    component="hackernews_collector",
+                    symbol=symbol,
+                    stories_count=len(stories),
+                    comments_count=len(collected_data) - len(stories)
+                )
+            
             # Small delay between symbols for courtesy
             await asyncio.sleep(0.1)
             
         except Exception as e:
-            self.logger.warning(f"Error collecting HN data for {symbol}: {str(e)}")
+            structured_logger.warning(
+                f"Error collecting HackerNews data for symbol: {symbol}",
+                component="hackernews_collector",
+                symbol=symbol,
+                error=str(e),
+                error_type=type(e).__name__
+            )
         
         return collected_data[:max_items]
     
@@ -256,7 +321,13 @@ class HackerNewsCollector(BaseCollector):
                 params=params
             ) as response:
                 if response.status != 200:
-                    self.logger.warning(f"HN API returned {response.status} for {symbol} stories")
+                    structured_logger.warning(
+                        f"HackerNews API returned non-200 status for stories search",
+                        component="hackernews_collector",
+                        symbol=symbol,
+                        status_code=response.status,
+                        query=query
+                    )
                     return []
                 
                 data = await response.json()
@@ -279,6 +350,14 @@ class HackerNewsCollector(BaseCollector):
                     full_text = f"{title} {story_text}"
                     
                     if not self._contains_symbol(full_text, symbol):
+                        continue
+                    
+                    # Skip non-financial content
+                    if self._is_non_financial_content(full_text):
+                        structured_logger.debug(
+                            f"Skipping non-financial HN story: {title[:50]}",
+                            component="hackernews_collector"
+                        )
                         continue
                     
                     # Parse timestamp
@@ -311,7 +390,13 @@ class HackerNewsCollector(BaseCollector):
                     collected_data.append(raw_data)
                 
         except Exception as e:
-            self.logger.warning(f"Error searching HN stories for {symbol}: {str(e)}")
+            structured_logger.warning(
+                f"Error searching HackerNews stories for symbol: {symbol}",
+                component="hackernews_collector",
+                symbol=symbol,
+                error=str(e),
+                error_type=type(e).__name__
+            )
         
         return collected_data
     
@@ -353,7 +438,13 @@ class HackerNewsCollector(BaseCollector):
                 params=params
             ) as response:
                 if response.status != 200:
-                    self.logger.warning(f"HN API returned {response.status} for {symbol} comments")
+                    structured_logger.warning(
+                        f"HackerNews API returned non-200 status for comments search",
+                        component="hackernews_collector",
+                        symbol=symbol,
+                        status_code=response.status,
+                        query=query
+                    )
                     return []
                 
                 data = await response.json()
@@ -394,9 +485,7 @@ class HackerNewsCollector(BaseCollector):
                         url=f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
                         metadata={
                             "hn_id": hit.get("objectID"),
-                            "parent_id": hit.get("parent_id"),
-                            "story_id": hit.get("story_id"),
-                            "story_title": hit.get("story_title"),
+
                             "author": hit.get("author"),
                             "all_symbols": list(valid_symbols)
                         }
@@ -404,7 +493,13 @@ class HackerNewsCollector(BaseCollector):
                     collected_data.append(raw_data)
                 
         except Exception as e:
-            self.logger.warning(f"Error searching HN comments for {symbol}: {str(e)}")
+            structured_logger.warning(
+                f"Error searching HackerNews comments for symbol: {symbol}",
+                component="hackernews_collector",
+                symbol=symbol,
+                error=str(e),
+                error_type=type(e).__name__
+            )
         
         return collected_data
     
@@ -495,6 +590,42 @@ class HackerNewsCollector(BaseCollector):
         }
         return company_names.get(symbol.upper())
     
+    def _is_non_financial_content(self, text: str) -> bool:
+        """
+        Check if content is clearly non-financial (sports, entertainment, etc.).
+        Returns True if content should be skipped.
+        """
+        text_lower = text.lower()
+        
+        # Exclusion patterns - content with these is likely NOT financial
+        non_financial_patterns = [
+            "volleyball", "basketball", "football", "soccer", "hockey",
+            "baseball", "tennis", "golf", "olympics", "championship",
+            "tournament", "playoff", "nba finals", "nfl", "mlb", "nhl",
+            "world cup", "super bowl", "slam dunk", "touchdown", "home run",
+            "movie", "film", "cinema", "actor", "actress", "director",
+            "box office", "premiere", "trailer", "sequel", "franchise",
+            "hollywood", "streaming service", "tv show", "series premiere",
+            "album release", "concert", "tour", "music video", "grammy",
+            "recipe", "cooking", "ingredients", "calories",
+            "weather forecast", "temperature", "humidity",
+            "obituary", "wedding", "birth announcement"
+        ]
+        
+        # Financial terms that indicate relevance (override exclusions)
+        financial_terms = [
+            "stock", "share", "market", "trading", "earnings", "revenue",
+            "profit", "investor", "analyst", "valuation", "ipo", "merger",
+            "acquisition", "quarterly", "fiscal", "dividend", "price target",
+            "wall street", "hedge fund", "venture capital", "startup funding"
+        ]
+        
+        has_non_financial = any(pattern in text_lower for pattern in non_financial_patterns)
+        has_financial = any(term in text_lower for term in financial_terms)
+        
+        # Skip if has non-financial content AND no financial context
+        return has_non_financial and not has_financial
+
     async def __aenter__(self):
         """Async context manager entry"""
         return self

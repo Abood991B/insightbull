@@ -10,7 +10,7 @@ def create_mock_app():
     
     @app.get("/admin/models/accuracy")
     def get_accuracy():
-        return {"models": [{"name": "VADER", "accuracy": 0.85}], "overall_accuracy": 0.88}
+        return {"models": [{"name": "FinBERT", "accuracy": 0.883}], "overall_accuracy": 0.883}
     
     @app.put("/admin/models/accuracy") 
     def update_accuracy():
@@ -65,7 +65,7 @@ class TestPhase8ModelAccuracy:
         assert response.status_code == 200
         data = response.json()
         assert "models" in data
-        assert data["overall_accuracy"] == 0.88
+        assert data["overall_accuracy"] == 0.883
     
     def test_update_model_accuracy_success(self, client):
         response = client.put("/admin/models/accuracy", json={"model": "test"})

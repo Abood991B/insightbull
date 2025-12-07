@@ -28,6 +28,7 @@ class DataSource(Enum):
     FINNHUB = "finnhub"
     NEWSAPI = "newsapi"
     MARKETAUX = "marketaux"
+    GDELT = "gdelt"
 
 
 @dataclass

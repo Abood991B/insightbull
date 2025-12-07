@@ -11,6 +11,8 @@ Features:
 - Cron-like scheduling capabilities
 - Error handling and retry logic
 - Job status monitoring and logging
+- Smart source selection based on run type and quota availability
+- Intelligent quota management integration
 
 This component coordinates with DataCollector and Pipeline to automate
 the sentiment analysis workflow according to configured schedules.
@@ -33,6 +35,24 @@ from app.business.pipeline import DataPipeline
 from app.service.watchlist_service import get_current_stock_symbols
 from app.service.price_service import price_service
 from app.data_access.database.connection import get_db_session
+
+
+class RunType(Enum):
+    """
+    Run type determines which data sources to use.
+    
+    FREQUENT: High-frequency runs (every 30 min during market hours)
+              Uses only FREE sources (HackerNews, GDELT) to conserve quota
+              
+    STRATEGIC: Strategic runs (pre-market, after-hours)
+               Uses ALL sources including quota-limited ones
+               
+    DEEP: Deep analysis runs (weekend)
+          Uses ALL sources with extended lookback
+    """
+    FREQUENT = "frequent"       # Free sources only
+    STRATEGIC = "strategic"     # All sources
+    DEEP = "deep"              # All sources, extended lookback
 
 
 class JobStatus(Enum):
@@ -246,61 +266,340 @@ class Scheduler:
         self.logger.info(f"Smart scheduling: period='{period}', interval={interval} minutes")
         return interval
     
+    def _get_sources_for_run_type(self, run_type: RunType) -> Dict[str, bool]:
+        """
+        Get which sources to enable based on run type.
+        
+        FREQUENT runs (every 15 min during market): Only FREE sources
+        - HackerNews, GDELT, Finnhub have NO daily quota limits
+        - This conserves NewsAPI (100/day) and Marketaux (100/day) quotas
+        
+        STRATEGIC runs (pre-market, after-hours): ALL sources
+        - These are 3-4 runs per day, well within quota limits
+        
+        DEEP runs (weekend): ALL sources with extended lookback
+        """
+        if run_type == RunType.FREQUENT:
+            # Only free, unlimited sources for high-frequency runs
+            # Finnhub has 60/min rate limit but NO daily quota
+            return {
+                "include_hackernews": True,
+                "include_gdelt": True,
+                "include_finnhub": True,    # 60/min limit is fine for 30min intervals
+                "include_newsapi": False,   # CONSERVE: 100/day limit
+                "include_marketaux": False  # CONSERVE: 100/day limit
+            }
+        else:
+            # All sources for strategic/deep runs
+            return {
+                "include_hackernews": True,
+                "include_gdelt": True,
+                "include_finnhub": True,
+                "include_newsapi": True,
+                "include_marketaux": True
+            }
+    
+    async def _check_quota_before_run(self, sources: Dict[str, bool], num_symbols: int) -> Dict[str, bool]:
+        """
+        Check quotas before running and disable sources that would exceed limits.
+        
+        Args:
+            sources: Dict of source_name -> enabled boolean
+            num_symbols: Number of symbols to collect
+            
+        Returns:
+            Updated sources dict with quota-exceeded sources disabled
+        """
+        try:
+            from app.service.quota_tracking_service import get_quota_tracking_service
+            quota_service = get_quota_tracking_service()
+            
+            updated_sources = sources.copy()
+            
+            # Check each quota-limited source
+            quota_sources = ["newsapi", "marketaux"]
+            for source in quota_sources:
+                config_key = f"include_{source}"
+                if updated_sources.get(config_key, False):
+                    # Check if we can make requests
+                    check = quota_service.can_make_request(source, num_symbols)
+                    if not check.get("allowed", True):
+                        updated_sources[config_key] = False
+                        self.logger.warning(
+                            f"Disabled {source} for this run due to quota: {check.get('reason')}",
+                            component="scheduler",
+                            source=source,
+                            remaining=check.get("remaining")
+                        )
+            
+            return updated_sources
+            
+        except Exception as e:
+            self.logger.warning(f"Quota check failed, using original sources: {e}")
+            return sources
+    
     async def _setup_default_jobs(self):
-        """Setup default scheduled jobs with smart preset schedules aligned with market hours"""
+        """
+        Setup default scheduled jobs with SMART SOURCE SELECTION.
+        
+        Strategy:
+        - FREQUENT runs (every 15 min during market): FREE sources (HN, GDELT, Finnhub)
+          These 3 sources have NO daily quota limits, only per-minute rate limits.
+        - STRATEGIC runs (pre-market, after-hours): ALL sources (3-4 times/day)
+        - DEEP runs (weekend): ALL sources with 7-day lookback
+        
+        This ensures NewsAPI and Marketaux stay within their 100/day limits:
+        - 3-4 strategic runs * 20 symbols = 60-80 requests/day (within limit)
+        - Frequent runs use only free sources = 0 quota usage
+        
+        Source Classification:
+        - FREE (no daily limit): HackerNews, GDELT, Finnhub (60/min)
+        - QUOTA LIMITED (100/day): NewsAPI, Marketaux
+        """
         
         # Get current symbols from dynamic watchlist
         current_symbols = await self.get_current_symbols()
         
+        # =========================================================================
+        # STRATEGIC RUNS: Use ALL sources (conserves quota by running only 3-4x/day)
+        # =========================================================================
+        
         # Pre-Market Preparation: 8:00 AM ET daily (Mon-Fri)
         # Collects fresh overnight news and social sentiment before market opens
-        await self.schedule_full_pipeline(
+        await self.schedule_smart_pipeline(
             name="Pre-Market Preparation",
             cron_expression="0 13 * * 1-5",  # 8:00 AM ET = 13:00 UTC
             symbols=current_symbols,
-            lookback_days=1
+            lookback_days=1,
+            run_type=RunType.STRATEGIC
         )
         
-        # Active Trading Updates: Every 30 minutes during market hours (9:30 AM - 4:00 PM ET)
-        # Real-time sentiment tracking during active trading
+        # =========================================================================
+        # FREQUENT RUNS: Every 15 min using FREE sources (HN, GDELT, Finnhub)
+        # These sources have NO daily quota - only per-minute rate limits
+        # =========================================================================
+        
+        # Active Trading Updates: Every 15 minutes during market hours (9:30 AM - 4:00 PM ET)
+        # Near real-time sentiment tracking using FREE sources only
         # Note: 9:30 AM ET = 14:30 UTC, 4:00 PM ET = 21:00 UTC
-        await self.schedule_full_pipeline(
+        await self.schedule_smart_pipeline(
             name="Active Trading Updates",
-            cron_expression="*/30 14-20 * * 1-5",  # Every 30 min, 9:30 AM-4:00 PM ET
+            cron_expression="*/15 14-20 * * 1-5",  # Every 15 min, 9:30 AM-4:00 PM ET
             symbols=current_symbols,
-            lookback_days=1
+            lookback_days=1,
+            run_type=RunType.FREQUENT  # FREE SOURCES ONLY (HN, GDELT, Finnhub)
         )
+        
+        # =========================================================================
+        # STRATEGIC RUNS: After-hours use ALL sources
+        # =========================================================================
         
         # After-Hours Analysis: 5:00 PM ET (Mon-Fri)
-        # Captures post-market news, earnings reports, and extended hours sentiment
-        # Note: We only schedule 5 PM ET run here. The 8 PM ET run requires
-        # a separate job due to UTC midnight crossing (8 PM ET = 1 AM UTC next day)
-        await self.schedule_full_pipeline(
+        await self.schedule_smart_pipeline(
             name="After-Hours Analysis",
             cron_expression="0 22 * * 1-5",  # 5 PM ET (22:00 UTC Mon-Fri)
             symbols=current_symbols,
-            lookback_days=1
+            lookback_days=1,
+            run_type=RunType.STRATEGIC
         )
         
         # After-Hours Late Evening: 8:00 PM ET (Mon-Fri)
-        # Second evening run to catch late breaking news
-        # Note: 8 PM ET crosses midnight in UTC (Mon 8PM ET = Tue 1AM UTC)
-        await self.schedule_full_pipeline(
+        await self.schedule_smart_pipeline(
             name="After-Hours Late Evening",
             cron_expression="0 1 * * 2-6",  # 8 PM ET Mon-Fri = 1:00 UTC Tue-Sat
             symbols=current_symbols,
-            lookback_days=1
+            lookback_days=1,
+            run_type=RunType.STRATEGIC
         )
         
+        # =========================================================================
+        # DEEP RUNS: Weekend comprehensive analysis
+        # =========================================================================
+        
         # Weekend Deep Analysis: Saturday 10:00 AM ET
-        # Comprehensive weekly analysis when markets are closed
-        await self.schedule_full_pipeline(
+        await self.schedule_smart_pipeline(
             name="Weekend Deep Analysis",
             cron_expression="0 15 * * 6",  # Saturday 10 AM ET = 15:00 UTC
             symbols=current_symbols,
-            lookback_days=7
+            lookback_days=7,
+            run_type=RunType.DEEP
         )
+        
+        # =========================================================================
+        # DAILY QUOTA RESET: Midnight UTC
+        # =========================================================================
+        await self._schedule_quota_reset()
     
+    async def _schedule_quota_reset(self):
+        """Schedule daily quota reset job at midnight UTC."""
+        job_id = "quota_reset_daily"
+        
+        # Schedule with APScheduler
+        self.scheduler.add_job(
+            func=self._execute_quota_reset,
+            trigger=CronTrigger.from_crontab("0 0 * * *"),  # Midnight UTC
+            id=job_id,
+            replace_existing=True,
+            max_instances=1
+        )
+        
+        self.logger.info("Scheduled daily quota reset at midnight UTC")
+    
+    async def _execute_quota_reset(self):
+        """Execute daily quota reset."""
+        try:
+            from app.service.quota_tracking_service import get_quota_tracking_service
+            quota_service = get_quota_tracking_service()
+            quota_service._check_and_reset_daily()
+            self.logger.info("Daily quota reset completed")
+        except Exception as e:
+            self.logger.error(f"Failed to reset quotas: {e}")
+    
+    async def schedule_smart_pipeline(
+        self, 
+        name: str, 
+        cron_expression: str,
+        symbols: List[str], 
+        lookback_days: int = 1,
+        run_type: RunType = RunType.STRATEGIC
+    ) -> str:
+        """
+        Schedule a pipeline job with smart source selection.
+        
+        Args:
+            name: Human-readable job name
+            cron_expression: Cron expression for scheduling
+            symbols: List of stock symbols
+            lookback_days: Days to look back
+            run_type: Type of run (affects source selection)
+            
+        Returns:
+            Job ID of the scheduled job
+        """
+        job_id = f"smart_pipeline_{uuid.uuid4().hex[:8]}"
+        
+        job = ScheduledJob(
+            job_id=job_id,
+            name=name,
+            job_type="smart_pipeline",
+            trigger_config={"cron": cron_expression},
+            parameters={
+                "symbols": symbols,
+                "lookback_days": lookback_days,
+                "run_type": run_type.value
+            }
+        )
+        
+        # Schedule with APScheduler
+        self.scheduler.add_job(
+            func=self._execute_smart_pipeline,
+            trigger=CronTrigger.from_crontab(cron_expression),
+            id=job_id,
+            args=[job_id],
+            replace_existing=True,
+            max_instances=1
+        )
+        
+        self.jobs[job_id] = job
+        
+        # Get source configuration for logging
+        sources = self._get_sources_for_run_type(run_type)
+        enabled_sources = [k.replace("include_", "") for k, v in sources.items() if v]
+        
+        self.logger.info(
+            f"Scheduled smart pipeline job: {name}",
+            job_id=job_id,
+            cron=cron_expression,
+            run_type=run_type.value,
+            enabled_sources=enabled_sources,
+            symbol_count=len(symbols)
+        )
+        
+        return job_id
+    
+    async def _execute_smart_pipeline(self, job_id: str):
+        """Execute a smart pipeline job with source selection and quota tracking."""
+        job = self.jobs.get(job_id)
+        if not job or not job.enabled:
+            return
+        
+        job.status = JobStatus.RUNNING
+        job.last_run = utc_now()
+        
+        try:
+            symbols = job.parameters["symbols"]
+            lookback_days = job.parameters["lookback_days"]
+            run_type = RunType(job.parameters["run_type"])
+            
+            self.logger.info(
+                f"EXECUTING SMART PIPELINE: {job.name}",
+                job_id=job_id,
+                run_type=run_type.value,
+                symbol_count=len(symbols),
+                lookback_days=lookback_days
+            )
+            
+            # Get sources for this run type
+            sources = self._get_sources_for_run_type(run_type)
+            
+            # Check quotas and potentially disable over-quota sources
+            sources = await self._check_quota_before_run(sources, len(symbols))
+            
+            enabled_sources = [k.replace("include_", "") for k, v in sources.items() if v]
+            self.logger.info(f"Using sources for {job.name}: {enabled_sources}")
+            
+            # Execute pipeline with specific sources
+            from .pipeline import PipelineConfig, DateRange
+            end_date = to_naive_utc(utc_now())
+            start_date = end_date - timedelta(days=lookback_days)
+            
+            config = PipelineConfig(
+                symbols=symbols,
+                date_range=DateRange(start_date=start_date, end_date=end_date),
+                max_items_per_symbol=20,
+                **sources  # Pass source configuration
+            )
+            
+            result = await self.pipeline.run_pipeline(config)
+            
+            # Record quota usage for quota-limited sources
+            await self._record_quota_usage(sources, len(symbols))
+            
+            if result.status.value == "completed":
+                job.status = JobStatus.COMPLETED
+                job.run_count += 1
+                self.logger.info(f"Smart pipeline {job_id} completed successfully")
+            else:
+                job.status = JobStatus.FAILED
+                job.error_count += 1
+                job.last_error = f"Pipeline failed: {result.errors}"
+                self.logger.error(f"Smart pipeline {job_id} failed", errors=result.errors)
+                
+        except Exception as e:
+            job.status = JobStatus.FAILED
+            job.error_count += 1
+            job.last_error = str(e)
+            self.logger.error(f"Smart pipeline {job_id} failed with exception", error=str(e))
+    
+    async def _record_quota_usage(self, sources: Dict[str, bool], num_symbols: int):
+        """Record quota usage after a successful run."""
+        try:
+            from app.service.quota_tracking_service import get_quota_tracking_service
+            quota_service = get_quota_tracking_service()
+            
+            # Record NewsAPI usage
+            if sources.get("include_newsapi", False):
+                quota_service.record_usage("newsapi", num_symbols)
+            
+            # Record Marketaux usage (batched, so fewer requests)
+            if sources.get("include_marketaux", False):
+                # Marketaux batches 10 symbols per request
+                requests = (num_symbols + 9) // 10
+                quota_service.record_usage("marketaux", requests)
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to record quota usage: {e}")
+
     async def schedule_data_collection(self, name: str, cron_expression: str,
                                      symbols: List[str], lookback_days: int = 1) -> str:
         """

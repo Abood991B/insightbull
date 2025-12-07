@@ -41,27 +41,48 @@ export interface SystemStatus {
   timestamp: string;
 }
 
+// Per-source sentiment metrics - REAL data only (no fake estimates)
+export interface SourceMetrics {
+  sample_count: number;
+  avg_confidence: number;
+  avg_sentiment_score: number;
+  // Sentiment distribution - actual counts from data
+  sentiment_distribution: {
+    positive: number;
+    negative: number;
+    neutral: number;
+  };
+  positive_rate: number;
+  negative_rate: number;
+  neutral_rate: number;
+  // Legacy fields (optional for backwards compatibility)
+  accuracy?: number;
+  precision?: number;
+  recall?: number;
+  f1_score?: number;
+}
 
 export interface ModelAccuracy {
   overall_accuracy: number;
   model_metrics: {
-    vader_sentiment: { // Hybrid VADER (Enhanced VADER + ML ensemble)
-      accuracy: number;
-      precision: number;
-      recall: number;
-      f1_score: number;
-    };
-    finbert_sentiment: {
+    finbert_sentiment: { // ProsusAI/finbert (88.3% benchmark accuracy) with optional Gemini AI verification
       accuracy: number;
       precision: number;
       recall: number;
       f1_score: number;
     };
   };
+  source_metrics?: Record<string, SourceMetrics>; // Per-source breakdown
   last_evaluation: string;
   evaluation_samples: number;
   evaluation_period: string;
   data_source: string;
+  ai_verification?: { // Gemini AI verification info
+    enabled: boolean;
+    provider: string;
+    mode: string;
+    estimated_accuracy_with_ai: number;
+  };
 }
 
 export interface APIConfiguration {
@@ -71,36 +92,158 @@ export interface APIConfiguration {
       last_test: string | null;
       requires_api_key: boolean;
       error?: string | null;
+      enabled?: boolean;
+    };
+    gdelt: {
+      status: 'active' | 'inactive' | 'error' | 'unknown';
+      last_test: string | null;
+      requires_api_key: boolean;
+      error?: string | null;
+      enabled?: boolean;
     };
     finnhub: {
       status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
       api_key: string;
       error?: string | null;
+      enabled?: boolean;
     };
     newsapi: {
       status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
       api_key: string;
       error?: string | null;
+      enabled?: boolean;
     };
     marketaux: {
       status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
       api_key: string;
       error?: string | null;
+      enabled?: boolean;
+    };
+  };
+  ai_services?: {
+    gemini: {
+      status: 'active' | 'inactive' | 'error' | 'unknown';
+      last_test: string | null;
+      api_key: string;
+      api_key_required: boolean;
+      error?: string | null;
+      enabled?: boolean;
+      description?: string;
+      verification_mode?: string;
+      confidence_threshold?: number;
+      ai_verification_stats?: {
+        configured: boolean;
+        mode: string;
+        confidence_threshold: number;
+        total_analyzed?: number;
+        ai_verified_count?: number;
+        ai_verification_rate?: number;
+        ai_errors?: number;
+        avg_ml_confidence?: number;
+        ai_enabled?: boolean;
+        gemini_configured?: boolean;
+      };
     };
   };
   summary: {
-    total_apis: number;
+    total_collectors: number;
+    total_ai_services: number;
     configured: number;
     active: number;
+    enabled?: number;
+    disabled?: number;
+    ai_configured?: number;
+    ai_enabled?: number;
+  };
+  collector_config?: {
+    last_updated: string | null;
+    updated_by: string | null;
   };
 }
 
+export interface CollectorToggleResponse {
+  collector: string;
+  enabled: boolean;
+  message: string;
+  updated_at: string;
+  updated_by: string | null;
+}
+
 export interface APIKeyUpdate {
-  service: 'hackernews' | 'finnhub' | 'newsapi' | 'marketaux';
+  service: 'hackernews' | 'finnhub' | 'newsapi' | 'marketaux' | 'gemini';
   keys: Record<string, string>;
+}
+
+// Benchmark interfaces
+export interface BenchmarkClassMetrics {
+  precision: number;
+  recall: number;
+  f1_score: number;
+  support: number;
+}
+
+export interface BenchmarkResult {
+  dataset_name: string;
+  dataset_size: number;
+  evaluated_at: string;
+  model_name: string;
+  model_version: string;
+  accuracy: number;
+  macro_precision: number;
+  macro_recall: number;
+  macro_f1: number;
+  weighted_f1: number;
+  class_metrics: {
+    positive: BenchmarkClassMetrics;
+    negative: BenchmarkClassMetrics;
+    neutral: BenchmarkClassMetrics;
+  };
+  confusion_matrix: {
+    positive: { positive: number; negative: number; neutral: number };
+    negative: { positive: number; negative: number; neutral: number };
+    neutral: { positive: number; negative: number; neutral: number };
+  };
+  processing_time_seconds: number;
+  avg_confidence: number;
+  comparison_with_previous?: {
+    previous_model: string;
+    previous_accuracy: number;
+    accuracy_improvement: number;
+    improvement_percentage: number;
+  };
+  ai_verification?: {
+    enabled: boolean;
+    provider: string;
+    mode: string;
+    confidence_threshold: number;
+    estimated_accuracy_with_ai: number;
+    note: string;
+  };
+}
+
+export interface BenchmarkDatasetInfo {
+  available: boolean;
+  path: string;
+  total_samples?: number;
+  distribution?: Record<string, number>;
+  message?: string;
+  error?: string;
+}
+
+export interface BenchmarkResponse {
+  has_benchmark: boolean;
+  benchmark?: BenchmarkResult;
+  dataset_info: BenchmarkDatasetInfo;
+  message?: string;
+}
+
+export interface BenchmarkRunResponse {
+  success: boolean;
+  message: string;
+  results: BenchmarkResult;
 }
 
 export interface StorageSettings {
@@ -226,22 +369,13 @@ export interface SentimentEngineMetrics {
     total_processing_time_sec: number;
   };
   model_configuration: {
-    vader_enabled: boolean;
     finbert_enabled: boolean;
     ensemble_finbert_enabled: boolean;
     finbert_calibration_enabled: boolean;
-    vader_type: string;
     finbert_type: string;
     default_batch_size: number;
   };
   model_usage: {
-    hybrid_vader: {
-      session_count: number;
-      database_count: number;
-      percentage_of_total: number;
-      used_for: string[];
-      features: string[];
-    };
     finbert: {
       session_count: number;
       database_count: number;
@@ -253,7 +387,6 @@ export interface SentimentEngineMetrics {
   };
   database_statistics: {
     total_sentiment_records: number;
-    vader_records: number;
     finbert_records: number;
   };
   timestamp: string;
@@ -547,6 +680,32 @@ class AdminAPIService {
     return response.json();
   }
 
+  async getBenchmarkResults(): Promise<BenchmarkResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/models/benchmark`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch benchmark results');
+    }
+
+    return response.json();
+  }
+
+  async runBenchmark(force: boolean = false): Promise<BenchmarkRunResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/models/benchmark/run?force=${force}`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(error.detail || 'Failed to run benchmark');
+    }
+
+    return response.json();
+  }
+
   async getSentimentEngineMetrics(): Promise<SentimentEngineMetrics> {
     const response = await fetch(`${API_BASE_URL}/api/admin/models/sentiment-engine-metrics`, {
       headers: getAuthHeaders(),
@@ -584,6 +743,57 @@ class AdminAPIService {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(apiKeyUpdate),
+    });
+    return handleApiResponse(response);
+  }
+
+  async toggleCollector(collectorName: string, enabled: boolean): Promise<CollectorToggleResponse> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/admin/config/collectors/${collectorName}?enabled=${enabled}`,
+      {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+      }
+    );
+    return handleApiResponse(response);
+  }
+
+  // ============================================================================
+  // AI SERVICES MANAGEMENT
+  // ============================================================================
+
+  async toggleAIService(serviceName: string, enabled: boolean): Promise<any> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/admin/config/ai-services/${serviceName}/toggle?enabled=${enabled}`,
+      {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+      }
+    );
+    return handleApiResponse(response);
+  }
+
+  async updateAIServiceSettings(
+    serviceName: string, 
+    settings: { verification_mode?: string; confidence_threshold?: number }
+  ): Promise<any> {
+    const params = new URLSearchParams();
+    if (settings.verification_mode) params.append('verification_mode', settings.verification_mode);
+    if (settings.confidence_threshold !== undefined) params.append('confidence_threshold', settings.confidence_threshold.toString());
+    
+    const response = await fetch(
+      `${API_BASE_URL}/api/admin/config/ai-services/${serviceName}/settings?${params.toString()}`,
+      {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+      }
+    );
+    return handleApiResponse(response);
+  }
+
+  async getAIServicesConfig(): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/config/ai-services`, {
+      headers: getAuthHeaders(),
     });
     return handleApiResponse(response);
   }

@@ -29,7 +29,7 @@ const About = () => {
     {
       icon: Zap,
       title: "Advanced NLP",
-      description: "Hybrid VADER and FinBERT models for accurate sentiment classification"
+      description: "ProsusAI/finbert model with Gemini AI verification for 92-95% accuracy"
     },
     {
       icon: Shield,
@@ -40,6 +40,7 @@ const About = () => {
 
   const dataSourceCard = [
     { name: "Hacker News", description: "Tech community sentiment from news.ycombinator.com", badge: "Social" },
+    { name: "GDELT", description: "Global news monitoring from 100+ countries in 65 languages", badge: "Global" },
     { name: "FinHub", description: "Professional financial news and market data", badge: "News" },
     { name: "NewsAPI", description: "Global news sentiment analysis", badge: "News" },
     { name: "Marketaux", description: "Market news and real-time analysis", badge: "Market" }
@@ -128,8 +129,8 @@ const About = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-gray-700 leading-relaxed">
-                We employ advanced Natural Language Processing models including Hybrid VADER (Enhanced VADER + ML ensemble) for social media 
-                sentiment and FinBERT for financial news analysis, ensuring accurate sentiment classification with 91.67% accuracy.
+                We employ advanced Natural Language Processing using ProsusAI/finbert for sentiment analysis,
+                enhanced with Gemini AI verification achieving 92-95% accuracy across all data sources.
               </p>
               <p className="text-gray-700 leading-relaxed">
                 Our system processes thousands of data points daily, providing statistical correlation 
@@ -138,7 +139,7 @@ const About = () => {
               <div className="mt-4 space-y-3">
                 <div className="p-3 bg-green-50 rounded-lg">
                   <h4 className="font-semibold text-green-900">NLP Models</h4>
-                  <p className="text-sm text-green-700">Hybrid VADER, FinBERT, Custom Classification</p>
+                  <p className="text-sm text-green-700">ProsusAI/finbert (88.3% base) + Gemini AI (92-95% verified)</p>
                 </div>
                 <div className="p-3 bg-purple-50 rounded-lg">
                   <h4 className="font-semibold text-purple-900">Statistical Methods</h4>

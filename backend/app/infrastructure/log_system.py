@@ -260,6 +260,18 @@ class LogSystem:
                     component = 'system_service'
                 elif 'data_collector' in module_name:
                     component = 'data_collector'
+                elif 'hackernews_collector' in module_name:
+                    component = 'hackernews_collector'
+                elif 'gdelt_collector' in module_name:
+                    component = 'gdelt_collector'
+                elif 'finnhub_collector' in module_name or 'finhub_collector' in module_name:
+                    component = 'finnhub_collector'
+                elif 'newsapi_collector' in module_name:
+                    component = 'newsapi_collector'
+                elif 'marketaux_collector' in module_name:
+                    component = 'marketaux_collector'
+                elif 'collector_config' in module_name:
+                    component = 'collector_config'
                 elif 'pipeline' in module_name:
                     component = 'pipeline'
                 elif 'sentiment' in module_name:

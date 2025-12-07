@@ -216,12 +216,20 @@ class NewsAPICollector(BaseCollector):
         return await self._collect_symbol_news(symbol, config)
     
     async def _collect_symbol_news(self, symbol: str, config: CollectionConfig) -> List[RawData]:
-        """Collect news for specific stock symbol"""
+        """Collect news for specific stock symbol with improved relevance filtering"""
         collected_data = []
         
         try:
-            # Simple direct search for the target symbol only
-            query = f'{symbol}'
+            # Build a more specific financial query
+            # Include company name and financial context terms
+            company_name = self._get_company_name(symbol)
+            
+            if company_name:
+                # Use company name + financial context for better relevance
+                query = f'"{company_name}" AND (stock OR shares OR market OR earnings OR investor)'
+            else:
+                # Fallback: symbol + financial context
+                query = f'{symbol} AND (stock OR shares OR market OR earnings OR trading)'
             
             url = f"{self.base_url}/everything"
             params = {
@@ -231,7 +239,7 @@ class NewsAPICollector(BaseCollector):
                 "to": config.date_range.end_date.strftime("%Y-%m-%d"),
                 "sortBy": "relevancy",
                 "language": config.language,
-                "pageSize": min(config.max_items_per_symbol, 100),
+                "pageSize": min(config.max_items_per_symbol * 2, 100),  # Get extra for filtering
                 "apiKey": self.api_key
             }
             
@@ -244,9 +252,25 @@ class NewsAPICollector(BaseCollector):
                 
                 for article in articles:
                     try:
+                        # Pre-filter before creating RawData
+                        title = article.get("title") or ""
+                        description = article.get("description") or ""
+                        content = article.get("content") or ""
+                        full_text = f"{title} {description} {content}"
+                        
+                        # Skip obviously non-financial content
+                        if self._is_non_financial_content(full_text):
+                            self.logger.debug(f"Skipping non-financial article: {title[:50]}")
+                            continue
+                        
                         article_data = self._parse_article(article, symbol, "symbol_news")
                         if article_data:
                             collected_data.append(article_data)
+                            
+                        # Stop once we have enough
+                        if len(collected_data) >= config.max_items_per_symbol:
+                            break
+                            
                     except Exception as e:
                         self.logger.warning(f"Error parsing article for {symbol}: {str(e)}")
                         continue
@@ -258,6 +282,66 @@ class NewsAPICollector(BaseCollector):
         
         return collected_data
     
+    def _get_company_name(self, symbol: str) -> Optional[str]:
+        """Get company name for a stock symbol."""
+        company_names = {
+            "AAPL": "Apple",
+            "MSFT": "Microsoft",
+            "GOOGL": "Google",
+            "GOOG": "Google",
+            "AMZN": "Amazon",
+            "META": "Meta",
+            "NVDA": "Nvidia",
+            "TSLA": "Tesla",
+            "AMD": "AMD",
+            "INTC": "Intel",
+            "NFLX": "Netflix",
+            "CRM": "Salesforce",
+            "ORCL": "Oracle",
+            "IBM": "IBM",
+            "CSCO": "Cisco",
+            "ADBE": "Adobe",
+            "PYPL": "PayPal",
+            "SQ": "Block",
+            "SHOP": "Shopify",
+            "UBER": "Uber",
+            "LYFT": "Lyft",
+            "AVGO": "Broadcom",
+            "TXN": "Texas Instruments",
+            "QCOM": "Qualcomm",
+            "NOW": "ServiceNow",
+        }
+        return company_names.get(symbol.upper())
+    
+    def _is_non_financial_content(self, text: str) -> bool:
+        """Check if content is clearly non-financial (sports, entertainment, etc.)"""
+        text_lower = text.lower()
+        
+        # Exclusion patterns - if these appear without financial context, skip
+        non_financial_patterns = [
+            "volleyball", "basketball", "football", "soccer", "hockey",
+            "baseball", "tennis", "golf", "olympics", "championship",
+            "tournament", "playoff", "league", "nba", "nfl", "mlb",
+            "movie", "film", "cinema", "actor", "actress", "director",
+            "box office", "premiere", "trailer", "sequel", "streaming",
+            "tv show", "series", "episode", "album", "concert", "tour",
+            "music video", "grammy", "song", "recipe", "cooking",
+            "weather forecast", "obituary", "wedding"
+        ]
+        
+        # Financial terms that indicate relevance
+        financial_terms = [
+            "stock", "share", "market", "trading", "earnings", "revenue",
+            "profit", "investor", "analyst", "price target", "upgrade",
+            "downgrade", "quarterly", "fiscal", "ipo", "merger"
+        ]
+        
+        has_non_financial = any(pattern in text_lower for pattern in non_financial_patterns)
+        has_financial = any(term in text_lower for term in financial_terms)
+        
+        # Skip if has non-financial content AND no financial context
+        return has_non_financial and not has_financial
+
     async def _collect_general_financial_news(self, config: CollectionConfig) -> List[RawData]:
         """Collect general financial news"""
         collected_data = []
@@ -292,6 +376,11 @@ class NewsAPICollector(BaseCollector):
                         title = article.get("title") or ""
                         description = article.get("description") or ""
                         content = article.get("content") or ""
+                        full_text = f"{title} {description} {content}"
+                        
+                        # Skip non-financial content
+                        if self._is_non_financial_content(full_text):
+                            continue
                         
                         title_upper = title.upper()
                         description_upper = description.upper()

@@ -250,23 +250,23 @@ class HackerNewsDemo:
         print("""
   DATA AVAILABLE PER STOCK:
   -------------------------
-  📰 Stories: Thousands of discussion threads
-  💬 Comments: Real community opinions (for VADER analysis)
-  👍 Points: Engagement metrics (upvotes)
-  📅 Timestamps: Date filtering supported
-  👤 Authors: User attribution
+  Stories: Thousands of discussion threads
+  Comments: Real community opinions (for sentiment analysis)
+  Points: Engagement metrics (upvotes)
+  Timestamps: Date filtering supported
+  Authors: User attribution
 
   COLLECTION METHOD:
   ------------------
-  ✓ Sequential requests (one stock at a time)
-  ✓ ~0.1-0.2 seconds per stock
-  ✓ Full 20-stock watchlist: ~4-5 seconds
-  ✓ No API key required
-  ✓ No rate limits in normal use
+  Sequential requests (one stock at a time)
+  ~0.1-0.2 seconds per stock
+  Full 20-stock watchlist: ~4-5 seconds
+  No API key required
+  No rate limits in normal use
 
   FOR SENTIMENT ANALYSIS:
   -----------------------
-  Use the COMMENTS text with Hybrid VADER
+  Use the COMMENTS text with FinBERT
   Filter by:
   - Date range (recent discussions)
   - Points > 0 (quality filter)
