@@ -14,7 +14,6 @@ import time
 from typing import List, Dict, Any, Optional, Tuple, Union
 from dataclasses import dataclass
 from datetime import datetime
-import logging
 from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 import threading
@@ -29,8 +28,9 @@ from .models.sentiment_model import (
 )
 from ...infrastructure.collectors.base_collector import DataSource
 from .models.finbert_model import FinBERTModel, EnsembleFinBERTModel
+from ...infrastructure.log_system import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 # Global singleton instance
 _sentiment_engine_instance = None
@@ -52,7 +52,7 @@ class EngineConfig:
     # AI Verification settings (Gemini integration)
     enable_ai_verification: bool = True  # Enable AI verification when Gemini is configured
     ai_verification_mode: str = "low_confidence_and_neutral"  # none, low_confidence, neutral_only, low_confidence_and_neutral, all
-    ai_confidence_threshold: float = 0.75  # Threshold below which AI verification is triggered
+    ai_confidence_threshold: float = 0.85  # Threshold below which AI verification is triggered
 
 
 @dataclass
@@ -88,8 +88,8 @@ class SentimentEngine:
     
     Features:
     - Unified model routing (all sources -> ProsusAI/finbert)
-    - 88.3% accuracy on Financial PhraseBank benchmark
-    - Optional AI verification via Google Gemini (92-95% with AI)
+    - 88%+ accuracy on Financial PhraseBank benchmark
+    - Optional AI verification via Google Gemini for enhanced accuracy
     - Batch processing optimization
     - Concurrent processing support
     - Error handling and fallback strategies
@@ -111,6 +111,11 @@ class SentimentEngine:
         self._executor = ThreadPoolExecutor(max_workers=self.config.max_concurrent_batches)
         self._active_jobs: Dict[str, AnalysisJob] = {}
         self._ai_analyzer = None  # AI-verified sentiment analyzer (optional)
+        
+        # Result cache (simple in-memory cache)
+        self._cache: Dict[str, SentimentResult] = {}
+        self._cache_lock = threading.Lock()
+        self._max_cache_size = 10000
         
         # All sources route to ProsusAI/finbert (unified model approach)
         # ProsusAI/finbert achieves 88.3% accuracy on Financial PhraseBank
@@ -154,7 +159,7 @@ class SentimentEngine:
         # Initialize AI-verified sentiment analyzer if enabled
         if self.config.enable_ai_verification:
             try:
-                from .ai_verified_sentiment import AIVerifiedSentimentAnalyzer, VerificationMode
+                from .hybrid_sentiment_analyzer import AIVerifiedSentimentAnalyzer, VerificationMode
                 
                 # Map string mode to enum
                 mode_map = {
@@ -197,10 +202,7 @@ class SentimentEngine:
     
     async def analyze(self, inputs: List[TextInput]) -> List[SentimentResult]:
         """
-        Analyze sentiment for multiple text inputs.
-        
-        Uses AI verification (Google Gemini) when configured for improved accuracy.
-        Falls back to ML-only when Gemini is not available.
+        Analyze sentiment for multiple text inputs with caching support.
         
         Args:
             inputs: List of TextInput objects to analyze
@@ -213,8 +215,44 @@ class SentimentEngine:
         
         if not inputs:
             return []
+
+        # Check cache first
+        results_map = {}
+        inputs_to_process = []
         
-        logger.debug(f"Processing {len(inputs)} sentiment analysis inputs")
+        if self.config.cache_results:
+            with self._cache_lock:
+                for input_obj in inputs:
+                    key = self._get_cache_key(input_obj.text)
+                    if key in self._cache:
+                        results_map[id(input_obj)] = self._cache[key]
+                    else:
+                        inputs_to_process.append(input_obj)
+        else:
+            inputs_to_process = inputs
+            
+        # Process uncached items
+        if inputs_to_process:
+            processed_results = await self._analyze_internal(inputs_to_process)
+            
+            # Update cache
+            self._update_cache(inputs_to_process, processed_results)
+            
+            # Map back
+            for input_obj, result in zip(inputs_to_process, processed_results):
+                results_map[id(input_obj)] = result
+                
+        # Reconstruct results in original order
+        return [results_map[id(input_obj)] for input_obj in inputs]
+
+    async def _analyze_internal(self, inputs: List[TextInput]) -> List[SentimentResult]:
+        """
+        Internal method to analyze sentiment (bypassing cache).
+        
+        Uses AI verification (Google Gemini) when configured for improved accuracy.
+        Falls back to ML-only when Gemini is not available.
+        """
+        logger.debug(f"Processing {len(inputs)} sentiment analysis inputs (uncached)")
         start_time = time.time()
         
         try:
@@ -238,6 +276,18 @@ class SentimentEngine:
                 results = []
                 for ai_result in ai_results:
                     try:
+                        # Determine clear model name based on what actually happened
+                        if ai_result.ai_verified:
+                            if ai_result.ai_label != ai_result.ml_label:
+                                # AI changed the prediction
+                                model_display = "Gemini AI"
+                            else:
+                                # AI confirmed ML prediction
+                                model_display = "FinBERT+Gemini"
+                        else:
+                            # ML-only (no AI verification)
+                            model_display = "FinBERT"
+                        
                         result = SentimentResult(
                             label=label_map.get(ai_result.label, SentimentLabel.NEUTRAL),
                             score=ai_result.score,
@@ -249,7 +299,7 @@ class SentimentEngine:
                                 'ai_reasoning': ai_result.ai_reasoning
                             },
                             processing_time=0.0,
-                            model_name="ProsusAI/finbert+Gemini" if ai_result.ai_verified else "ProsusAI/finbert"
+                            model_name=model_display
                         )
                         results.append(result)
                     except Exception as e:
@@ -390,6 +440,32 @@ class SentimentEngine:
         """Create neutral fallback results when models fail."""
         return [self._create_neutral_result() for _ in inputs]
     
+    def _get_cache_key(self, text: str) -> str:
+        """Generate a cache key for a text."""
+        import hashlib
+        # Use MD5 for speed, collisions are rare enough for this use case
+        text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
+        # Include AI mode in key if enabled
+        ai_suffix = f":ai_{self.config.ai_verification_mode}" if self.config.enable_ai_verification else ""
+        return f"{text_hash}{ai_suffix}"
+
+    def _update_cache(self, inputs: List[TextInput], results: List[SentimentResult]):
+        """Update the result cache."""
+        if not self.config.cache_results:
+            return
+            
+        with self._cache_lock:
+            # Simple eviction if too large
+            if len(self._cache) > self._max_cache_size:
+                # Remove random 20% of items
+                keys = list(self._cache.keys())
+                for i in range(int(self._max_cache_size * 0.2)):
+                    self._cache.pop(keys[i], None)
+            
+            for input_obj, result in zip(inputs, results):
+                key = self._get_cache_key(input_obj.text)
+                self._cache[key] = result
+
     def _create_neutral_result(self) -> SentimentResult:
         """Create a neutral sentiment result."""
         return SentimentResult(
@@ -398,7 +474,7 @@ class SentimentEngine:
             confidence=0.0,
             raw_scores={'fallback': True},
             processing_time=0.0,
-            model_name="FALLBACK"
+            model_name="Fallback"
         )
     
     def _update_stats(self, inputs: List[TextInput], results: List[SentimentResult], processing_time: float) -> None:
@@ -410,6 +486,11 @@ class SentimentEngine:
             self.stats.avg_processing_time = (
                 self.stats.total_processing_time / self.stats.total_texts_processed
             )
+        
+        # Track model usage from results
+        for result in results:
+            if result.model_name:
+                self.stats.model_usage[result.model_name] += 1
         
         # Count errors
         error_count = sum(1 for result in results if 'error' in result.raw_scores)

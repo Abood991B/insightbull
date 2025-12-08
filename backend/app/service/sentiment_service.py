@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc, or_
 import structlog
+import math
 from app.utils.timezone import utc_now, to_naive_utc
 
 from app.data_access.models import Stock, SentimentData, NewsArticle, HackerNewsPost
@@ -18,6 +19,11 @@ from app.infrastructure.log_system import get_logger
 
 
 logger = get_logger()
+
+
+# Temporal Decay Configuration
+TEMPORAL_DECAY_HALF_LIFE_HOURS = 24  # Sentiment loses 50% weight after 24 hours
+TEMPORAL_DECAY_ENABLED = True  # Master switch for temporal decay
 
 
 class SentimentService:
@@ -34,6 +40,45 @@ class SentimentService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.logger = logger
+        self.decay_enabled = TEMPORAL_DECAY_ENABLED
+        self.decay_half_life = TEMPORAL_DECAY_HALF_LIFE_HOURS
+    
+    def _calculate_temporal_weight(self, timestamp: datetime, current_time: datetime = None) -> float:
+        """
+        Calculate temporal decay weight for sentiment data.
+        
+        Uses exponential decay: weight = exp(-hours_ago / half_life)
+        
+        Args:
+            timestamp: When the sentiment was recorded
+            current_time: Reference time (default: now)
+            
+        Returns:
+            Weight between 0.0 and 1.0
+            
+        Examples:
+            - 0 hours old: weight = 1.0 (100%)
+            - 24 hours old: weight = 0.5 (50%)
+            - 48 hours old: weight = 0.25 (25%)
+            - 72 hours old: weight = 0.125 (12.5%)
+        """
+        if not self.decay_enabled:
+            return 1.0  # No decay - all data has equal weight
+        
+        if current_time is None:
+            current_time = utc_now()
+        
+        # Calculate hours since timestamp
+        time_diff = current_time - timestamp
+        hours_ago = time_diff.total_seconds() / 3600
+        
+        # Exponential decay: weight = exp(-hours_ago / half_life)
+        # Using natural logarithm: exp(-ln(2) * hours_ago / half_life)
+        decay_rate = math.log(2) / self.decay_half_life
+        weight = math.exp(-decay_rate * hours_ago)
+        
+        # Cap minimum weight at 0.05 (5%) for very old data
+        return max(weight, 0.05)
 
     async def get_sentiment_trends(self, stock_symbol: str, time_period: str = "7d") -> Dict[str, Any]:
         """
@@ -210,23 +255,21 @@ class SentimentService:
             return []
 
     async def _get_overall_sentiment_metrics(self, stock_id: str, cutoff_date: datetime) -> Dict[str, Any]:
-        """Get overall sentiment metrics for a stock."""
+        """Get overall sentiment metrics for a stock with temporal decay."""
         try:
+            # Fetch all sentiment data points
             result = await self.db.execute(
-                select(
-                    func.avg(SentimentData.sentiment_score).label('avg_sentiment'),
-                    func.avg(SentimentData.confidence).label('avg_confidence'),
-                    func.count().label('total_count')
-                )
+                select(SentimentData)
                 .where(and_(
                     SentimentData.stock_id == stock_id,
                     SentimentData.processed_at >= cutoff_date
                 ))
+                .order_by(desc(SentimentData.processed_at))
             )
             
-            metrics = result.first()
+            sentiment_records = result.scalars().all()
             
-            if not metrics or metrics.total_count == 0:
+            if not sentiment_records:
                 return {
                     "avg_sentiment": 0.0,
                     "avg_confidence": 0.0,
@@ -234,7 +277,24 @@ class SentimentService:
                     "sentiment_label": "neutral"
                 }
             
-            avg_sentiment = float(metrics.avg_sentiment or 0.0)
+            # Calculate time-weighted averages
+            current_time = utc_now()
+            weighted_sentiment_sum = 0.0
+            weighted_confidence_sum = 0.0
+            total_weight = 0.0
+            
+            for record in sentiment_records:
+                # Calculate temporal weight
+                weight = self._calculate_temporal_weight(record.processed_at, current_time)
+                
+                # Weighted sums
+                weighted_sentiment_sum += record.sentiment_score * weight
+                weighted_confidence_sum += record.confidence * weight
+                total_weight += weight
+            
+            # Calculate weighted averages
+            avg_sentiment = weighted_sentiment_sum / total_weight if total_weight > 0 else 0.0
+            avg_confidence = weighted_confidence_sum / total_weight if total_weight > 0 else 0.0
             
             # Determine sentiment label
             if avg_sentiment > 0.1:
@@ -244,11 +304,23 @@ class SentimentService:
             else:
                 sentiment_label = "neutral"
             
+            self.logger.debug(
+                "Calculated time-weighted sentiment",
+                extra={
+                    "stock_id": stock_id,
+                    "total_records": len(sentiment_records),
+                    "total_weight": round(total_weight, 2),
+                    "avg_sentiment": round(avg_sentiment, 3),
+                    "decay_enabled": self.decay_enabled
+                }
+            )
+            
             return {
                 "avg_sentiment": round(avg_sentiment, 3),
-                "avg_confidence": round(float(metrics.avg_confidence or 0.0), 3),
-                "total_count": int(metrics.total_count),
-                "sentiment_label": sentiment_label
+                "avg_confidence": round(avg_confidence, 3),
+                "total_count": len(sentiment_records),
+                "sentiment_label": sentiment_label,
+                "effective_weight": round(total_weight, 2)  # For debugging
             }
             
         except Exception as e:
@@ -261,29 +333,55 @@ class SentimentService:
             }
 
     async def _get_source_breakdown(self, stock_id: str, cutoff_date: datetime) -> Dict[str, Dict[str, Any]]:
-        """Get sentiment breakdown by source."""
+        """Get sentiment breakdown by source with temporal decay weighting."""
         try:
+            # Fetch all sentiment data points grouped by source
             result = await self.db.execute(
-                select(
-                    SentimentData.source,
-                    func.avg(SentimentData.sentiment_score).label('avg_score'),
-                    func.avg(SentimentData.confidence).label('avg_confidence'),
-                    func.count().label('count')
-                )
+                select(SentimentData)
                 .where(and_(
                     SentimentData.stock_id == stock_id,
                     SentimentData.processed_at >= cutoff_date
                 ))
-                .group_by(SentimentData.source)
+                .order_by(desc(SentimentData.processed_at))
             )
             
+            sentiment_records = result.scalars().all()
+            
+            if not sentiment_records:
+                return {}
+            
+            # Group by source and calculate time-weighted averages
+            current_time = utc_now()
+            source_data = {}
+            
+            for record in sentiment_records:
+                source = record.source
+                if source not in source_data:
+                    source_data[source] = {
+                        "weighted_score_sum": 0.0,
+                        "weighted_confidence_sum": 0.0,
+                        "total_weight": 0.0,
+                        "count": 0
+                    }
+                
+                # Calculate temporal weight
+                weight = self._calculate_temporal_weight(record.processed_at, current_time)
+                
+                # Accumulate weighted sums
+                source_data[source]["weighted_score_sum"] += record.sentiment_score * weight
+                source_data[source]["weighted_confidence_sum"] += record.confidence * weight
+                source_data[source]["total_weight"] += weight
+                source_data[source]["count"] += 1
+            
+            # Calculate final averages for each source
             breakdown = {}
-            for row in result:
-                breakdown[row.source] = {
-                    "score": round(float(row.avg_score), 3),
-                    "confidence": round(float(row.avg_confidence), 3),
-                    "count": int(row.count)
-                }
+            for source, data in source_data.items():
+                if data["total_weight"] > 0:
+                    breakdown[source] = {
+                        "score": round(data["weighted_score_sum"] / data["total_weight"], 3),
+                        "confidence": round(data["weighted_confidence_sum"] / data["total_weight"], 3),
+                        "count": data["count"]
+                    }
             
             return breakdown
             

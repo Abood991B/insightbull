@@ -14,7 +14,6 @@ This module provides REST API endpoints for:
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, func, desc, and_, or_, delete, inspect
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
@@ -31,13 +30,13 @@ from app.presentation.schemas.admin_schemas import (
     ModelAccuracyResponse,
     
     # API configuration schemas  
-    APIConfigResponse, APIKeyUpdateRequest as APIConfigUpdateRequest, APIKeyUpdateResponse as APIConfigUpdateResponse,
+    APIConfigResponse, APIKeyUpdateRequest as APIConfigUpdateRequest,
     
     # Watchlist schemas
     WatchlistResponse, WatchlistUpdateRequest, WatchlistUpdateResponse,
     
     # Storage schemas
-    StorageSettingsResponse, StorageMetrics, StorageSettingsUpdateRequest as RetentionPolicyRequest, StorageSettingsUpdateResponse as RetentionPolicyResponse,
+    StorageSettingsResponse, StorageMetrics,
     
     # System logs schemas
     SystemLogsResponse, LogFilters, LogLevel
@@ -101,11 +100,21 @@ async def trigger_manual_collection(
             if not symbols:
                 symbols = ["AAPL", "GOOGL", "MSFT"]  # final fallback only if DB empty
         
+        # Get timeframe from request (default to 1 day)
+        days_back = 1
+        if request_data and request_data.get("days_back"):
+            try:
+                days_back = int(request_data["days_back"])
+                if days_back < 1: days_back = 1
+                if days_back > 30: days_back = 30  # Cap at 30 days to prevent overload
+            except (ValueError, TypeError):
+                days_back = 1
+
         # Create pipeline config for FULL PIPELINE execution
         config = PipelineConfig(
             symbols=symbols,
             date_range=DateRange(
-                start_date=to_naive_utc(utc_now() - timedelta(days=1)),
+                start_date=to_naive_utc(utc_now() - timedelta(days=days_back)),
                 end_date=to_naive_utc(utc_now())
             ),
             max_items_per_symbol=50,  # Increased for more comprehensive data collection
@@ -471,6 +480,14 @@ async def update_api_configuration(
         update_result = await admin_service.update_api_configuration(config_update)
         
         return update_result
+    
+    except ValueError as e:
+        # Validation errors (e.g., invalid API key)
+        logger.warning("API key validation failed", error=str(e), service=config_update.service)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
         
     except Exception as e:
         logger.error("Error updating API configuration", error=str(e))
@@ -1516,42 +1533,27 @@ async def get_collector_health(
         # Get data from last 24 hours to show recent activity
         last_24_hours = utc_now() - timedelta(hours=24)
         
-        # Query HackerNews posts from last 24 hours
-        hn_result = await db.execute(
-            select(func.count()).select_from(HackerNewsPost)
-            .where(HackerNewsPost.created_utc >= last_24_hours)
-        )
-        hn_count = hn_result.scalar() or 0
+        # Query SentimentData to get actual processed counts by source
+        # This is more accurate than querying raw tables because:
+        # 1. It reflects items that successfully passed through the pipeline
+        # 2. It uses created_at (processing time) rather than published_at (which might be old)
+        from app.data_access.models import SentimentData
         
-        # Query news articles by source from last 24 hours (use published_at, not created_at)
-        finnhub_result = await db.execute(
-            select(func.count()).select_from(NewsArticle)
-            .where(NewsArticle.source == 'finnhub')
-            .where(NewsArticle.published_at >= last_24_hours)
+        sentiment_counts = await db.execute(
+            select(SentimentData.source, func.count(SentimentData.id))
+            .where(SentimentData.created_at >= last_24_hours)
+            .group_by(SentimentData.source)
         )
-        finnhub_count = finnhub_result.scalar() or 0
         
-        newsapi_result = await db.execute(
-            select(func.count()).select_from(NewsArticle)
-            .where(NewsArticle.source == 'newsapi')
-            .where(NewsArticle.published_at >= last_24_hours)
-        )
-        newsapi_count = newsapi_result.scalar() or 0
+        # Convert to dictionary for easy lookup
+        # source is stored as lowercase in SentimentData
+        counts_by_source = {row[0].lower(): row[1] for row in sentiment_counts.all()}
         
-        marketaux_result = await db.execute(
-            select(func.count()).select_from(NewsArticle)
-            .where(NewsArticle.source == 'marketaux')
-            .where(NewsArticle.published_at >= last_24_hours)
-        )
-        marketaux_count = marketaux_result.scalar() or 0
-        
-        # Query GDELT articles from last 24 hours
-        gdelt_result = await db.execute(
-            select(func.count()).select_from(NewsArticle)
-            .where(NewsArticle.source == 'gdelt')
-            .where(NewsArticle.published_at >= last_24_hours)
-        )
-        gdelt_count = gdelt_result.scalar() or 0
+        hn_count = counts_by_source.get('hackernews', 0)
+        finnhub_count = counts_by_source.get('finnhub', 0)
+        newsapi_count = counts_by_source.get('newsapi', 0)
+        marketaux_count = counts_by_source.get('marketaux', 0)
+        gdelt_count = counts_by_source.get('gdelt', 0)
         
         # Define collectors with their configuration requirements
         collectors = [

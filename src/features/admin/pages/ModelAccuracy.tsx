@@ -106,7 +106,7 @@ const ModelAccuracy = () => {
   // Get confidence badge color
   const getConfidenceBadge = (confidence: number) => {
     if (confidence >= 0.85) return <Badge className="bg-green-100 text-green-800">{(confidence * 100).toFixed(1)}%</Badge>;
-    if (confidence >= 0.75) return <Badge className="bg-blue-100 text-blue-800">{(confidence * 100).toFixed(1)}%</Badge>;
+    if (confidence >= 0.85) return <Badge className="bg-blue-100 text-blue-800">{(confidence * 100).toFixed(1)}%</Badge>;
     if (confidence >= 0.60) return <Badge className="bg-yellow-100 text-yellow-800">{(confidence * 100).toFixed(1)}%</Badge>;
     return <Badge className="bg-red-100 text-red-800">{(confidence * 100).toFixed(1)}%</Badge>;
   };
@@ -234,7 +234,7 @@ const ModelAccuracy = () => {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Sentiment Analysis Performance</h1>
-            <p className="text-gray-500 text-sm mt-1">ProsusAI/finbert with Gemini AI verification</p>
+            <p className="text-gray-500 text-sm mt-1">ProsusAI/finbert with Gemma 3 27B AI verification</p>
           </div>
           
           <div className="flex items-center gap-3">
@@ -264,7 +264,7 @@ const ModelAccuracy = () => {
         </div>
 
         {/* Key Metrics - REAL numbers only */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Verified Accuracy from Benchmark */}
           <Card className="border-2 border-blue-200 bg-blue-50">
             <CardContent className="pt-6">
@@ -290,9 +290,9 @@ const ModelAccuracy = () => {
                 <div>
                   <p className="text-sm text-purple-700 font-medium">With AI Verification</p>
                   <p className="text-3xl font-bold text-purple-900">
-                    {aiAccuracy ? `~${(aiAccuracy * 100).toFixed(0)}%` : '92-95%'}
+                    {aiAccuracy ? `${(aiAccuracy * 100).toFixed(1)}%` : 'Run Benchmark'}
                   </p>
-                  <p className="text-xs text-purple-600 mt-1">Gemini-enhanced</p>
+                  <p className="text-xs text-purple-600 mt-1">Gemma 3 27B-enhanced</p>
                 </div>
                 <div className="p-3 bg-purple-200 rounded-full">
                   <Brain className="h-6 w-6 text-purple-700" />
@@ -314,6 +314,24 @@ const ModelAccuracy = () => {
                 </div>
                 <div className="p-3 bg-gray-100 rounded-full">
                   <BarChart3 className="h-6 w-6 text-gray-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Overall Confidence */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Overall Confidence</p>
+                  <p className="text-3xl font-bold text-indigo-600">
+                    {modelData?.overall_confidence ? `${(modelData.overall_confidence * 100).toFixed(1)}%` : 'N/A'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Avg model certainty</p>
+                </div>
+                <div className="p-3 bg-indigo-100 rounded-full">
+                  <Sparkles className="h-6 w-6 text-indigo-600" />
                 </div>
               </div>
             </CardContent>
@@ -463,19 +481,20 @@ const ModelAccuracy = () => {
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-purple-900">AI Verification Boost</h4>
+                          <h4 className="font-semibold text-purple-900">AI Verification Enhancement</h4>
                           <Badge className="bg-purple-200 text-purple-800">
                             <Sparkles className="h-3 w-3 mr-1" />
                             {benchmarkData.benchmark.ai_verification.provider}
                           </Badge>
                         </div>
                         <p className="text-sm text-purple-700 mt-1">
-                          With Gemini AI verifying uncertain predictions, accuracy improves to approximately{' '}
-                          <span className="font-bold">{(benchmarkData.benchmark.ai_verification.estimated_accuracy_with_ai * 100).toFixed(0)}%</span>
+                          Estimated accuracy with AI verification:{' '}
+                          <span className="font-bold">{(benchmarkData.benchmark.ai_verification.estimated_accuracy_with_ai * 100).toFixed(1)}%</span>
                         </p>
-                        <p className="text-xs text-purple-600 mt-2">
-                          {benchmarkData.benchmark.ai_verification.note}
-                        </p>
+                        <div className="flex gap-4 mt-2 text-xs text-purple-600">
+                          <span>Mode: {benchmarkData.benchmark.ai_verification.mode}</span>
+                          <span>Threshold: {(benchmarkData.benchmark.ai_verification.confidence_threshold * 100).toFixed(0)}%</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -573,7 +592,7 @@ const ModelAccuracy = () => {
                   <span>ProsusAI/finbert</span>
                   <span className="text-gray-400">+</span>
                   <Brain className="h-4 w-4 text-purple-600" />
-                  <span>Gemini AI</span>
+                  <span>Gemma 3 27B</span>
                 </div>
               </div>
             </CardContent>

@@ -27,7 +27,7 @@ const ApiConfig = () => {
   const [formData, setFormData] = useState<{[key: string]: string}>({});
   const [aiSettings, setAiSettings] = useState<{verification_mode: string; confidence_threshold: number}>({
     verification_mode: 'low_confidence_and_neutral',
-    confidence_threshold: 0.75
+    confidence_threshold: 0.85
   });
   const { toast } = useToast();
 
@@ -48,7 +48,7 @@ const ApiConfig = () => {
         initialFormData['gemini'] = data.ai_services.gemini.api_key || '';
         setAiSettings({
           verification_mode: data.ai_services.gemini.verification_mode || 'low_confidence_and_neutral',
-          confidence_threshold: data.ai_services.gemini.confidence_threshold || 0.75
+          confidence_threshold: data.ai_services.gemini.confidence_threshold || 0.85
         });
       }
       
@@ -104,7 +104,7 @@ const ApiConfig = () => {
       await adminAPI.toggleAIService(serviceName, enabled);
       toast({ 
         title: enabled ? "AI Verification Enabled" : "AI Verification Disabled", 
-        description: `Gemini AI verification has been ${enabled ? 'enabled' : 'disabled'}.` 
+        description: `AI verification has been ${enabled ? 'enabled' : 'disabled'}.` 
       });
       await loadApiConfiguration();
     } catch (error) {
@@ -195,12 +195,28 @@ const ApiConfig = () => {
                         AI Sentiment Verification
                         <Sparkles className="h-4 w-4 text-purple-500" />
                       </CardTitle>
-                      <CardDescription>Google Gemini AI enhances accuracy from 88% to 92-95%</CardDescription>
+                      <CardDescription>
+                        {geminiConfig?.ai_verification_stats?.ai_model_name 
+                          ? `${geminiConfig.ai_verification_stats.ai_model_name} AI enhances sentiment analysis accuracy`
+                          : 'AI enhances sentiment analysis accuracy'}
+                      </CardDescription>
                     </div>
                   </div>
                   {geminiConfig && (
-                    <Badge className={geminiConfig.enabled ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-600'}>
-                      {geminiConfig.enabled ? 'Active' : 'Inactive'}
+                    <Badge className={
+                      geminiConfig.ai_verification_stats?.api_key_status === 'valid' 
+                        ? 'bg-green-100 text-green-800' 
+                        : geminiConfig.ai_verification_stats?.api_key_status === 'invalid'
+                          ? 'bg-red-100 text-red-800'
+                          : geminiConfig.enabled 
+                            ? 'bg-purple-100 text-purple-800' 
+                            : 'bg-gray-100 text-gray-600'
+                    }>
+                      {geminiConfig.ai_verification_stats?.api_key_status === 'valid' 
+                        ? 'Valid & Active'
+                        : geminiConfig.ai_verification_stats?.api_key_status === 'invalid'
+                          ? 'Invalid Key'
+                          : geminiConfig.enabled ? 'Active' : 'Inactive'}
                     </Badge>
                   )}
                 </div>
@@ -208,36 +224,75 @@ const ApiConfig = () => {
               
               {geminiConfig && (
                 <CardContent className="p-6 space-y-6">
+                  {/* API Key Status Alert */}
+                  {geminiConfig.ai_verification_stats?.api_key_status === 'invalid' && (
+                    <Alert className="border-red-200 bg-red-50">
+                      <XCircle className="h-4 w-4 text-red-600" />
+                      <AlertDescription className="text-red-800">
+                        <strong>Invalid API Key:</strong> {geminiConfig.ai_verification_stats?.last_error || 'The Gemini API key is not working. AI verification is disabled.'}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  {geminiConfig.ai_verification_stats?.api_key_status === 'valid' && (
+                    <Alert className="border-green-200 bg-green-50">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="text-green-800">
+                        API key validated successfully. AI verification is ready.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  
                   {/* Main Toggle - Very Prominent */}
                   <div className={`p-4 rounded-xl border-2 transition-all ${
-                    geminiConfig.enabled 
-                      ? 'bg-purple-50 border-purple-300' 
-                      : 'bg-gray-50 border-gray-200'
+                    geminiConfig.ai_verification_stats?.api_key_status === 'invalid'
+                      ? 'bg-red-50 border-red-200'
+                      : geminiConfig.enabled 
+                        ? 'bg-purple-50 border-purple-300' 
+                        : 'bg-gray-50 border-gray-200'
                   }`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-full ${geminiConfig.enabled ? 'bg-purple-200' : 'bg-gray-200'}`}>
-                          <Brain className={`h-6 w-6 ${geminiConfig.enabled ? 'text-purple-700' : 'text-gray-500'}`} />
+                        <div className={`p-3 rounded-full ${
+                          geminiConfig.ai_verification_stats?.api_key_status === 'invalid'
+                            ? 'bg-red-200'
+                            : geminiConfig.enabled ? 'bg-purple-200' : 'bg-gray-200'
+                        }`}>
+                          <Brain className={`h-6 w-6 ${
+                            geminiConfig.ai_verification_stats?.api_key_status === 'invalid'
+                              ? 'text-red-700'
+                              : geminiConfig.enabled ? 'text-purple-700' : 'text-gray-500'
+                          }`} />
                         </div>
                         <div>
-                          <h3 className={`text-lg font-semibold ${geminiConfig.enabled ? 'text-purple-900' : 'text-gray-700'}`}>
+                          <h3 className={`text-lg font-semibold ${
+                            geminiConfig.ai_verification_stats?.api_key_status === 'invalid'
+                              ? 'text-red-900'
+                              : geminiConfig.enabled ? 'text-purple-900' : 'text-gray-700'
+                          }`}>
                             AI Verification
                           </h3>
                           <p className="text-sm text-gray-600">
-                            {geminiConfig.enabled 
-                              ? 'Gemini AI is verifying uncertain predictions' 
-                              : 'Enable to improve sentiment accuracy to 92-95%'}
+                            {geminiConfig.ai_verification_stats?.api_key_status === 'invalid'
+                              ? 'API key is invalid - please update with a valid key'
+                              : geminiConfig.enabled 
+                                ? `${geminiConfig.ai_verification_stats?.ai_model_name || 'AI'} is verifying uncertain predictions` 
+                                : 'Enable to improve sentiment accuracy on low-confidence predictions'}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className={`text-sm font-medium ${geminiConfig.enabled ? 'text-purple-700' : 'text-gray-500'}`}>
-                          {geminiConfig.enabled ? 'ON' : 'OFF'}
+                        <span className={`text-sm font-medium ${
+                          geminiConfig.ai_verification_stats?.api_key_status === 'invalid'
+                            ? 'text-red-700'
+                            : geminiConfig.enabled ? 'text-purple-700' : 'text-gray-500'
+                        }`}>
+                          {geminiConfig.ai_verification_stats?.api_key_status === 'invalid' ? 'INVALID' : geminiConfig.enabled ? 'ON' : 'OFF'}
                         </span>
                         <Switch
                           id="ai-toggle"
                           checked={geminiConfig.enabled || false}
-                          disabled={toggling['gemini'] || !geminiConfig.api_key}
+                          disabled={toggling['gemini'] || !geminiConfig.api_key || geminiConfig.ai_verification_stats?.api_key_status === 'invalid'}
                           onCheckedChange={(checked) => toggleAIService('gemini', checked)}
                           className="data-[state=checked]:bg-purple-600 scale-125"
                         />
@@ -326,12 +381,12 @@ const ApiConfig = () => {
                           <Slider
                             value={[aiSettings.confidence_threshold * 100]}
                             onValueChange={([value]) => setAiSettings(prev => ({ ...prev, confidence_threshold: value / 100 }))}
-                            min={50}
+                            min={70}
                             max={95}
                             step={5}
                             className="w-full"
                           />
-                          <p className="text-xs text-gray-500 mt-1">Predictions below this are sent to AI</p>
+                          <p className="text-xs text-gray-500 mt-1">ML predictions below this threshold trigger AI verification (Default: 85%)</p>
                         </div>
 
                         <Button 
@@ -398,6 +453,8 @@ const ApiConfig = () => {
                   const info = getCollectorInfo(name);
                   const isEnabled = (config as any).enabled !== false;
                   const isToggling = toggling[name] || false;
+                  const hasApiKey = !info.requiresKey || !!(config as any).api_key;
+                  const canToggle = hasApiKey; // Can only toggle if key is not required OR key is present
                   
                   return (
                     <Card key={name} className={`transition-all ${!isEnabled ? 'opacity-60' : ''}`}>
@@ -415,7 +472,7 @@ const ApiConfig = () => {
                           </div>
                           <Switch
                             checked={isEnabled}
-                            disabled={isToggling}
+                            disabled={isToggling || !canToggle}
                             onCheckedChange={(checked) => toggleCollector(name, checked)}
                             className="data-[state=checked]:bg-green-500"
                           />
@@ -423,19 +480,27 @@ const ApiConfig = () => {
 
                         {/* Status */}
                         <div className="flex items-center gap-2 mb-3">
-                          {config.status === 'active' ? (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          {!hasApiKey ? (
+                            <>
+                              <AlertTriangle className="h-4 w-4 text-amber-500" />
+                              <span className="text-sm text-amber-700">API key required</span>
+                            </>
+                          ) : config.status === 'active' ? (
+                            <>
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span className="text-sm text-green-700">Connected</span>
+                            </>
                           ) : config.status === 'error' ? (
-                            <XCircle className="h-4 w-4 text-red-500" />
+                            <>
+                              <XCircle className="h-4 w-4 text-red-500" />
+                              <span className="text-sm text-red-700">Error</span>
+                            </>
                           ) : (
-                            <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                            <>
+                              <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                              <span className="text-sm text-yellow-700">Not configured</span>
+                            </>
                           )}
-                          <span className={`text-sm ${
-                            config.status === 'active' ? 'text-green-700' : 
-                            config.status === 'error' ? 'text-red-700' : 'text-yellow-700'
-                          }`}>
-                            {config.status === 'active' ? 'Connected' : config.status === 'error' ? 'Error' : 'Not configured'}
-                          </span>
                           {config.last_test && (
                             <span className="text-xs text-gray-400 ml-auto">{formatDate(config.last_test)}</span>
                           )}

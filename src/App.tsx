@@ -7,7 +7,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 // Feature imports
 import { Index, About, NotFound } from "@/features/dashboard";
-import TestEmptyStates from "@/features/dashboard/pages/TestEmptyStates"; // DEV ONLY
 import { 
   StockAnalysis, 
   SentimentVsPrice, 
@@ -43,9 +42,6 @@ const App = () => (
           <Route path="/correlation" element={<CorrelationAnalysis />} />
           <Route path="/trends" element={<SentimentTrends />} />
           <Route path="/about" element={<About />} />
-          
-          {/* DEV ONLY - Empty State Testing */}
-          <Route path="/test-empty-states" element={<TestEmptyStates />} />
           
           {/* Admin Routes */}
           <Route path="/admin" element={<AdminLogin />} />

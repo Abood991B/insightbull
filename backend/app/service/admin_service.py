@@ -104,6 +104,7 @@ class AdminService(WatchlistSubject):
                 "model_metrics": model_metrics,
                 "source_metrics": source_metrics,
                 "overall_accuracy": overall_accuracy,
+                "overall_confidence": finbert_metrics.get('avg_confidence', 0.0),
                 "evaluation_period": "Overall Performance (Last 30 Days)",
                 "evaluation_samples": total_predictions,
                 "last_evaluation": utc_now().isoformat(),
@@ -139,70 +140,69 @@ class AdminService(WatchlistSubject):
             # Get Gemini API key for AI verification
             gemini_key = keys.get('gemini_api_key', '')
             
-            # Test Gemini connection and get AI verification status
+            # Test Gemini connection with actual API validation
             gemini_status = "inactive"
             gemini_last_test = None
             gemini_error = None
+            api_key_valid = False
+            api_key_status = "not_configured"
             ai_verification_stats = None
             
             if gemini_key:
                 try:
-                    # Test Gemini API
-                    import google.generativeai as genai
-                    genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel('gemini-2.0-flash-lite')
-                    # Quick validation - just configure, don't make an API call
-                    gemini_status = "active"
-                    gemini_last_test = utc_now().isoformat()
+                    # Use AIVerifiedSentimentAnalyzer for proper key validation
+                    from app.service.sentiment_processing.hybrid_sentiment_analyzer import AIVerifiedSentimentAnalyzer, VerificationMode
                     
-                    self.logger.info(
-                        "Gemini API key validated successfully",
-                        extra={"operation": "api_validation", "service": "gemini", "status": "success"}
+                    # Create analyzer which will validate the key on init
+                    temp_analyzer = AIVerifiedSentimentAnalyzer(
+                        gemini_api_key=gemini_key,
+                        verification_mode=VerificationMode.LOW_CONFIDENCE_AND_NEUTRAL,
+                        ai_enabled=True
                     )
                     
-                    # Get AI verification stats from sentiment engine if available
-                    try:
-                        from app.service.sentiment_processing.sentiment_engine import SentimentEngine, EngineConfig
-                        # Check if there's an existing engine instance with stats
-                        temp_engine = SentimentEngine(EngineConfig())
-                        engine_stats = temp_engine.get_ai_verification_stats()
+                    # Get stats which include api_key_valid and api_key_status
+                    engine_stats = temp_analyzer.get_stats()
+                    api_key_valid = engine_stats.get("api_key_valid", False)
+                    api_key_status = engine_stats.get("api_key_status", "not_configured")
+                    gemini_last_test = utc_now().isoformat()
+                    
+                    if api_key_valid:
+                        gemini_status = "active"
+                        self.logger.info(
+                            "Gemini API key validated successfully",
+                            extra={"operation": "api_validation", "service": "gemini", "status": "success"}
+                        )
+                    else:
+                        gemini_status = "invalid"
+                        gemini_error = engine_stats.get("last_error", "API key validation failed")
+                        self.logger.warning(
+                            f"Gemini API key is invalid: {gemini_error}",
+                            extra={"operation": "api_validation", "service": "gemini", "status": "invalid"}
+                        )
+                    
+                    # Build AI verification stats
+                    ai_verification_stats = {
+                        "configured": True,
+                        "mode": engine_stats.get("verification_mode", "low_confidence_and_neutral"),
+                        "confidence_threshold": engine_stats.get("confidence_threshold", 0.85),
+                        "total_analyzed": engine_stats.get("total_analyzed", 0),
+                        "ai_verified_count": engine_stats.get("ai_verified_count", 0),
+                        "ai_verification_rate": engine_stats.get("ai_verification_rate", 0),
+                        "ai_errors": engine_stats.get("ai_errors", 0),
+                        "avg_ml_confidence": engine_stats.get("avg_ml_confidence", 0),
+                        "ai_enabled": engine_stats.get("ai_enabled", True),
+                        "gemini_configured": engine_stats.get("gemini_configured", False),
+                        "api_key_valid": api_key_valid,
+                        "api_key_status": api_key_status,
+                        "last_error": engine_stats.get("last_error"),
+                        "last_error_time": engine_stats.get("last_error_time"),
+                        "ai_model_id": engine_stats.get("ai_model_id", "gemma-3-27b-it"),
+                        "ai_model_name": engine_stats.get("ai_model_name", "Gemma 3 27B")
+                    }
                         
-                        if engine_stats:
-                            ai_verification_stats = {
-                                "configured": True,
-                                "mode": engine_stats.get("verification_mode", "low_confidence_and_neutral"),
-                                "confidence_threshold": engine_stats.get("confidence_threshold", 0.75),
-                                "total_analyzed": engine_stats.get("total_analyzed", 0),
-                                "ai_verified_count": engine_stats.get("ai_verified_count", 0),
-                                "ai_verification_rate": engine_stats.get("ai_verification_rate", 0),
-                                "ai_errors": engine_stats.get("ai_errors", 0),
-                                "avg_ml_confidence": engine_stats.get("avg_ml_confidence", 0),
-                                "ai_enabled": engine_stats.get("ai_enabled", True),
-                                "gemini_configured": engine_stats.get("gemini_configured", True)
-                            }
-                        else:
-                            ai_verification_stats = {
-                                "configured": True,
-                                "mode": "low_confidence_and_neutral",
-                                "confidence_threshold": 0.75,
-                                "total_analyzed": 0,
-                                "ai_verified_count": 0,
-                                "ai_verification_rate": 0,
-                                "ai_errors": 0,
-                                "avg_ml_confidence": 0,
-                                "ai_enabled": True,
-                                "gemini_configured": True
-                            }
-                    except Exception as e:
-                        self.logger.warning(f"Could not get AI verification stats: {e}")
-                        ai_verification_stats = {
-                            "configured": True,
-                            "mode": "low_confidence_and_neutral",
-                            "confidence_threshold": 0.75
-                        }
-                        
-                except ImportError:
+                except ImportError as e:
                     gemini_status = "error"
+                    api_key_status = "error"
                     gemini_error = "google-generativeai package not installed"
                     self.logger.warning(
                         f"Gemini validation failed: {gemini_error}",
@@ -210,6 +210,7 @@ class AdminService(WatchlistSubject):
                     )
                 except Exception as e:
                     gemini_status = "error"
+                    api_key_status = "error"
                     gemini_last_test = utc_now().isoformat()
                     gemini_error = str(e)
                     self.logger.error(
@@ -354,6 +355,14 @@ class AdminService(WatchlistSubject):
             collector_config_service = get_collector_config_service()
             collector_configs = collector_config_service.get_all_collector_configs()
             
+            # Helper to determine if collector should be enabled
+            # Collectors requiring API keys should be disabled if no key is configured
+            def is_collector_enabled(name: str, requires_key: bool, has_key: bool) -> bool:
+                config_enabled = collector_configs["collectors"].get(name, {}).get("enabled", True)
+                if requires_key and not has_key:
+                    return False  # Force disabled if no key
+                return config_enabled
+            
             return {
                 "apis": {
                     "hackernews": {
@@ -361,35 +370,38 @@ class AdminService(WatchlistSubject):
                         "last_test": hackernews_last_test,
                         "api_key_required": False,
                         "error": None,
-                        "enabled": collector_configs["collectors"].get("hackernews", {}).get("enabled", True)
+                        "enabled": is_collector_enabled("hackernews", False, True)
                     },
                     "gdelt": {
                         "status": gdelt_status,
                         "last_test": gdelt_last_test,
                         "api_key_required": False,
                         "error": gdelt_error if gdelt_status == "error" else None,
-                        "enabled": collector_configs["collectors"].get("gdelt", {}).get("enabled", True)
+                        "enabled": is_collector_enabled("gdelt", False, True)
                     },
                     "finnhub": {
                         "status": finnhub_status,
                         "last_test": finnhub_last_test,
                         "api_key": finnhub_key,
+                        "api_key_required": True,
                         "error": finnhub_error if finnhub_status == "error" else None,
-                        "enabled": collector_configs["collectors"].get("finnhub", {}).get("enabled", True)
+                        "enabled": is_collector_enabled("finnhub", True, bool(finnhub_key))
                     },
                     "newsapi": {
                         "status": newsapi_status,
                         "last_test": newsapi_last_test,
                         "api_key": newsapi_key,
+                        "api_key_required": True,
                         "error": newsapi_error if newsapi_status == "error" else None,
-                        "enabled": collector_configs["collectors"].get("newsapi", {}).get("enabled", True)
+                        "enabled": is_collector_enabled("newsapi", True, bool(newsapi_key))
                     },
                     "marketaux": {
                         "status": marketaux_status,
                         "last_test": marketaux_last_test,
                         "api_key": marketaux_key,
+                        "api_key_required": True,
                         "error": marketaux_error if marketaux_status == "error" else None,
-                        "enabled": collector_configs["collectors"].get("marketaux", {}).get("enabled", True)
+                        "enabled": is_collector_enabled("marketaux", True, bool(marketaux_key))
                     }
                 },
                 "ai_services": {
@@ -398,12 +410,12 @@ class AdminService(WatchlistSubject):
                         "last_test": gemini_last_test,
                         "api_key": gemini_key,
                         "api_key_required": True,
-                        "error": gemini_error if gemini_status == "error" else None,
-                        "enabled": collector_config_service.is_ai_service_enabled("gemini") if gemini_key else False,
-                        "description": "AI sentiment verification using Google Gemini",
+                        "error": gemini_error if gemini_status in ["error", "invalid"] else None,
+                        "enabled": collector_config_service.is_ai_service_enabled("gemini") if (gemini_key and api_key_valid) else False,
+                        "description": "AI sentiment verification for improved accuracy",
                         "ai_verification_stats": ai_verification_stats,
                         "verification_mode": collector_config_service.get_ai_service_config("gemini").get("verification_mode", "low_confidence_and_neutral") if collector_config_service.get_ai_service_config("gemini") else "low_confidence_and_neutral",
-                        "confidence_threshold": collector_config_service.get_ai_service_config("gemini").get("confidence_threshold", 0.75) if collector_config_service.get_ai_service_config("gemini") else 0.75
+                        "confidence_threshold": collector_config_service.get_ai_service_config("gemini").get("confidence_threshold", 0.85) if collector_config_service.get_ai_service_config("gemini") else 0.85
                     }
                 },
                 "summary": {
@@ -411,10 +423,10 @@ class AdminService(WatchlistSubject):
                     "total_ai_services": 1,
                     "configured": sum(1 for key in [finnhub_key, newsapi_key, marketaux_key] if key) + 2,  # +2 for HackerNews and GDELT always configured
                     "active": sum(1 for status in [hackernews_status, gdelt_status, finnhub_status, newsapi_status, marketaux_status] if status == "active"),
-                    "enabled": len(collector_config_service.get_enabled_collectors()),
-                    "disabled": len(collector_config_service.get_disabled_collectors()),
-                    "ai_configured": 1 if gemini_key else 0,
-                    "ai_enabled": 1 if (gemini_key and collector_config_service.is_ai_service_enabled("gemini")) else 0
+                    "enabled": sum(1 for name, has_key in [("hackernews", True), ("gdelt", True), ("finnhub", bool(finnhub_key)), ("newsapi", bool(newsapi_key)), ("marketaux", bool(marketaux_key))] if is_collector_enabled(name, name in ["finnhub", "newsapi", "marketaux"], has_key)),
+                    "disabled": 5 - sum(1 for name, has_key in [("hackernews", True), ("gdelt", True), ("finnhub", bool(finnhub_key)), ("newsapi", bool(newsapi_key)), ("marketaux", bool(marketaux_key))] if is_collector_enabled(name, name in ["finnhub", "newsapi", "marketaux"], has_key)),
+                    "ai_configured": 1 if (gemini_key and api_key_valid) else 0,
+                    "ai_enabled": 1 if (gemini_key and api_key_valid and collector_config_service.is_ai_service_enabled("gemini")) else 0
                 },
                 "collector_config": {
                     "last_updated": collector_configs.get("last_updated"),
@@ -458,19 +470,54 @@ class AdminService(WatchlistSubject):
                     updated_keys.append("marketaux_api_key")
             elif service == "gemini":
                 if "api_key" in keys:
-                    key_loader.update_api_key("GEMINI_API_KEY", keys["api_key"])
-                    updated_keys.append("gemini_api_key")
+                    api_key_value = keys["api_key"]
                     
-                    # Trigger AI verification system to reload the key
+                    # Basic format validation
+                    if not api_key_value.startswith('AIza'):
+                        raise ValueError("Invalid Gemini API key format. Key should start with 'AIza...'")
+                    
+                    # Validate the Gemini API key BEFORE saving
+                    validation_passed = False
+                    validation_warning = None
                     try:
-                        from app.service.sentiment_processing.ai_verified_sentiment import AIVerifiedSentimentAnalyzer
-                        # Note: The analyzer will auto-reload from SecureAPIKeyLoader on next instantiation
-                        self.logger.info(
-                            "Gemini API key updated - AI verification will use new key on next analysis",
-                            extra={"service": "gemini"}
+                        import google.generativeai as genai
+                        from app.service.sentiment_processing.hybrid_sentiment_analyzer import AI_MODEL_ID
+                        genai.configure(api_key=api_key_value)
+                        model = genai.GenerativeModel(AI_MODEL_ID)
+                        # Quick test call to validate the key
+                        response = model.generate_content(
+                            "Reply with only the word OK",
+                            generation_config={"max_output_tokens": 10}
                         )
+                        validation_passed = True
+                        self.logger.info("AI API key validated successfully before saving")
                     except Exception as e:
-                        self.logger.warning(f"Could not notify AI verification system: {e}")
+                        error_str = str(e)
+                        if "API_KEY_INVALID" in error_str or "API key not valid" in error_str:
+                            raise ValueError("Invalid Gemini API key. Please check your API key and try again.")
+                        elif "PERMISSION_DENIED" in error_str and "API_KEY" not in error_str:
+                            raise ValueError("API key does not have permission. Check your API key settings in Google AI Studio.")
+                        else:
+                            # For billing, rate limiting, quota issues - the key format is valid
+                            # Save it and let the user know there may be usage limits
+                            validation_warning = f"Key saved but validation had a warning: {error_str[:80]}"
+                            self.logger.warning(f"Gemini validation warning (key saved anyway): {error_str[:100]}")
+                            validation_passed = True  # Allow saving for non-fatal errors
+                    
+                    if validation_passed:
+                        # Key format is valid, save it
+                        key_loader.update_api_key("GEMINI_API_KEY", api_key_value)
+                        updated_keys.append("gemini_api_key")
+                        
+                        # Update collector config to enable Gemini
+                        from app.service.collector_config_service import get_collector_config_service
+                        collector_config_service = get_collector_config_service()
+                        collector_config_service.set_ai_service_enabled("gemini", True)
+                        
+                        self.logger.info(
+                            "Gemini API key saved - AI verification enabled",
+                            extra={"service": "gemini", "warning": validation_warning}
+                        )
             
             # Clear cache to force reload
             key_loader.clear_cache()
@@ -1005,6 +1052,7 @@ class AdminService(WatchlistSubject):
             
             return {
                 "overall_accuracy": overall_accuracy,
+                "overall_confidence": finbert_metrics.get('avg_confidence', 0.0),
                 "model_metrics": model_metrics,
                 "source_metrics": source_metrics,
                 "last_evaluation": utc_now().isoformat(),
@@ -1083,7 +1131,8 @@ class AdminService(WatchlistSubject):
                 'accuracy': round(accuracy, 3),
                 'precision': round(precision, 3),
                 'recall': round(recall, 3), 
-                'f1_score': round(f1_score, 3)
+                'f1_score': round(f1_score, 3),
+                'avg_confidence': round(avg_confidence, 3)
             }
             
         except Exception as e:
@@ -1094,7 +1143,8 @@ class AdminService(WatchlistSubject):
                 'accuracy': base_accuracy,
                 'precision': base_accuracy - 0.02,
                 'recall': base_accuracy + 0.01,
-                'f1_score': base_accuracy - 0.01
+                'f1_score': base_accuracy - 0.01,
+                'avg_confidence': 0.0
             }
     
     async def get_benchmark_results(self) -> Optional[Dict[str, Any]]:

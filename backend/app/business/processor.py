@@ -16,7 +16,7 @@ import html
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Set
 from dataclasses import dataclass
-import logging
+from ..infrastructure.log_system import get_logger
 from ..utils.timezone import utc_now
 
 try:
@@ -38,7 +38,7 @@ except ImportError:
 
 from ..infrastructure.collectors.base_collector import RawData, DataSource
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 @dataclass
@@ -111,7 +111,8 @@ class TextProcessor:
             config: Processing configuration
         """
         self.config = config or ProcessingConfig()
-        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        # Logger already initialized at module level
+        self.logger = logger
         
         # Compile regex patterns for efficiency
         self._compile_patterns()
@@ -325,8 +326,18 @@ class TextProcessor:
         if len(processed) < self.config.min_length:
             return ""
         
+        # IMPROVEMENT: Intelligent Truncation
+        # Instead of blindly cutting off at max_length, try to preserve the most important parts.
+        # For financial news, the beginning (lead) and end (conclusion) are most critical.
         if len(processed) > self.config.max_length:
-            processed = processed[:self.config.max_length].rsplit(' ', 1)[0] + "..."
+            # Keep first 60% and last 40% of the allowed length
+            keep_start = int(self.config.max_length * 0.6)
+            keep_end = int(self.config.max_length * 0.4)
+            
+            start_text = processed[:keep_start].rsplit(' ', 1)[0]
+            end_text = processed[-keep_end:].split(' ', 1)[-1]
+            
+            processed = f"{start_text} ... {end_text}"
         
         return processed
     

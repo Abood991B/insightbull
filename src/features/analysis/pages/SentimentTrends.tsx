@@ -148,9 +148,6 @@ const SentimentTrends = () => {
   
   // Calculate trend metrics for display
   const momentumStrength = Math.abs(avgSentiment) > 0.5 ? 'Strong' : Math.abs(avgSentiment) > 0.2 ? 'Moderate' : 'Weak';
-  const volatilityChange = volatility > 0.3 ? '+15%' : volatility > 0.15 ? '+8%' : '+3%';
-  const momentumChange = Math.abs(avgSentiment) > 0.4 ? '+12%' : Math.abs(avgSentiment) > 0.2 ? '+6%' : '+2%';
-  const directionChange = trendDirection === 'Bullish' ? '+8%' : trendDirection === 'Bearish' ? '-5%' : '+1%';
 
   // Check for insufficient data
   const hasInsufficientData = sentimentData && totalRecords < 3;
@@ -302,7 +299,7 @@ const SentimentTrends = () => {
               <CardContent>
                 <div className="text-3xl font-bold text-orange-600">{volatilityLevel}</div>
                 <p className="text-sm text-gray-600 mt-1">
-                  {volatilityChange} vs last period
+                  Score: {volatility.toFixed(2)}
                 </p>
               </CardContent>
             </Card>
@@ -314,7 +311,7 @@ const SentimentTrends = () => {
               <CardContent>
                 <div className="text-3xl font-bold text-blue-600">{momentumStrength}</div>
                 <p className="text-sm text-gray-600 mt-1">
-                  {momentumChange} vs last period
+                  Sentiment strength: {Math.abs(avgSentiment).toFixed(2)}
                 </p>
               </CardContent>
             </Card>
@@ -331,7 +328,7 @@ const SentimentTrends = () => {
                   {trendDirection}
                 </div>
                 <p className="text-sm text-gray-600 mt-1">
-                  {directionChange} vs last period
+                  Based on sentiment: {avgSentiment > 0 ? '+' : ''}{avgSentiment.toFixed(2)}
                 </p>
               </CardContent>
             </Card>

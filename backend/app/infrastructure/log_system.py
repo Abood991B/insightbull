@@ -15,6 +15,7 @@ Features:
 """
 
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import json
 import sys
 import threading
@@ -27,8 +28,6 @@ from app.utils.timezone import utc_now
 from pathlib import Path
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 import inspect
 import os
 
@@ -101,6 +100,14 @@ class LogSystem:
         self._initialized = True
     
     def _setup_file_logging(self):
+        """
+        Setup file logging with rotation.
+        
+        Implements log rotation to prevent disk space issues:
+        - Rotates daily at midnight
+        - Keeps 30 days of logs
+        - Automatically compresses old logs
+        """
         # Create logs directory if it doesn't exist
         log_dir = Path("logs")
         log_dir.mkdir(exist_ok=True)
@@ -113,17 +120,33 @@ class LogSystem:
         for handler in root_logger.handlers[:]:
             root_logger.removeHandler(handler)
         
-        # File handler for all logs
-        file_handler = logging.FileHandler(log_dir / "application.log")
+        # Rotating file handler for all logs (daily rotation, keep 30 days)
+        file_handler = TimedRotatingFileHandler(
+            log_dir / "application.log",
+            when='midnight',        # Rotate at midnight
+            interval=1,             # Every 1 day
+            backupCount=30,         # Keep 30 days of logs
+            encoding='utf-8',
+            utc=True                # Use UTC for rotation timing
+        )
         file_handler.setLevel(logging.INFO)
+        file_handler.suffix = "%Y-%m-%d"  # Add date suffix to rotated files
         
         # Console handler for development
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         
-        # Error file handler
-        error_handler = logging.FileHandler(log_dir / "errors.log")
+        # Rotating error file handler (daily rotation, keep 90 days for debugging)
+        error_handler = TimedRotatingFileHandler(
+            log_dir / "errors.log",
+            when='midnight',
+            interval=1,
+            backupCount=90,         # Keep error logs longer
+            encoding='utf-8',
+            utc=True
+        )
         error_handler.setLevel(logging.ERROR)
+        error_handler.suffix = "%Y-%m-%d"
         
         root_logger.addHandler(file_handler)
         root_logger.addHandler(console_handler)
@@ -310,19 +333,25 @@ class LogSystem:
             extra_data = {k: v for k, v in kwargs.items() 
                          if k not in ['logger', 'component', 'timestamp', 'correlation_id']}
             
-            # Create log entry in background task
-            asyncio.create_task(self._async_write_to_db(
-                level=level,
-                message=message,
-                logger=logger_name,
-                component=component,
-                function=function_name,
-                line_number=line_number,
-                extra_data=extra_data
-            ))
+            # Create log entry in background task (only if event loop exists)
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(self._async_write_to_db(
+                    level=level,
+                    message=message,
+                    logger=logger_name,
+                    component=component,
+                    function=function_name,
+                    line_number=line_number,
+                    extra_data=extra_data
+                ))
+            except RuntimeError:
+                # No running event loop (e.g., background threads)
+                # Database logging will be skipped, but console/file logging still works
+                pass
         except Exception as e:
             # Don't let database logging errors break the application
-            print(f"Failed to write log to database: {e}")
+            pass  # Silently ignore - logging to console/file already happened
     
     async def _async_write_to_db(self, level: str, message: str, logger: str, 
                                 component: str, function: str, line_number: int, 

@@ -80,7 +80,8 @@ class TestSentimentAnalysis:
             
             assert len(results) == 2
             for result in results:
-                assert result.model_name == "FinBERT"
+                # Model name can be: FinBERT (ML-only), FinBERT+Gemini (AI confirmed), Gemini AI (AI override), FinBERT Ensemble, DistilBERT
+                assert result.model_name in ["FinBERT", "FinBERT+Gemini", "Gemini AI", "FinBERT Ensemble", "DistilBERT"]
                 assert result.label in [SentimentLabel.POSITIVE, SentimentLabel.NEGATIVE, SentimentLabel.NEUTRAL]
     
     @pytest.mark.asyncio
@@ -128,7 +129,10 @@ class TestSentimentAnalysis:
             stats = engine.get_stats()
             assert stats.total_texts_processed >= 2
             assert stats.success_rate == 100.0
-            assert 'FinBERT' in stats.model_usage
+            # Model usage should contain at least one of our valid model names
+            valid_models = {'FinBERT', 'FinBERT+Gemini', 'Gemini AI', 'FinBERT Ensemble', 'DistilBERT'}
+            assert len(stats.model_usage) > 0, "Model usage should be tracked"
+            assert any(model in valid_models for model in stats.model_usage.keys())
     
     def test_sentiment_labels_enum(self):
         """Test sentiment label enumeration."""

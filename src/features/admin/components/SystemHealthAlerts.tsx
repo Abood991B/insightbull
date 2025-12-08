@@ -214,20 +214,9 @@ const SystemHealthAlerts: React.FC<SystemHealthAlertsProps> = ({
       }
     }
 
-    // Check model accuracy (if available)
-    if (modelAccuracy) {
-      // Check ProsusAI/finbert accuracy
-      if (modelAccuracy.model_metrics.finbert_sentiment.accuracy < 0.70) {
-        generatedAlerts.push({
-          id: 'finbert-accuracy-low',
-          severity: 'warning',
-          title: 'Sentiment Model Accuracy Low',
-          description: `ProsusAI/finbert accuracy is ${(modelAccuracy.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%. Consider checking data quality or enabling Gemini AI verification.`,
-          category: 'model',
-          timestamp: modelAccuracy.last_evaluation,
-        });
-      }
-    }
+    // Note: Model accuracy alerts removed because modelAccuracy.model_metrics values are 
+    // confidence-based estimates, NOT real accuracy. Use the benchmark feature in 
+    // Model Accuracy page for ground-truth accuracy measurements.
 
     // Check rate limiting (if available in metrics)
     if (systemStatus.metrics && (systemStatus.metrics as any).rate_limiting) {

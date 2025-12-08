@@ -43,9 +43,11 @@ async def init_database():
     logger.info("Initializing database connection", database_url=database_url.split('@')[0] + '@***' if '@' in database_url else database_url)
     
     # Create async engine
+    # Note: echo=False to suppress SQL logging (SQLAlchemy's built-in query logging)
+    # This is separate from Python's logging module - echo outputs directly to stdout
     engine = create_async_engine(
         database_url,
-        echo=settings.debug,
+        echo=False,  # NEVER use settings.debug - it spams console with SQL
         poolclass=NullPool,  # Use NullPool for development, change for production
         pool_pre_ping=True,
         pool_recycle=300,

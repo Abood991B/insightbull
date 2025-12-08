@@ -20,7 +20,6 @@ import torch
 from typing import List, Dict, Any, Optional, Tuple
 import asyncio
 import logging
-import numpy as np
 
 # Transformers imports
 try:
@@ -95,7 +94,7 @@ class FinBERTModel(SentimentModel):
     def _initialize_model_info(self) -> ModelInfo:
         """Initialize ProsusAI/finbert model metadata."""
         return ModelInfo(
-            name="ProsusAI-FinBERT",
+            name="FinBERT",
             version="1.0.0",
             description="ProsusAI/finbert sentiment analyzer - 88.3% accuracy on Financial PhraseBank",
             supported_sources=[
@@ -201,10 +200,11 @@ class FinBERTModel(SentimentModel):
                 # Run inference
                 raw_results = self.pipeline(processed_text)
                 
-                # Convert to standardized format
+                # Convert to standardized format (pass original text for keyword analysis)
                 result = self._convert_finbert_result(
                     raw_results[0], 
-                    time.time() - start_time
+                    time.time() - start_time,
+                    original_text=text  # Pass original for keyword boost
                 )
                 sub_results.append(result)
                 
@@ -215,7 +215,7 @@ class FinBERTModel(SentimentModel):
         
         return sub_results
     
-    def _convert_finbert_result(self, finbert_scores: List[Dict], processing_time: float) -> SentimentResult:
+    def _convert_finbert_result(self, finbert_scores: List[Dict], processing_time: float, original_text: str = "") -> SentimentResult:
         """
         Convert ProsusAI/finbert scores to standardized SentimentResult.
         
@@ -247,6 +247,127 @@ class FinBERTModel(SentimentModel):
         
         # Normalize to [-1, 1] range
         normalized_score = pos_score - neg_score
+        
+        # NEGATION & SARCASM DETECTION (Pre-processing)
+        text_lower = original_text.lower() if original_text else ""
+        sentiment_flipped = False
+        sarcasm_detected = False
+        
+        # Detect negation patterns ("not bad", "isn't terrible", "hardly weak")
+        negation_words = ['not', "n't", 'no', 'never', 'hardly', 'barely', 'scarcely', 'neither', 'nor']
+        sentiment_words = ['bad', 'terrible', 'awful', 'poor', 'weak', 'disappointing', 'concerning',
+                          'good', 'great', 'strong', 'excellent', 'solid', 'impressive', 'bullish']
+        
+        # Check for negation within 3 words before sentiment word
+        words = text_lower.split()
+        for i, word in enumerate(words):
+            if word in sentiment_words:
+                # Look back 3 words for negation
+                window_start = max(0, i - 3)
+                window = words[window_start:i]
+                if any(neg in window for neg in negation_words):
+                    sentiment_flipped = True
+                    break
+        
+        # Detect sarcasm markers (common in HackerNews, Reddit, social media)
+        sarcasm_markers = [
+            '/s', '(sarcasm)', 'yeah right', 'sure', 'oh great',
+            '!!!', '...', 'lol', 'lmao', 'smh'
+        ]
+        # Excessive punctuation patterns
+        if '!!!' in original_text or '???' in original_text or '...' in original_text:
+            sarcasm_detected = True
+        # Explicit sarcasm markers
+        if any(marker in text_lower for marker in sarcasm_markers):
+            sarcasm_detected = True
+        
+        # Apply sentiment flip if negation detected
+        if sentiment_flipped:
+            # Flip positive <-> negative, keep neutral
+            if predicted_label == 'positive':
+                predicted_label = 'negative'
+                label = SentimentLabel.NEGATIVE
+                normalized_score = -abs(normalized_score)
+                # Reduce confidence due to complexity
+                confidence *= 0.88
+            elif predicted_label == 'negative':
+                predicted_label = 'positive'
+                label = SentimentLabel.POSITIVE
+                normalized_score = abs(normalized_score)
+                confidence *= 0.88
+        
+        # Apply sarcasm flip (usually flips positive to negative)
+        if sarcasm_detected and not sentiment_flipped:
+            if predicted_label == 'positive':
+                predicted_label = 'negative'
+                label = SentimentLabel.NEGATIVE
+                normalized_score = -abs(normalized_score) * 0.6  # Moderate flip
+                confidence *= 0.75  # Lower confidence for sarcasm
+        
+        # KEYWORD-BASED CONFIDENCE BOOST
+        # High-signal financial keywords that indicate clear sentiment
+        keyword_boost = 0.0
+        
+        # Strong positive indicators
+        strong_positive = ['surges', 'soars', 'jumps', 'rallies', 'beats', 'exceeds', 'skyrockets', 
+                          'raises price target', 'raises pt', 'upgrades', 'all-time high', 'ath',
+                          'blows past', 'crushes estimates', 'breakout']
+        # Strong negative indicators  
+        strong_negative = ['plunges', 'crashes', 'tumbles', 'plummets', 'slides', 'tanks', 'collapses',
+                          'downgrades', 'slashes', 'cuts price target', 'cuts pt', 'misses',
+                          'warning', 'investigation', 'lawsuit', 'fraud', 'scandal']
+        # Moderate sentiment indicators
+        moderate_positive = ['rises', 'gains', 'advances', 'grows', 'improves', 'strong', 'solid', 'positive']
+        moderate_negative = ['falls', 'drops', 'declines', 'weakness', 'concerns', 'disappoints', 'lower']
+        
+        # Only apply keyword boost if no sentiment flip (avoid conflicting signals)
+        if not sentiment_flipped and not sarcasm_detected:
+            if predicted_label == 'positive':
+                if any(keyword in text_lower for keyword in strong_positive):
+                    keyword_boost = 0.08  # Significant boost for strong signals
+                elif any(keyword in text_lower for keyword in moderate_positive):
+                    keyword_boost = 0.04  # Moderate boost
+            elif predicted_label == 'negative':
+                if any(keyword in text_lower for keyword in strong_negative):
+                    keyword_boost = 0.08
+                elif any(keyword in text_lower for keyword in moderate_negative):
+                    keyword_boost = 0.04
+        
+        # Apply keyword boost (capped at 0.98)
+        confidence = min(confidence + keyword_boost, 0.98)
+        
+        # ENHANCED Confidence Calibration System
+        # Goal: Boost confidence for strong clear signals, penalize weak/ambiguous ones
+        sorted_scores = sorted(finbert_scores, key=lambda x: x['score'], reverse=True)
+        if len(sorted_scores) >= 2:
+            top_score = sorted_scores[0]['score']
+            second_score = sorted_scores[1]['score']
+            third_score = sorted_scores[2]['score'] if len(sorted_scores) >= 3 else 0.0
+            gap = top_score - second_score
+            
+            # IMPROVEMENT 1: Boost confidence for STRONG clear predictions
+            # If gap > 0.5 (very decisive), boost confidence toward 0.95+
+            if gap > 0.5 and top_score > 0.85:
+                # Very strong signal - boost confidence
+                confidence = min(confidence * 1.08, 0.98)  # Cap at 0.98
+            elif gap > 0.35 and top_score > 0.75:
+                # Strong signal - modest boost
+                confidence = min(confidence * 1.05, 0.96)
+            # IMPROVEMENT 2: Smart penalty for weak predictions
+            elif gap < 0.15:
+                # Weak signal - reduce confidence proportionally to gap
+                # gap=0.15 → multiply by 0.90, gap=0.05 → multiply by 0.70
+                penalty = 0.70 + (gap / 0.15) * 0.20  # Range: 0.70-0.90
+                confidence = confidence * penalty
+                
+                # If gap is extremely small (< 0.08) and neutral is involved, default to neutral
+                if gap < 0.08 and (sorted_scores[0]['label'].lower() == 'neutral' or sorted_scores[1]['label'].lower() == 'neutral'):
+                    label = SentimentLabel.NEUTRAL
+                    normalized_score = 0.0
+            # IMPROVEMENT 3: Moderate penalty for moderately weak predictions
+            elif gap < 0.25:
+                # Moderate uncertainty - slight reduction
+                confidence = confidence * 0.92
         
         return SentimentResult(
             label=label,
@@ -678,7 +799,7 @@ class EnsembleFinBERTModel(SentimentModel):
     def _initialize_model_info(self) -> ModelInfo:
         """Initialize Ensemble FinBERT model metadata."""
         return ModelInfo(
-            name="FinBERT-Ensemble",
+            name="FinBERT Ensemble",
             version="1.0.0",
             description="Ensemble of multiple FinBERT models for robust financial sentiment analysis",
             supported_sources=[

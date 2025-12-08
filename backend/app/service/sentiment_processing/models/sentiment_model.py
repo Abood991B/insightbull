@@ -14,13 +14,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 import asyncio
-import logging
+from app.infrastructure.log_system import get_logger
 from app.utils.timezone import utc_now
 
 # Import DataSource from the canonical location
 from ....infrastructure.collectors.base_collector import DataSource
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class SentimentLabel(Enum):

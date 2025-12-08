@@ -6,7 +6,7 @@ Pydantic schemas for admin panel API requests and responses.
 Implements FYP Report Phase 8 requirements U-FR6 through U-FR10.
 """
 
-from pydantic import BaseModel, Field, ConfigDict, validator, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 from enum import Enum

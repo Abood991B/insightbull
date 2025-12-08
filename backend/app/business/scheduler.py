@@ -25,16 +25,20 @@ from dataclasses import dataclass, field
 from enum import Enum
 import uuid
 import pytz
+import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from ..utils.timezone import utc_now, to_naive_utc
 from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 
 from app.infrastructure.log_system import get_logger
 from app.business.pipeline import DataPipeline
 from app.service.watchlist_service import get_current_stock_symbols
 from app.service.price_service import price_service
 from app.data_access.database.connection import get_db_session
+
+# Suppress APScheduler's verbose "Added job" messages
+logging.getLogger('apscheduler.scheduler').setLevel(logging.WARNING)
+logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
 
 
 class RunType(Enum):
@@ -136,7 +140,26 @@ class Scheduler:
             
             # Setup default scheduled jobs
             await self._setup_default_jobs()
-            self.logger.info(f"Default scheduled jobs created: {len(self.jobs)} jobs configured")
+            # Count actual jobs from APScheduler (includes quota reset)
+            actual_job_count = len(self.scheduler.get_jobs())
+            
+            # Log consolidated scheduler summary
+            job_summary = []
+            for job_id, job in self.jobs.items():
+                job_summary.append({
+                    "name": job.name,
+                    "run_type": job.parameters.get("run_type"),
+                    "cron": job.parameters.get("cron_expression")
+                })
+            
+            self.logger.info(
+                "Scheduler configured with smart pipeline jobs",
+                extra={
+                    "total_jobs": actual_job_count,
+                    "pipeline_jobs": len(self.jobs),
+                    "jobs": job_summary
+                }
+            )
     
     async def stop(self):
         """Stop the scheduler"""
@@ -502,18 +525,8 @@ class Scheduler:
         
         self.jobs[job_id] = job
         
-        # Get source configuration for logging
-        sources = self._get_sources_for_run_type(run_type)
-        enabled_sources = [k.replace("include_", "") for k, v in sources.items() if v]
-        
-        self.logger.info(
-            f"Scheduled smart pipeline job: {name}",
-            job_id=job_id,
-            cron=cron_expression,
-            run_type=run_type.value,
-            enabled_sources=enabled_sources,
-            symbol_count=len(symbols)
-        )
+        # Collect job info for summary (don't log individually)
+        # Job details will be logged in summary at end of _setup_default_jobs()
         
         return job_id
     

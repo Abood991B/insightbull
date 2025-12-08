@@ -73,6 +73,7 @@ class SentimentData(Base):
     # Composite index for duplicate detection (stock + source + content_hash)
     __table_args__ = (
         Index('idx_sentiment_duplicate_check', 'stock_id', 'source', 'content_hash'),
+        Index('idx_sentiment_created_at', 'created_at'),
     )
     
     @staticmethod

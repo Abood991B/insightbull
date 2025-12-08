@@ -56,11 +56,11 @@ DEFAULT_CONFIG = {
     "ai_services": {
         "gemini": {
             "enabled": True,
-            "display_name": "Google Gemini AI",
+            "display_name": "Gemma 3 27B AI",
             "requires_api_key": True,
             "description": "AI sentiment verification for improved accuracy",
             "verification_mode": "low_confidence_and_neutral",
-            "confidence_threshold": 0.75
+            "confidence_threshold": 0.85
         }
     },
     "last_updated": None,

@@ -1,7 +1,7 @@
 {
   "name": "insight-stock-dashboard",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.0.0",
   "description": "Stock market sentiment analysis and insights dashboard",
   "type": "module",
   "scripts": {

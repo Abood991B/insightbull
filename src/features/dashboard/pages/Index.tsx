@@ -18,12 +18,28 @@ import { validateDashboardData } from "@/shared/utils/dataValidation";
 import DashboardSkeleton from "@/features/dashboard/components/DashboardSkeleton";
 
 // Import utility functions
-import { formatTimeAgo } from "@/shared/utils/timeUtils";
+import { formatTimeAgo } from "@/shared/utils/timezone";
+import { usePipelineNotifications } from "@/shared/hooks/usePipelineNotifications";
+import { useToast } from "@/shared/hooks/use-toast";
 
 const Index = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [lastRefresh, setLastRefresh] = useState<number>(Date.now());
+
+  // Listen for pipeline completion events from admin panel
+  usePipelineNotifications((event) => {
+    // Show toast notification
+    toast({
+      title: "Data Updated",
+      description: `Pipeline completed: ${event.summary?.analyzed || 0} items analyzed, ${event.summary?.stored || 0} new items stored`,
+    });
+    
+    // Refetch dashboard data immediately
+    refetch();
+    setLastRefresh(Date.now());
+  });
 
   // Fetch dashboard data with React Query
   // Use shorter refetch interval (30 seconds) to catch pipeline updates quickly

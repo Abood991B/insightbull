@@ -4,7 +4,7 @@ AI-Verified Sentiment Analysis System
 
 Hybrid approach combining:
 1. Fast ML model (ProsusAI/finbert) - First pass on ALL texts
-2. AI verification (Google Gemini) - Validates uncertain cases
+2. AI verification (Google Gemma 3 27B) - Validates uncertain cases
 
 This achieves 90%+ accuracy by:
 - Using ML for obvious cases (high confidence)
@@ -13,7 +13,7 @@ This achieves 90%+ accuracy by:
 
 Cost optimization:
 - Only ~20-30% of texts need AI verification
-- Average cost: ~$0.001 per text with Gemini Flash
+- Uses Gemma 3 27B-IT via Google AI Studio API (free tier available)
 
 Integration:
 - Connects to SecureAPIKeyLoader for encrypted API key management
@@ -61,6 +61,11 @@ except ImportError:
     get_content_validator = None
 
 
+# AI Model Configuration - Change these to switch models
+AI_MODEL_ID = "gemma-3-27b-it"  # Model ID for Google AI Studio API
+AI_MODEL_DISPLAY_NAME = "Gemma 3 27B"  # Human-readable name for UI
+
+
 class VerificationMode(Enum):
     """Modes for AI verification."""
     NONE = "none"                    # No AI verification (ML only)
@@ -93,6 +98,10 @@ class AIVerificationStats:
     avg_ml_confidence: float = 0.0
     last_error: Optional[str] = None
     last_error_time: Optional[str] = None
+    api_key_valid: bool = False
+    api_key_status: str = "not_configured"  # not_configured, valid, invalid, error
+    ai_model_id: str = AI_MODEL_ID  # Model ID being used
+    ai_model_name: str = AI_MODEL_DISPLAY_NAME  # Human-readable model name
 
 
 class AIVerifiedSentimentAnalyzer:
@@ -114,7 +123,7 @@ class AIVerifiedSentimentAnalyzer:
         analyzer = AIVerifiedSentimentAnalyzer(
             gemini_api_key="your-api-key",
             verification_mode=VerificationMode.LOW_CONFIDENCE_AND_NEUTRAL,
-            confidence_threshold=0.75
+            confidence_threshold=0.85
         )
         result = await analyzer.analyze("Tesla stock crashes 20%")
     """
@@ -130,16 +139,24 @@ TEXT: "{text}"
 Classify the sentiment as exactly one of: positive, negative, or neutral
 
 Rules:
-- POSITIVE: Good news, growth, gains, upgrades, beats expectations, expansion, partnership success
-- NEGATIVE: Bad news, losses, decline, downgrades, misses expectations, layoffs, scandals, warnings
-- NEUTRAL: Factual information, questions, mixed signals, informational/educational content
+- POSITIVE: Good news, growth, gains, upgrades, beats expectations, expansion, partnership success.
+- NEGATIVE: Bad news, losses, decline, downgrades, misses expectations, layoffs, scandals, warnings.
+- NEUTRAL: ONLY for purely factual data (e.g., "Earnings release date is X") or questions without any implied view.
 
-Consider:
-- Headlines with "plunges", "crashes", "slides", "tumbles" = NEGATIVE
-- Headlines with "surges", "jumps", "beats", "raises PT" = POSITIVE  
-- Questions, earnings calls, portfolio updates without clear sentiment = NEUTRAL
-- Warnings, downgrades, "get out before" = NEGATIVE
-- Sarcasm and implicit sentiment in informal text
+CRITICAL INSTRUCTIONS:
+1. AVOID NEUTRAL if there is ANY positive or negative inclination. If the text leans even slightly, choose POSITIVE or NEGATIVE.
+2. BE DECISIVE. Do not hedge.
+3. HIGH CONFIDENCE: If the sentiment is clear (e.g., "stock surges", "revenue down"), assign confidence > 0.92.
+4. TARGET CONFIDENCE: Aim for 0.92-0.98 for clear cases. Only use < 0.85 for truly ambiguous text.
+5. DEFAULT MINIMUM: Most predictions should be 0.88+ unless genuinely unclear.
+
+Confidence Guidelines:
+- Headlines with "plunges", "crashes", "slides", "tumbles" = NEGATIVE (Confidence 0.96-0.99)
+- Headlines with "surges", "jumps", "beats", "raises PT" = POSITIVE (Confidence 0.96-0.99)
+- Earnings beats/misses, upgrades/downgrades = 0.92-0.95
+- "Mixed signals" -> Determine DOMINANT sentiment (0.88-0.92)
+- Warnings, downgrades, "get out before" = NEGATIVE (0.92-0.96)
+- Sarcasm and implicit sentiment in informal text = Lower confidence only if truly ambiguous
 
 Respond ONLY in this exact JSON format, nothing else:
 {{"sentiment": "positive", "confidence": 0.95, "reasoning": "brief explanation"}}
@@ -151,8 +168,9 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
         model_name: str = "ProsusAI/finbert",
         gemini_api_key: Optional[str] = None,
         verification_mode: VerificationMode = VerificationMode.LOW_CONFIDENCE_AND_NEUTRAL,
-        confidence_threshold: float = 0.75,
+        confidence_threshold: float = 0.85,
         ai_enabled: bool = True,
+        ensemble_enabled: bool = True,  # NEW: Enable DistilBERT ensemble
     ):
         """
         Initialize the AI-verified sentiment analyzer.
@@ -163,22 +181,39 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
             verification_mode: When to use AI verification
             confidence_threshold: Below this, send to AI for verification
             ai_enabled: Master switch to enable/disable AI verification
+            ensemble_enabled: Enable DistilBERT ensemble voting (default: True)
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.verification_mode = verification_mode
         self.confidence_threshold = confidence_threshold
         self.ai_enabled = ai_enabled
+        self.ensemble_enabled = ensemble_enabled
         self._stats = AIVerificationStats()
         
-        # Load ML model
+        # Load primary ML model (FinBERT)
         logger.info(
-            "Loading ML model for AI-verified sentiment",
+            "Loading primary ML model for AI-verified sentiment",
             extra={"model": model_name, "device": str(self.device)}
         )
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
         self.model.to(self.device)
         self.model.eval()
+        
+        # Load ensemble model (DistilBERT) if enabled
+        self.ensemble_model = None
+        self.ensemble_tokenizer = None
+        if ensemble_enabled:
+            try:
+                logger.info("Loading DistilBERT-financial ensemble model for voting")
+                from .models.distilbert_model import DistilBERTFinancialModel
+                # We'll initialize this lazily on first use to save startup time
+                self._ensemble_model_class = DistilBERTFinancialModel
+                self._ensemble_initialized = False
+                logger.info("DistilBERT ensemble model registered (lazy loading)")
+            except Exception as e:
+                logger.warning(f"Failed to register DistilBERT ensemble: {e}")
+                self.ensemble_enabled = False
         
         # Setup Gemini client
         self.gemini_model = None
@@ -209,18 +244,38 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
         if gemini_api_key and GEMINI_AVAILABLE and ai_enabled:
             try:
                 genai.configure(api_key=gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-lite')
+                self.gemini_model = genai.GenerativeModel(AI_MODEL_ID)
                 self._gemini_api_key = gemini_api_key
-                logger.info(
-                    "Google Gemini client initialized",
-                    extra={"model": "gemini-2.0-flash-lite", "verification_mode": verification_mode.value}
-                )
+                
+                # Validate API key with a test call
+                is_valid, error_msg = self._validate_api_key_sync()
+                if is_valid:
+                    self._stats.api_key_valid = True
+                    self._stats.api_key_status = "valid"
+                    logger.info(
+                        f"{AI_MODEL_DISPLAY_NAME} client initialized and validated",
+                        extra={"model": AI_MODEL_ID, "verification_mode": verification_mode.value}
+                    )
+                else:
+                    # Key is invalid - disable Gemini
+                    self.gemini_model = None
+                    self._gemini_api_key = None
+                    self._stats.api_key_valid = False
+                    self._stats.api_key_status = "invalid"
+                    self._stats.last_error = error_msg
+                    from app.utils.timezone import utc_now
+                    self._stats.last_error_time = utc_now().isoformat()
+                    logger.error(
+                        "Gemini API key is invalid - AI verification disabled",
+                        extra={"error": error_msg}
+                    )
             except Exception as e:
                 logger.error(
                     "Failed to initialize Gemini client",
                     extra={"error": str(e), "error_type": type(e).__name__}
                 )
                 self._stats.last_error = str(e)
+                self._stats.api_key_status = "error"
                 from app.utils.timezone import utc_now
                 self._stats.last_error_time = utc_now().isoformat()
         
@@ -277,7 +332,7 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
         logger.info(f"Content filtering set to: {enabled}")
     
     def _get_ml_prediction(self, text: str) -> Tuple[str, float, Dict[str, float]]:
-        """Get prediction from the ML model."""
+        """Get prediction from the primary ML model (FinBERT)."""
         encodings = self.tokenizer(
             text,
             truncation=True,
@@ -304,6 +359,63 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
         confidence = probs[pred_id].item()
         
         return label, confidence, scores
+    
+    def _get_ensemble_prediction(self, text: str) -> Optional[Tuple[str, float, Dict[str, float]]]:
+        """
+        Get prediction from ensemble model (DistilBERT) for voting.
+        
+        Returns:
+            (label, confidence, scores) tuple or None if ensemble disabled/failed
+        """
+        if not self.ensemble_enabled:
+            return None
+        
+        try:
+            # Lazy initialization of ensemble model
+            if not self._ensemble_initialized:
+                logger.info("Initializing DistilBERT ensemble model (first use)")
+                self.ensemble_tokenizer = AutoTokenizer.from_pretrained(
+                    "mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis"
+                )
+                self.ensemble_model = AutoModelForSequenceClassification.from_pretrained(
+                    "mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis"
+                )
+                self.ensemble_model.to(self.device)
+                self.ensemble_model.eval()
+                self._ensemble_initialized = True
+                logger.info("DistilBERT ensemble model loaded successfully")
+            
+            # Get prediction
+            encodings = self.ensemble_tokenizer(
+                text,
+                truncation=True,
+                padding=True,
+                max_length=128,
+                return_tensors='pt'
+            )
+            
+            with torch.no_grad():
+                outputs = self.ensemble_model(
+                    input_ids=encodings['input_ids'].to(self.device),
+                    attention_mask=encodings['attention_mask'].to(self.device)
+                )
+                probs = torch.softmax(outputs.logits, dim=-1)[0]
+            
+            scores = {
+                'positive': probs[0].item(),
+                'negative': probs[1].item(),
+                'neutral': probs[2].item()
+            }
+            
+            pred_id = torch.argmax(probs).item()
+            label = self.ID_TO_LABEL[pred_id]
+            confidence = probs[pred_id].item()
+            
+            return label, confidence, scores
+            
+        except Exception as e:
+            logger.warning(f"Ensemble prediction failed: {e}")
+            return None
     
     async def _verify_with_gemini(self, text: str) -> Tuple[Optional[str], Optional[float], Optional[str]]:
         """Verify sentiment using Google Gemini with comprehensive error handling."""
@@ -403,7 +515,9 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
             "verification_mode": self.verification_mode.value,
             "confidence_threshold": self.confidence_threshold,
             "ai_enabled": self.ai_enabled,
-            "gemini_configured": self.gemini_model is not None
+            "gemini_configured": self.gemini_model is not None,
+            "api_key_valid": self._stats.api_key_valid,
+            "api_key_status": self._stats.api_key_status
         }
     
     def set_ai_enabled(self, enabled: bool):
@@ -428,29 +542,188 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
         logger.info("Verification mode changed", extra={"mode": mode.value})
         return True
     
-    def reload_api_key(self) -> bool:
-        """Reload Gemini API key from secure storage."""
+    def _validate_api_key_sync(self) -> Tuple[bool, Optional[str]]:
+        """
+        Validate Gemini API key with a simple test call.
+        
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not self.gemini_model:
+            return False, "Gemini model not initialized"
+        
+        try:
+            # Simple test prompt that should work with any valid key
+            response = self.gemini_model.generate_content(
+                "Reply with only the word 'OK'",
+                generation_config={"max_output_tokens": 10}
+            )
+            # If we get here without exception, the key is valid
+            return True, None
+        except Exception as e:
+            error_str = str(e)
+            if "API_KEY_INVALID" in error_str or "API key not valid" in error_str:
+                return False, "API key is invalid. Please check your Gemini API key."
+            elif "PERMISSION_DENIED" in error_str:
+                return False, "API key does not have permission. Check API key settings."
+            elif "QUOTA_EXCEEDED" in error_str or "exhausted" in error_str.lower():
+                # Quota exceeded means key is valid but rate limited
+                return True, None
+            elif "billing" in error_str.lower():
+                return False, "Billing not enabled for this API key."
+            else:
+                return False, f"API key validation failed: {error_str[:100]}"
+    
+    async def validate_api_key(self) -> Dict[str, any]:
+        """
+        Validate Gemini API key and return detailed status.
+        
+        Returns:
+            Dict with validation results:
+            - valid: bool
+            - status: str (valid, invalid, not_configured, error)
+            - message: str (human-readable status)
+            - error: Optional[str] (error details if any)
+        """
+        if not self._gemini_api_key:
+            return {
+                "valid": False,
+                "status": "not_configured",
+                "message": "No Gemini API key configured",
+                "error": None
+            }
+        
+        if not self.gemini_model:
+            return {
+                "valid": False,
+                "status": "not_configured",
+                "message": "Gemini model not initialized",
+                "error": None
+            }
+        
+        is_valid, error_msg = self._validate_api_key_sync()
+        
+        if is_valid:
+            self._stats.api_key_valid = True
+            self._stats.api_key_status = "valid"
+            return {
+                "valid": True,
+                "status": "valid",
+                "message": "Gemini API key is valid and working",
+                "error": None
+            }
+        else:
+            self._stats.api_key_valid = False
+            self._stats.api_key_status = "invalid"
+            self._stats.last_error = error_msg
+            from app.utils.timezone import utc_now
+            self._stats.last_error_time = utc_now().isoformat()
+            
+            # Disable Gemini since key is invalid
+            self.gemini_model = None
+            self.verification_mode = VerificationMode.NONE
+            
+            return {
+                "valid": False,
+                "status": "invalid",
+                "message": "Gemini API key is invalid - AI verification disabled",
+                "error": error_msg
+            }
+    
+    def reload_api_key(self) -> Dict[str, any]:
+        """
+        Reload and validate Gemini API key from secure storage.
+        
+        Returns:
+            Dict with reload results:
+            - success: bool
+            - valid: bool
+            - status: str
+            - message: str
+        """
         if not SECURE_LOADER_AVAILABLE:
             logger.warning("SecureAPIKeyLoader not available")
-            return False
+            return {
+                "success": False,
+                "valid": False,
+                "status": "error",
+                "message": "SecureAPIKeyLoader not available"
+            }
         
         try:
             key_loader = SecureAPIKeyLoader()
             keys = key_loader.load_api_keys()
             gemini_api_key = keys.get('gemini_api_key', '')
             
-            if gemini_api_key and GEMINI_AVAILABLE:
-                genai.configure(api_key=gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-lite')
-                self._gemini_api_key = gemini_api_key
-                logger.info("Gemini API key reloaded successfully")
-                return True
-            else:
+            if not gemini_api_key:
+                self._stats.api_key_valid = False
+                self._stats.api_key_status = "not_configured"
                 logger.warning("No Gemini API key found in secure storage")
-                return False
+                return {
+                    "success": False,
+                    "valid": False,
+                    "status": "not_configured",
+                    "message": "No Gemini API key found in secure storage"
+                }
+            
+            if not GEMINI_AVAILABLE:
+                return {
+                    "success": False,
+                    "valid": False,
+                    "status": "error",
+                    "message": "Google Generative AI library not installed"
+                }
+            
+            # Configure and create model
+            genai.configure(api_key=gemini_api_key)
+            self.gemini_model = genai.GenerativeModel(AI_MODEL_ID)
+            self._gemini_api_key = gemini_api_key
+            
+            # Validate the key
+            is_valid, error_msg = self._validate_api_key_sync()
+            
+            if is_valid:
+                self._stats.api_key_valid = True
+                self._stats.api_key_status = "valid"
+                self.ai_enabled = True
+                self.verification_mode = VerificationMode.LOW_CONFIDENCE_AND_NEUTRAL
+                logger.info(f"{AI_MODEL_DISPLAY_NAME} API key reloaded and validated successfully")
+                return {
+                    "success": True,
+                    "valid": True,
+                    "status": "valid",
+                    "message": "API key reloaded and validated - AI verification enabled"
+                }
+            else:
+                # Key is invalid - disable Gemini
+                self.gemini_model = None
+                self._gemini_api_key = None
+                self._stats.api_key_valid = False
+                self._stats.api_key_status = "invalid"
+                self._stats.last_error = error_msg
+                from app.utils.timezone import utc_now
+                self._stats.last_error_time = utc_now().isoformat()
+                self.verification_mode = VerificationMode.NONE
+                logger.error("Gemini API key is invalid", extra={"error": error_msg})
+                return {
+                    "success": False,
+                    "valid": False,
+                    "status": "invalid",
+                    "message": f"API key is invalid: {error_msg}"
+                }
+                
         except Exception as e:
+            self._stats.api_key_status = "error"
+            self._stats.last_error = str(e)
+            from app.utils.timezone import utc_now
+            self._stats.last_error_time = utc_now().isoformat()
             logger.error("Failed to reload Gemini API key", extra={"error": str(e)})
-            return False
+            return {
+                "success": False,
+                "valid": False,
+                "status": "error",
+                "message": f"Failed to reload API key: {str(e)}"
+            }
     
     async def analyze(self, text: str, stock_symbol: Optional[str] = None) -> SentimentResult:
         """
@@ -485,8 +758,43 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
                 method="filtered (non-financial)"
             )
         
-        # Step 1: Get ML prediction
+        # Step 1: Get ML prediction from primary model (FinBERT)
         ml_label, ml_confidence, scores = self._get_ml_prediction(text)
+        
+        # Step 1.5: Ensemble voting (DistilBERT) - CONDITIONAL for performance
+        # Only run ensemble in "uncertain zone" (0.70-0.95 confidence)
+        # Skip if very confident (>0.95) or very uncertain (<0.70, will go to AI anyway)
+        ensemble_result = None
+        if self.ensemble_enabled and 0.70 <= ml_confidence < 0.95:
+            ensemble_result = self._get_ensemble_prediction(text)
+        
+        if ensemble_result:
+            ensemble_label, ensemble_confidence, ensemble_scores = ensemble_result
+            
+            # Check for disagreement between models
+            if ensemble_label != ml_label:
+                # Models disagree - reduce confidence
+                logger.debug(
+                    "Ensemble disagreement detected",
+                    extra={
+                        "text_preview": text[:50],
+                        "finbert": ml_label,
+                        "distilbert": ensemble_label,
+                        "finbert_conf": ml_confidence,
+                        "distilbert_conf": ensemble_confidence
+                    }
+                )
+                
+                # Penalize confidence when models disagree
+                ml_confidence *= 0.85  # Reduce by 15%
+                
+                # If disagreement is strong (both confident but different), trigger AI
+                if ml_confidence > 0.75 and ensemble_confidence > 0.75:
+                    # Force AI verification for strong disagreements
+                    needs_verification = True if self.ai_enabled and self.gemini_model else False
+            else:
+                # Models agree - boost confidence slightly
+                ml_confidence = min(ml_confidence * 1.03, 0.98)
         
         # Update stats
         self._stats.total_analyzed += 1
@@ -535,16 +843,27 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
                 else:
                     # Disagreement - AI overrides ML, use AI's confidence directly
                     final_confidence = ai_confidence
-                    method = f"ai_verified ({final_confidence:.0%})"
+                    method = f"ai_override ({final_confidence:.0%})"
         
-        # Calculate final score
-        if final_label == "positive":
-            score = scores['positive'] - scores['negative']
-        elif final_label == "negative":
-            score = -(scores['negative'] - scores['positive'])
-            score = min(score, -0.1)  # Ensure negative
+        # Calculate final score - must align with final_label
+        # If AI overrode ML, generate score based on AI's decision + confidence
+        if ai_label and ai_label != ml_label:
+            # AI changed the label - generate score from AI confidence
+            if final_label == "positive":
+                score = final_confidence  # Positive score (0 to 1)
+            elif final_label == "negative":
+                score = -final_confidence  # Negative score (-1 to 0)
+            else:
+                score = 0.0
         else:
-            score = 0.0
+            # ML label stands - use ML raw scores
+            if final_label == "positive":
+                score = scores['positive'] - scores['negative']
+            elif final_label == "negative":
+                score = -(scores['negative'] - scores['positive'])
+                score = min(score, -0.1)  # Ensure negative
+            else:
+                score = 0.0
         
         return SentimentResult(
             text=text,
@@ -566,19 +885,27 @@ TEXTS TO ANALYZE:
 {texts_json}
 
 Rules:
-- POSITIVE: Good news, growth, gains, upgrades, beats expectations, expansion, partnership success
-- NEGATIVE: Bad news, losses, decline, downgrades, misses expectations, layoffs, scandals, warnings
-- NEUTRAL: Factual information, questions, mixed signals, informational/educational content
+- POSITIVE: Good news, growth, gains, upgrades, beats expectations, expansion, partnership success.
+- NEGATIVE: Bad news, losses, decline, downgrades, misses expectations, layoffs, scandals, warnings.
+- NEUTRAL: ONLY for purely factual data (e.g., "Earnings release date is X") or questions without any implied view.
 
-Consider:
-- Headlines with "plunges", "crashes", "slides", "tumbles" = NEGATIVE
-- Headlines with "surges", "jumps", "beats", "raises PT" = POSITIVE  
-- Questions, earnings calls, portfolio updates without clear sentiment = NEUTRAL
-- Warnings, downgrades, "get out before" = NEGATIVE
-- Sarcasm and implicit sentiment in informal text
+CRITICAL INSTRUCTIONS:
+1. AVOID NEUTRAL if there is ANY positive or negative inclination. If the text leans even slightly, choose POSITIVE or NEGATIVE.
+2. BE DECISIVE. Do not hedge.
+3. HIGH CONFIDENCE: If the sentiment is clear (e.g., "stock surges", "revenue down"), assign confidence > 0.92.
+4. TARGET CONFIDENCE: Aim for 0.92-0.98 for clear cases. Only use < 0.85 for truly ambiguous text.
+5. DEFAULT MINIMUM: Most predictions should be 0.88+ unless genuinely unclear.
+
+Confidence Guidelines:
+- Headlines with "plunges", "crashes", "slides", "tumbles" = NEGATIVE (Confidence 0.96-0.99)
+- Headlines with "surges", "jumps", "beats", "raises PT" = POSITIVE (Confidence 0.96-0.99)
+- Earnings beats/misses, upgrades/downgrades = 0.92-0.95
+- "Mixed signals" -> Determine DOMINANT sentiment (0.88-0.92)
+- Warnings, downgrades, "get out before" = NEGATIVE (0.92-0.96)
+- Sarcasm and implicit sentiment in informal text = Lower confidence only if truly ambiguous
 
 Respond ONLY with a JSON array containing exactly {count} objects in the same order as the input texts:
-[{{"id": 0, "sentiment": "positive", "confidence": 0.95}}, {{"id": 1, "sentiment": "negative", "confidence": 0.85}}, ...]
+[{{"id": 0, "sentiment": "positive", "confidence": 0.95}}, {{"id": 1, "sentiment": "negative", "confidence": 0.92}}, ...]
 
 Each object must have: id (matching input index), sentiment (positive/negative/neutral), confidence (0.0-1.0)"""
 
@@ -792,7 +1119,7 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
                 else:
                     # Disagreement - use AI's confidence directly
                     final_confidence = ai_confidence
-                    method = f"ai_verified ({final_confidence:.0%})"
+                    method = f"ai_override ({final_confidence:.0%})"
             else:
                 final_label = ml_label
                 final_confidence = ml_confidence
@@ -800,14 +1127,25 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
                 ai_verified = False
                 ai_label = None
             
-            # Calculate score
-            if final_label == "positive":
-                score = scores['positive'] - scores['negative']
-            elif final_label == "negative":
-                score = -(scores['negative'] - scores['positive'])
-                score = min(score, -0.1)
+            # Calculate score - must align with final_label
+            # If AI overrode ML, generate score based on AI's decision + confidence
+            if ai_verified and ai_label != ml_label:
+                # AI changed the label - generate score from AI confidence
+                if final_label == "positive":
+                    score = final_confidence  # Positive score (0 to 1)
+                elif final_label == "negative":
+                    score = -final_confidence  # Negative score (-1 to 0)
+                else:
+                    score = 0.0
             else:
-                score = 0.0
+                # ML label stands - use ML raw scores
+                if final_label == "positive":
+                    score = scores['positive'] - scores['negative']
+                elif final_label == "negative":
+                    score = -(scores['negative'] - scores['positive'])
+                    score = min(score, -0.1)
+                else:
+                    score = 0.0
             
             results[i] = SentimentResult(
                 text=text,

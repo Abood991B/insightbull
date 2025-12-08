@@ -5,7 +5,6 @@ Implements U-FR1: View Sentiment Dashboard
 Provides dashboard overview with key metrics, top stocks, and system status.
 """
 
-import logging
 from datetime import datetime, timedelta
 from app.utils.timezone import utc_now, to_naive_utc, ensure_utc
 from typing import List
@@ -27,8 +26,9 @@ from app.data_access.repositories import (
     SentimentDataRepository,
     StockPriceRepository
 )
+from app.infrastructure.log_system import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 

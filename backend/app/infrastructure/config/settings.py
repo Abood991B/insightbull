@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     log_format: str = "json"
+
+    # AI Verification Configuration
+    ai_verification_mode: str = "low_confidence_and_neutral"  # none, low_confidence, neutral_only, low_confidence_and_neutral, all
+    ai_confidence_threshold: float = 0.85
     
     def get_allowed_origins_list(self) -> List[str]:
         """Convert allowed_origins string to list."""

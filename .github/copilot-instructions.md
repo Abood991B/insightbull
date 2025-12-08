@@ -99,14 +99,14 @@ The backend is fully operational - focus on connecting frontend to real APIs:
 - **CORS**: Configured in `setup_security_middleware()` with allowed origins
 
 ### Data Collection Pipeline
-- **Entry Point**: `business/pipeline.py` - Facade pattern orchestrating 4 collectors
-- **Collectors**: `RedditCollector`, `FinHubCollector`, `NewsAPICollector`, `MarketauxCollector`
+- **Entry Point**: `business/pipeline.py` - Facade pattern orchestrating collectors
+- **Collectors**: `HackerNewsCollector`, `GDELTCollector`, `FinHubCollector`, `NewsAPICollector`, `MarketauxCollector`
 - **Watchlist**: Dynamic stock management via `WatchlistService` (database-driven, not static lists)
 - **Scheduler**: `business/scheduler.py` using APScheduler for automated collection
 
 ### Sentiment Analysis
-- **Models**: FinBERT (financial news) + VADER (social media)
-- **Service**: `service/sentiment_processing/sentiment_engine.py`
+- **Models**: FinBERT (financial news) + Gemma 3 27B AI verification
+- **Service**: `service/sentiment_processing/hybrid_sentiment_analyzer.py`
 - **Storage**: `SentimentData` model with `sentiment_label` (positive/neutral/negative)
 
 ### Structured Logging

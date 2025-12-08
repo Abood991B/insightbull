@@ -68,3 +68,37 @@ def mock_db_session():
     mock_session.execute = AsyncMock()
     mock_session.scalar = AsyncMock()
     return mock_session
+
+@pytest.fixture
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Create a real async database session for integration tests.
+    Uses in-memory SQLite database that is recreated for each test.
+    """
+    # Create async engine for in-memory SQLite
+    engine = create_async_engine(
+        TEST_DATABASE_URL,
+        echo=False,
+        connect_args={"check_same_thread": False}
+    )
+    
+    # Create all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # Create session factory
+    async_session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+    
+    # Yield session for test
+    async with async_session_factory() as session:
+        yield session
+    
+    # Cleanup - drop all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    
+    await engine.dispose()

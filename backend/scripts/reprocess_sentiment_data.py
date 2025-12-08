@@ -260,8 +260,8 @@ class SentimentReprocessor:
                     # Test Gemini connection
                     import google.generativeai as genai
                     genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel('gemini-2.0-flash-lite')  # Use lite model for cost efficiency
-                    print("  Gemini API configured successfully (using gemini-2.0-flash-lite)!")
+                    model = genai.GenerativeModel('gemma-3-27b-it')  # Use Gemma 3 27B for better reasoning
+                    print("  Gemma 3 27B API configured successfully (using gemma-3-27b-it)!")
                 else:
                     print("  WARNING: No Gemini API key found in secure storage!")
                     print("  AI verification will be disabled. Add key via admin dashboard.")

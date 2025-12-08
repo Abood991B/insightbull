@@ -40,17 +40,13 @@ from ..service.sentiment_processing import get_sentiment_engine, EngineConfig
 from ..service.sentiment_processing import TextInput, DataSource, SentimentResult
 # Database Models for Storage
 from ..data_access.models import SentimentData, Stock, NewsArticle, HackerNewsPost
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ..data_access.database.connection import get_db
 from ..data_access.database.connection import get_db_session
 from ..data_access.models import StocksWatchlist, SentimentData
 from sqlalchemy import select, func
-# WebSocket imports removed - using direct database storage
-# Timezone utilities
 from ..utils.timezone import utc_now, ensure_utc, to_iso_string, to_naive_utc
 
-# Initialize logger using singleton LogSystem
 logger = get_logger()
 
 
@@ -227,14 +223,31 @@ class DataPipeline:
         self._repository_initialized = False
         
         # Initialize sentiment analysis engine with FinBERT-Tone (singleton)
+        from ..infrastructure.config.settings import get_settings
+        from ..service.collector_config_service import get_collector_config_service
+        
+        settings = get_settings()
+        collector_config = get_collector_config_service()
+        
+        # Get AI settings from dynamic config (JSON) first, fallback to env settings
+        ai_config = collector_config.get_ai_service_config("gemini") or {}
+        
+        # Determine effective settings (Dynamic Config > Env Config)
+        ai_mode = ai_config.get("verification_mode", settings.ai_verification_mode)
+        ai_threshold = ai_config.get("confidence_threshold", settings.ai_confidence_threshold)
+        
         sentiment_config = EngineConfig(
             enable_finbert=True,
-            use_ensemble_finbert=False,  # Set to True for +1-2% FinBERT accuracy (requires more GPU memory)
+            use_ensemble_finbert=True,  # Enabled for +1-2% accuracy
             finbert_use_gpu=True,  # Will auto-detect if GPU is available
             finbert_use_calibration=True,  # Enable confidence calibration (temperature scaling)
-            max_concurrent_batches=2,  # Conservative for stability
-            default_batch_size=16,
-            fallback_to_neutral=True  # Graceful degradation
+            max_concurrent_batches=4,  # Increased for better throughput
+            default_batch_size=32,  # Increased for better GPU utilization
+            fallback_to_neutral=True,  # Graceful degradation
+            cache_results=True,  # Enable caching to prevent re-processing
+            # AI Verification settings (Dynamic > Env)
+            ai_verification_mode=ai_mode,
+            ai_confidence_threshold=ai_threshold
         )
         self.sentiment_engine = get_sentiment_engine(sentiment_config)
         
@@ -242,6 +255,20 @@ class DataPipeline:
         self.current_status = PipelineStatus.IDLE
         self.current_result: Optional[PipelineResult] = None
         self._cancel_requested = False
+        
+        # Progress tracking
+        self._progress = {
+            "current_stage": "idle",
+            "stage_progress": 0,
+            "overall_progress": 0,
+            "message": "",
+            "started_at": None,
+            "stages_completed": [],
+            "current_collector": None,
+            "items_collected": 0,
+            "items_analyzed": 0,
+            "items_stored": 0,
+        }
         
         # Collectors (initialized with API keys from environment)
         self._collectors: Dict[str, BaseCollector] = {}
@@ -523,6 +550,14 @@ class DataPipeline:
         self.current_result = result
         self.current_status = PipelineStatus.RUNNING
         self._cancel_requested = False
+        
+        # Reset and initialize progress tracking
+        self._reset_progress()
+        self._update_progress(
+            stage="initializing",
+            overall_progress=5,
+            message=f"Initializing pipeline for {len(config.symbols)} stocks..."
+        )
             
         try:
             # Log pipeline start with comprehensive context
@@ -555,6 +590,13 @@ class DataPipeline:
             self.logger.log_pipeline_operation(
                 "collection_phase_start",
                 {"pipeline_id": pipeline_id, "symbols": config.symbols}
+            )
+            
+            # Update progress for collection phase
+            self._update_progress(
+                stage="collecting",
+                overall_progress=10,
+                message="Collecting data from sources..."
             )
             
             collection_results = await self._collect_data(config)
@@ -611,6 +653,15 @@ class DataPipeline:
                 }
             )
             
+            # Update progress - collection complete
+            self._update_progress(
+                stage="collecting",
+                overall_progress=30,
+                message=f"Collected {total_collected} items from {successful_collectors} sources",
+                items_collected=total_collected
+            )
+            self._progress["stages_completed"].append("collection")
+            
             if self._cancel_requested:
                 self.logger.log_pipeline_operation(
                     "pipeline_cancelled", 
@@ -641,6 +692,13 @@ class DataPipeline:
                 {"pipeline_id": pipeline_id, "items_to_process": total_collected}
             )
             
+            # Update progress for processing phase
+            self._update_progress(
+                stage="processing",
+                overall_progress=40,
+                message="Processing and deduplicating data..."
+            )
+            
             processing_results = await self._process_data(collection_results, config)
             result.processing_stats = self._build_processing_stats(processing_results)
             
@@ -653,6 +711,14 @@ class DataPipeline:
                     "processing_success_rate": successful_processing / total_collected if total_collected > 0 else 0
                 }
             )
+            
+            # Update progress - processing complete
+            self._update_progress(
+                stage="processing",
+                overall_progress=50,
+                message=f"Processed {successful_processing} items"
+            )
+            self._progress["stages_completed"].append("processing")
             
             if self._cancel_requested:
                 self.logger.log_pipeline_operation(
@@ -668,6 +734,13 @@ class DataPipeline:
                 {"pipeline_id": pipeline_id, "items_for_analysis": successful_processing}
             )
             
+            # Update progress for sentiment analysis phase
+            self._update_progress(
+                stage="analyzing",
+                overall_progress=55,
+                message=f"Analyzing sentiment for {successful_processing} items..."
+            )
+            
             sentiment_results = await self._analyze_sentiment(processing_results, config)
             result.sentiment_stats = self._build_sentiment_stats(sentiment_results)
             result.total_items_analyzed = len([r for r in sentiment_results if r.success])
@@ -680,6 +753,15 @@ class DataPipeline:
                     "analysis_success_rate": result.total_items_analyzed / successful_processing if successful_processing > 0 else 0
                 }
             )
+            
+            # Update progress - sentiment analysis complete
+            self._update_progress(
+                stage="analyzing",
+                overall_progress=80,
+                message=f"Analyzed {result.total_items_analyzed} items",
+                items_analyzed=result.total_items_analyzed
+            )
+            self._progress["stages_completed"].append("sentiment_analysis")
             
             if self._cancel_requested:
                 self.logger.log_pipeline_operation(
@@ -696,6 +778,13 @@ class DataPipeline:
                     {"pipeline_id": pipeline_id, "items_to_store": result.total_items_analyzed}
                 )
                 
+                # Update progress for storage phase
+                self._update_progress(
+                    stage="storing",
+                    overall_progress=85,
+                    message="Storing results to database..."
+                )
+                
                 stored_count = await self._store_sentiment_data(sentiment_results, config)
                 result.total_items_stored = stored_count
                 
@@ -707,6 +796,15 @@ class DataPipeline:
                         "storage_success_rate": stored_count / result.total_items_analyzed if result.total_items_analyzed > 0 else 0
                     }
                 )
+                
+                # Update progress - storage complete
+                self._update_progress(
+                    stage="storing",
+                    overall_progress=95,
+                    message=f"Stored {stored_count} new items",
+                    items_stored=stored_count
+                )
+                self._progress["stages_completed"].append("storage")
             else:
                 self.logger.log_pipeline_operation(
                     "storage_phase_skipped",
@@ -718,6 +816,17 @@ class DataPipeline:
             result.total_items_processed = len([r for r in processing_results if r.success])
             result.status = PipelineStatus.COMPLETED
             result.end_time = utc_now()
+            
+            # Final progress update - completed
+            self._update_progress(
+                stage="completed",
+                overall_progress=100,
+                message=f"Pipeline completed! Collected {result.total_items_collected}, analyzed {result.total_items_analyzed}, stored {result.total_items_stored or 0} items",
+                items_collected=result.total_items_collected,
+                items_analyzed=result.total_items_analyzed,
+                items_stored=result.total_items_stored or 0
+            )
+            self._progress["stages_completed"].append("completed")
             
             # Get deduplication stats before clearing
             dedup_stats = self.get_deduplication_stats()
@@ -1273,6 +1382,7 @@ class DataPipeline:
     ) -> int:
         """Store processed data to database using proper session management"""
         stored_count = 0
+        seen_texts = set()  # Deduplication set for current batch
         
         # Complete data storage implementation using async repositories with proper session management
         try:
@@ -1317,6 +1427,22 @@ class DataPipeline:
                         if result.raw_text:
                             cleaned_text = self.text_processor.process_text(result.raw_text)
                             cleaned_text = cleaned_text[:1000] if cleaned_text else None
+                        
+                        # --- Quality Control & Deduplication ---
+                        if not cleaned_text:
+                            continue
+                            
+                        # 1. Filter out short HackerNews comments (often noise/technical queries)
+                        # Keep headlines/titles (usually > 30 chars) but filter very short comments
+                        if result.source == DataSource.HACKERNEWS and len(cleaned_text) < 40:
+                            continue
+                            
+                        # 2. Deduplication (Batch Level)
+                        # Create a hash of the text to check for duplicates in this run
+                        text_hash = hashlib.md5(cleaned_text.encode('utf-8')).hexdigest()
+                        if text_hash in seen_texts:
+                            continue
+                        seen_texts.add(text_hash)
                         
                         # Build minimal metadata - only what's actually used
                         # Remove: processor_version (unused), correlation_id (debug only), label (redundant)
@@ -1637,10 +1763,54 @@ class DataPipeline:
         self._cancel_requested = True
         self.logger.info("Pipeline cancellation requested")
     
+    def _update_progress(
+        self, 
+        stage: str, 
+        stage_progress: int = 0, 
+        overall_progress: int = 0,
+        message: str = "",
+        collector: str = None,
+        items_collected: int = None,
+        items_analyzed: int = None,
+        items_stored: int = None
+    ) -> None:
+        """Update pipeline progress tracking."""
+        self._progress["current_stage"] = stage
+        self._progress["stage_progress"] = stage_progress
+        self._progress["overall_progress"] = overall_progress
+        self._progress["message"] = message
+        
+        if collector:
+            self._progress["current_collector"] = collector
+        if items_collected is not None:
+            self._progress["items_collected"] = items_collected
+        if items_analyzed is not None:
+            self._progress["items_analyzed"] = items_analyzed
+        if items_stored is not None:
+            self._progress["items_stored"] = items_stored
+    
+    def _reset_progress(self) -> None:
+        """Reset progress tracking for new pipeline run."""
+        from app.utils.timezone import utc_now
+        self._progress = {
+            "current_stage": "initializing",
+            "stage_progress": 0,
+            "overall_progress": 0,
+            "message": "Starting pipeline...",
+            "started_at": utc_now().isoformat(),
+            "stages_completed": [],
+            "current_collector": None,
+            "items_collected": 0,
+            "items_analyzed": 0,
+            "items_stored": 0,
+        }
+    
     def get_status(self) -> Dict[str, Any]:
-        """Get current pipeline status"""
+        """Get current pipeline status with progress info"""
         return {
             "status": self.current_status.value,
+            "is_running": self.current_status == PipelineStatus.RUNNING,
+            "progress": self._progress,
             "current_result": self.current_result.__dict__ if self.current_result else None,
             "available_collectors": list(self._collectors.keys()),
             "rate_limiter_status": self.rate_limiter.get_all_status()

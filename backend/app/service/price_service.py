@@ -5,7 +5,6 @@ Real-time Stock Price Service
 Fetches live stock prices using Yahoo Finance with configurable intervals
 """
 import asyncio
-import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 import yfinance as yf
@@ -13,7 +12,9 @@ from sqlalchemy.orm import Session
 
 from ..data_access.models import StocksWatchlist, StockPrice
 from ..data_access.database import get_db_session
-logger = logging.getLogger(__name__)
+from ..infrastructure.log_system import get_logger
+
+logger = get_logger()
 
 
 class RealTimeStockPriceService:
@@ -50,9 +51,14 @@ class RealTimeStockPriceService:
 
         self.is_running = True
         self._task = asyncio.create_task(self._price_update_loop())
-        logger.info(f"Started real-time stock price service with intelligent scheduling:")
-        logger.info(f"  - Market hours: {self.update_interval}s intervals")
-        logger.info(f"  - Market closed: Smart scheduling until next open")
+        logger.info(
+            "Real-time stock price service started",
+            extra={
+                "update_interval": f"{self.update_interval}s",
+                "market_hours_mode": "30s intervals",
+                "closed_market_mode": "Smart scheduling"
+            }
+        )
 
     async def stop(self):
         """Stop the real-time price fetching service."""
@@ -115,9 +121,8 @@ class RealTimeStockPriceService:
                 is_market_open = self.is_market_hours()
                 
                 if is_market_open:
-                    logger.info("Market is open - fetching prices...")
+                    # Market open - fetch prices (removed noisy log, covered by batch summary)
                     await self._fetch_and_update_prices()
-                    logger.info("Price fetch completed")
                     # Use normal interval during market hours
                     await asyncio.sleep(self.update_interval)
                 else:
@@ -163,15 +168,15 @@ class RealTimeStockPriceService:
                     return
                     
                 symbols = [stock.symbol for stock in active_stocks]
-                logger.info(f"Fetching prices for {len(symbols)} symbols: {symbols}")
+                # Removed: "Fetching prices for X symbols" - covered by fetch summary
                 
                 # Fetch prices using yfinance
                 price_data = await self._get_yahoo_prices(symbols)
-                logger.info(f"Received price data for {len(price_data)} symbols")
+                # Removed: "Received price data" - redundant with fetch summary
                 
                 # Update database with new prices
                 await self._update_stock_prices(db, active_stocks, price_data)
-                logger.info("Database update completed")
+                # Removed: "Database update completed" - covered by batch summary
                 
         except Exception as e:
             logger.error(f"Error fetching and updating stock prices: {e}", exc_info=True)
@@ -202,14 +207,13 @@ class RealTimeStockPriceService:
                         # Check if we need to wait due to rate limiting
                         self._check_request_rate()
                         
-                        logger.info(f"Fetching price data for {symbol}")
+                        # Removed noisy per-symbol log
                         ticker = yf.Ticker(symbol)
                         
                         # Try multiple methods to get price data
                         try:
                             # Method 1: Get info (most comprehensive but can be slow)
                             info = ticker.info
-                            logger.debug(f"Got info for {symbol}: {list(info.keys())[:10]}...")
                             
                             # Get current price (try different fields)
                             current_price = (
@@ -229,7 +233,7 @@ class RealTimeStockPriceService:
                                     'low_price': float(info.get('dayLow', current_price)),
                                     'volume': int(info.get('volume', 0)),
                                 }
-                                logger.info(f"Successfully fetched price for {symbol}: ${current_price}")
+                                # Removed noisy success log - will log summary instead
                                 self.request_count += 1
                                 self.hourly_request_count += 1
                                 continue
@@ -263,6 +267,17 @@ class RealTimeStockPriceService:
                     except Exception as e:
                         logger.error(f"Error fetching price for {symbol}: {e}")
                         continue  # Continue with other symbols
+                
+                # Log single summary after fetching all symbols
+                if price_data:
+                    logger.info(
+                        "Price fetch completed",
+                        extra={
+                            "symbols_requested": len(symbols),
+                            "symbols_fetched": len(price_data),
+                            "success_rate": f"{len(price_data)/len(symbols)*100:.1f}%"
+                        }
+                    )
                         
                 return price_data
                 
@@ -303,13 +318,15 @@ class RealTimeStockPriceService:
         """
         try:
             updated_count = 0
+            price_summary = {}  # Collect prices for single summary log
+            
             for stock in stocks:
                 if stock.symbol not in price_data:
                     logger.warning(f"No price data available for {stock.symbol}")
                     continue
                     
                 data = price_data[stock.symbol]
-                logger.info(f"Updating price for {stock.symbol}: ${data['current_price']}")
+                price_summary[stock.symbol] = float(data['current_price'])
                 
                 # Validate price data
                 if not data['current_price'] or data['current_price'] <= 0:
@@ -353,22 +370,26 @@ class RealTimeStockPriceService:
                 updated_count += 1
                 
             await db.commit()
-            logger.info(f"Successfully updated and committed prices for {updated_count}/{len(stocks)} stocks to database")
             
-            # Verify the records were actually saved
+            # Single consolidated log entry for all price updates
+            logger.info(
+                "Price update batch completed",
+                extra={
+                    "stocks_updated": updated_count,
+                    "total_stocks": len(stocks),
+                    "prices": price_summary
+                }
+            )
+            
+            # Verify the records were actually saved (only log total count)
             from sqlalchemy import select, func
             count_result = await db.execute(select(func.count()).select_from(StockPrice))
             total_price_records = count_result.scalar()
-            logger.info(f"Total StockPrice records in database: {total_price_records}")
             
-            # Log the latest prices for verification
-            latest_prices_result = await db.execute(
-                select(StockPrice.symbol, StockPrice.price, StockPrice.price_timestamp)
-                .order_by(StockPrice.price_timestamp.desc())
-                .limit(5)
-            )
-            latest_prices = latest_prices_result.all()
-            logger.info(f"Latest 5 price records: {[(p.symbol, float(p.price), p.price_timestamp) for p in latest_prices]}")
+            # Only log database stats if total changed significantly (every ~100 records)
+            # This reduces noise while still tracking growth
+            if total_price_records % 100 < updated_count:
+                logger.info(f"Database now has {total_price_records} price records")
             
         except Exception as e:
             logger.error(f"Error updating stock prices in database: {e}", exc_info=True)
@@ -513,12 +534,20 @@ class RealTimeStockPriceService:
                     logger.error(f"Error getting stock count: {e}")
                     return 0
             
-            # Run async function synchronously for status
+            # Run async function - since get_service_status is sync, use asyncio.run()
             import asyncio
             try:
-                loop = asyncio.get_event_loop()
-                active_stocks = loop.run_until_complete(get_stock_count())
-            except:
+                # Check if there's already a running loop
+                try:
+                    asyncio.get_running_loop()
+                    # Running loop exists - we're being called from async context
+                    # Can't use asyncio.run() here, so return 0 as fallback
+                    active_stocks = 0
+                except RuntimeError:
+                    # No running loop - safe to use asyncio.run() (sync context)
+                    active_stocks = asyncio.run(get_stock_count())
+            except Exception as e:
+                logger.warning(f"Could not get active stock count: {e}")
                 active_stocks = 0
             
             # Calculate next market open time

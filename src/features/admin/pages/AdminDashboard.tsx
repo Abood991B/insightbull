@@ -1,13 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../../../shared/components/layouts';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../shared/components/ui/card';
 import { Button } from '../../../shared/components/ui/button';
 import { Badge } from '../../../shared/components/ui/badge';
 import { Alert, AlertDescription } from '../../../shared/components/ui/alert';
+import { Progress } from '../../../shared/components/ui/progress';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "../../../shared/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/components/ui/select";
+import { Label } from "../../../shared/components/ui/label";
 import { useToast } from '../../../shared/hooks/use-toast';
 import { formatDateTime } from '@/shared/utils/timezone';
-import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus } from '../../../api/services/admin.service';
+import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus, PipelineStatus, PipelineProgress } from '../../../api/services/admin.service';
+import { broadcastPipelineEvent } from '@/shared/hooks/usePipelineNotifications';
 import SystemHealthAlerts from '../components/SystemHealthAlerts';
 import {
   Activity,
@@ -25,7 +44,9 @@ import {
   Shield,
   Bell,
   Info,
-  Clock
+  Clock,
+  Loader2,
+  Square
 } from 'lucide-react';
 
 // Collector Status Interface
@@ -51,6 +72,13 @@ const AdminDashboard: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [collectingData, setCollectingData] = useState(false);
   const [priceServiceLoading, setPriceServiceLoading] = useState(false);
+  const [collectionDays, setCollectionDays] = useState<string>("1");
+  const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
+  
+  // Pipeline status tracking
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
+  const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load dashboard data
   const loadDashboardData = async (showRefreshToast = false) => {
@@ -58,9 +86,10 @@ const AdminDashboard: React.FC = () => {
       setRefreshing(true);
 
       // Load all dashboard data in parallel
+      // Use "latest" view type for model accuracy to get recent confidence
       const [statusResponse, accuracyResponse, priceServiceResponse] = await Promise.all([
         adminAPI.getSystemStatus(),
-        adminAPI.getModelAccuracy(),
+        adminAPI.getModelAccuracy("latest"),
         adminAPI.getRealTimePriceServiceStatus()
       ]);
 
@@ -88,6 +117,82 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Check pipeline status and update progress
+  const checkPipelineStatus = useCallback(async () => {
+    try {
+      const status = await adminAPI.getPipelineStatus();
+      setPipelineStatus(status);
+      
+      if (status.is_running && status.progress) {
+        setPipelineProgress(status.progress);
+        setCollectingData(true);
+      } else if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
+        // Pipeline finished - stop polling
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        
+        // If we were collecting and it just finished, show toast
+        if (collectingData) {
+          const progress = status.progress;
+          if (status.status === 'completed') {
+            toast({
+              title: "Pipeline Completed",
+              description: `Collected ${progress?.items_collected || 0}, analyzed ${progress?.items_analyzed || 0}, stored ${progress?.items_stored || 0} items`,
+            });
+            
+            // Broadcast pipeline completion event
+            broadcastPipelineEvent({
+              type: 'pipeline_completed',
+              summary: {
+                analyzed: progress?.items_analyzed || 0,
+                stored: progress?.items_stored || 0,
+                status: 'success'
+              }
+            });
+            
+            // Refresh dashboard data
+            loadDashboardData(false);
+            updateCollectorHealth();
+          } else {
+            toast({
+              title: status.status === 'failed' ? "Pipeline Failed" : "Pipeline Cancelled",
+              description: progress?.message || "Pipeline execution ended",
+              variant: "destructive",
+            });
+          }
+          setCollectingData(false);
+          setPipelineProgress(null);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check pipeline status:', error);
+    }
+  }, [collectingData, toast]);
+
+  // Start polling for pipeline status
+  const startPipelinePolling = useCallback(() => {
+    // Clear any existing interval
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
+    // Poll every 2 seconds while pipeline is running
+    pollingIntervalRef.current = setInterval(checkPipelineStatus, 2000);
+    
+    // Also check immediately
+    checkPipelineStatus();
+  }, [checkPipelineStatus]);
+
+  // Stop polling
+  const stopPipelinePolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
   // Update collector health status
   const updateCollectorHealth = async () => {
     try {
@@ -98,7 +203,7 @@ const AdminDashboard: React.FC = () => {
         name: collector.name,
         status: collector.status,
         articles: collector.source === 'news' ? collector.items_collected : undefined,
-        posts: collector.source === 'hackernews' ? collector.items_collected : undefined,
+        posts: (collector.source === 'hackernews' || collector.source === 'community') ? collector.items_collected : undefined,
         error: collector.error,
         lastRun: collector.last_run,
       }));
@@ -111,51 +216,49 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Manual full pipeline execution
-  const triggerDataCollection = async () => {
+  // Manual full pipeline execution (non-blocking)
+  const triggerDataCollection = () => {
+    setCollectingData(true);
+    setIsRunDialogOpen(false);
+    
+    toast({
+      title: "Pipeline Started",
+      description: "Data collection pipeline is running. Progress will be shown below.",
+    });
+
+    // Start polling for status updates
+    startPipelinePolling();
+
+    // Fire and forget - don't await, let polling handle status updates
+    adminAPI.triggerManualCollection({ days_back: parseInt(collectionDays) })
+      .catch(error => {
+        console.error('Pipeline failed:', error);
+        stopPipelinePolling();
+        setCollectingData(false);
+        setPipelineProgress(null);
+        toast({
+          title: "Pipeline Error",
+          description: error.message || "Pipeline execution failed.",
+          variant: "destructive",
+        });
+      });
+  };
+
+  // Cancel pipeline
+  const cancelPipeline = async () => {
     try {
-      setCollectingData(true);
-
-      const result = await adminAPI.triggerManualCollection();
-
-      if (result.status === 'success') {
-        const collected = result.execution_summary?.data_collection?.total_items_collected || 0;
-        const stored = result.execution_summary?.data_storage?.items_stored || 0;
-        const analyzed = result.execution_summary?.sentiment_analysis?.items_analyzed || 0;
-        const skipped = analyzed - stored;
-        
-        toast({
-          title: "Full Pipeline Completed",
-          description: `Analyzed ${analyzed} items: ${stored} new records stored, ${skipped} duplicates skipped`,
-        });
-      } else if (result.status === 'partial') {
-        toast({
-          title: "Pipeline Completed with Issues",
-          description: result.message || "Pipeline completed but some steps may have had issues.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Pipeline Failed",
-          description: result.message || "Pipeline execution failed.",
-          variant: "destructive",
-        });
-      }
-
-      // Refresh dashboard after a delay to show updated metrics
-      setTimeout(() => {
-        loadDashboardData();
-      }, 3000);
-
-    } catch (error) {
-      console.error('Failed to trigger full pipeline:', error);
+      await adminAPI.stopPipeline();
       toast({
-        title: "Pipeline Error",
-        description: "Failed to execute full pipeline. Please try again.",
+        title: "Pipeline Cancelled",
+        description: "Pipeline execution has been cancelled.",
+      });
+    } catch (error) {
+      console.error('Failed to cancel pipeline:', error);
+      toast({
+        title: "Error",
+        description: "Failed to cancel pipeline.",
         variant: "destructive",
       });
-    } finally {
-      setCollectingData(false);
     }
   };
 
@@ -235,7 +338,52 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     loadDashboardData();
     updateCollectorHealth();
+    
+    // Check if pipeline is already running on mount
+    checkPipelineStatus();
+    
+    // Cleanup polling on unmount
+    return () => {
+      stopPipelinePolling();
+    };
   }, []);
+
+  // Auto-refresh dashboard data every 30 seconds (catches pipeline completion)
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      // Only auto-refresh if not currently collecting data or refreshing
+      if (!collectingData && !refreshing) {
+        loadDashboardData(false); // Silent refresh (no toast)
+        updateCollectorHealth();
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(refreshInterval);
+  }, [collectingData, refreshing]);
+
+  // Start/stop pipeline status polling based on collectingData state
+  useEffect(() => {
+    if (collectingData) {
+      startPipelinePolling();
+    } else {
+      stopPipelinePolling();
+    }
+  }, [collectingData, startPipelinePolling, stopPipelinePolling]);
+
+  // Refetch when user switches back to admin tab (visibility detection)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !loading) {
+        loadDashboardData(false); // Silent refresh
+        updateCollectorHealth();
+        // Check pipeline status when returning to tab
+        checkPipelineStatus();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [loading, checkPipelineStatus]);
 
   // Helper functions
   const getStatusIcon = (status: string) => {
@@ -304,693 +452,335 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <AdminLayout>
-      <div className="space-y-8">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="space-y-6">
+        {/* Header - Compact */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">System Control Center</h1>
-            <p className="text-gray-600 mt-2">Comprehensive monitoring and management dashboard</p>
+            <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+            <p className="text-gray-500 text-sm">System monitoring and control</p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <Button
               variant="outline"
+              size="sm"
               onClick={() => loadDashboardData(true)}
               disabled={refreshing}
-              className="flex items-center gap-2"
             >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-              {refreshing ? 'Refreshing...' : 'Refresh'}
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
 
-            <Button
-              onClick={triggerDataCollection}
-              disabled={collectingData}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
-            >
-              <Play className="h-4 w-4" />
-              {collectingData ? 'Running Pipeline...' : 'Execute Pipeline'}
-            </Button>
+            <Dialog open={isRunDialogOpen} onOpenChange={setIsRunDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  size="sm"
+                  disabled={collectingData}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Play className="h-4 w-4 mr-1.5" />
+                  {collectingData ? 'Running...' : 'Run Pipeline'}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Run Data Pipeline</DialogTitle>
+                  <DialogDescription>
+                    Manually trigger the data collection and analysis pipeline.
+                    Choose a timeframe to look back for news and data.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="timeframe" className="text-right">
+                      Timeframe
+                    </Label>
+                    <Select
+                      value={collectionDays}
+                      onValueChange={setCollectionDays}
+                    >
+                      <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Select timeframe" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Last 24 Hours</SelectItem>
+                        <SelectItem value="3">Last 3 Days</SelectItem>
+                        <SelectItem value="7">Last 7 Days</SelectItem>
+                        <SelectItem value="30">Last 30 Days</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsRunDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={triggerDataCollection} disabled={collectingData}>
+                    {collectingData ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        Running...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="mr-2 h-4 w-4" />
+                        Start Pipeline
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
-        {/* System Health Alerts */}
+        {/* Pipeline Progress Bar - Shows when pipeline is running */}
+        {collectingData && pipelineProgress && (
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                  <span className="font-medium text-blue-900">Pipeline Running</span>
+                  <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
+                    {pipelineProgress.current_stage}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-blue-700 font-medium">
+                    {pipelineProgress.overall_progress}%
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={cancelPipeline}
+                    className="h-7 px-2 text-red-600 border-red-300 hover:bg-red-50"
+                  >
+                    <Square className="h-3 w-3 mr-1" />
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+              <Progress value={pipelineProgress.overall_progress} className="h-2 mb-2" />
+              <div className="flex justify-between text-xs text-blue-700">
+                <span>{pipelineProgress.message}</span>
+                <div className="flex gap-4">
+                  <span>Collected: {pipelineProgress.items_collected}</span>
+                  <span>Analyzed: {pipelineProgress.items_analyzed}</span>
+                  <span>Stored: {pipelineProgress.items_stored}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* System Health Alerts - Compact */}
         <SystemHealthAlerts
           systemStatus={systemStatus}
           modelAccuracy={modelAccuracy}
           onRefresh={() => loadDashboardData(false)}
+          compact={true}
         />
 
-        {/* System Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-          <Card className="border-l-4 border-l-blue-500">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">System Status</CardTitle>
-              <Shield className="h-4 w-4 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                {systemStatus && getStatusIcon(systemStatus.status)}
-                {systemStatus && getStatusBadge(systemStatus.status)}
+        {/* Quick Stats Row */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* System Status */}
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${systemStatus?.status === 'operational' ? 'bg-green-100' : 'bg-yellow-100'}`}>
+                <Shield className={`h-5 w-5 ${systemStatus?.status === 'operational' ? 'text-green-600' : 'text-yellow-600'}`} />
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Uptime: {systemStatus ? formatUptime(systemStatus.metrics.uptime) : 'Loading...'}
-              </p>
-            </CardContent>
+              <div>
+                <p className="text-xs text-gray-500">Status</p>
+                <p className={`font-semibold ${systemStatus?.status === 'operational' ? 'text-green-600' : 'text-yellow-600'}`}>
+                  {systemStatus?.status === 'operational' ? 'Online' : systemStatus?.status || 'N/A'}
+                </p>
+              </div>
+            </div>
           </Card>
 
-          <Card className="border-l-4 border-l-green-500">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Stocks</CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {systemStatus?.metrics.active_stocks || 0}
+          {/* Active Stocks */}
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-100">
+                <TrendingUp className="h-5 w-5 text-blue-600" />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Stocks being monitored
-              </p>
-            </CardContent>
+              <div>
+                <p className="text-xs text-gray-500">Stocks</p>
+                <p className="font-semibold text-blue-600">{systemStatus?.metrics.active_stocks || 0}</p>
+              </div>
+            </div>
           </Card>
 
-          <Card className="border-l-4 border-l-purple-500">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Live Updates</CardTitle>
-              <Zap className="h-4 w-4 text-purple-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-purple-600">
-                {systemStatus?.metrics.price_updates || 0}
+          {/* Total Records */}
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-100">
+                <Database className="h-5 w-5 text-purple-600" />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Real-time price feeds
-              </p>
-            </CardContent>
+              <div>
+                <p className="text-xs text-gray-500">Records</p>
+                <p className="font-semibold text-purple-600">{systemStatus?.metrics.total_records?.toLocaleString() || 0}</p>
+              </div>
+            </div>
           </Card>
 
-          <Card className="border-l-4 border-l-orange-500">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Data Records</CardTitle>
-              <Database className="h-4 w-4 text-orange-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
-                {systemStatus?.metrics.total_records?.toLocaleString() || 0}
+          {/* Model Confidence (Latest) */}
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-indigo-100">
+                <BarChart3 className="h-5 w-5 text-indigo-600" />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Total data points
-              </p>
-            </CardContent>
+              <div>
+                <p className="text-xs text-gray-500">Confidence</p>
+                <p className="font-semibold text-indigo-600">
+                  {modelAccuracy?.overall_confidence ? `${(modelAccuracy.overall_confidence * 100).toFixed(1)}%` : 'N/A'}
+                </p>
+              </div>
+            </div>
           </Card>
 
-          <Card className="border-l-4 border-l-indigo-500">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Sentiment Accuracy</CardTitle>
-              <BarChart3 className="h-4 w-4 text-indigo-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-indigo-600">
-                {modelAccuracy ? `${(modelAccuracy.overall_accuracy * 100).toFixed(1)}%` : 'N/A'}
+          {/* Price Updates */}
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-100">
+                <Zap className="h-5 w-5 text-emerald-600" />
               </div>
-              <p className="text-xs text-muted-foreground">
-                ProsusAI/finbert + Gemini AI
-              </p>
-            </CardContent>
+              <div>
+                <p className="text-xs text-gray-500">Price Updates</p>
+                <p className="font-semibold text-emerald-600">{systemStatus?.metrics.price_updates || 0}</p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Uptime */}
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-orange-100">
+                <Clock className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Uptime</p>
+                <p className="font-semibold text-orange-600 text-sm">
+                  {systemStatus ? formatUptime(systemStatus.metrics.uptime) : 'N/A'}
+                </p>
+              </div>
+            </div>
           </Card>
         </div>
 
-        {/* Data Collector Health */}
-        <Card className="border-2 border-gray-200 shadow-lg">
-          <CardHeader className="bg-gradient-to-r from-gray-50 to-slate-50 border-b">
-            <CardTitle className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Database className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Data Collector Health</h3>
-                  <p className="text-sm text-gray-600">Multi-source data aggregation status</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    updateCollectorHealth();
-                    toast({
-                      title: "Collector Status Updated",
-                      description: "Refreshed collector health information.",
-                    });
-                  }}
-                  className="flex items-center gap-2"
-                >
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Left Column - Data Collectors */}
+          <Card className="lg:col-span-2">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Database className="h-4 w-4 text-blue-600" />
+                  Data Collectors
+                </CardTitle>
+                <Button variant="ghost" size="sm" onClick={updateCollectorHealth}>
                   <RefreshCw className="h-3 w-3" />
-                  Refresh
                 </Button>
               </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            {/* Warning Alert for MarketAux */}
-            {collectorHealth.some(c => c.status === 'error') && (
-              <Alert className="mb-4 bg-red-50 border-red-200">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  <strong>Collector Issue Detected:</strong> {collectorHealth.find(c => c.status === 'error')?.name} is currently unavailable. 
-                  Pipeline will continue with remaining {collectorHealth.filter(c => c.status === 'operational').length} collectors.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {/* Collector Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {collectorHealth.map((collector) => (
-                <div
-                  key={collector.name}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    collector.status === 'operational'
-                      ? 'bg-green-50 border-green-200 hover:shadow-md'
-                      : collector.status === 'warning'
-                      ? 'bg-yellow-50 border-yellow-200 hover:shadow-md'
-                      : 'bg-red-50 border-red-200 hover:shadow-md'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold text-gray-900">{collector.name}</h4>
-                    {collector.status === 'operational' ? (
-                      <CheckCircle className="h-5 w-5 text-green-600" />
-                    ) : collector.status === 'warning' ? (
-                      <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                    ) : (
-                      <XCircle className="h-5 w-5 text-red-600" />
-                    )}
-                  </div>
-
-                  {collector.status === 'operational' ? (
-                    <div className="space-y-2">
-                      {collector.articles !== undefined && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Articles:</span>
-                          <span className="font-medium text-green-700">{collector.articles}</span>
-                        </div>
-                      )}
-                      {collector.posts !== undefined && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Posts:</span>
-                          <span className="font-medium text-green-700">{collector.posts}</span>
-                        </div>
-                      )}
-                      {collector.lastRun && (
-                        <div className="pt-2 border-t border-green-200">
-                          <div className="text-xs text-gray-600">
-                            Last run: {formatDateTime(collector.lastRun, {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              hour12: true
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="text-sm text-red-700 bg-red-100 p-2 rounded border border-red-200">
-                        {collector.error || 'Service unavailable'}
-                      </div>
-                      {collector.lastRun && (
-                        <div className="text-xs text-gray-600 mt-2">
-                          Last attempt: {formatDateTime(collector.lastRun, {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Collector Summary */}
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-green-500"></div>
-                    <span className="text-gray-600">
-                      {collectorHealth.filter(c => c.status === 'operational').length} Operational
-                    </span>
-                  </div>
-                  {collectorHealth.filter(c => c.status === 'error').length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-red-500"></div>
-                      <span className="text-gray-600">
-                        {collectorHealth.filter(c => c.status === 'error').length} Error
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="text-gray-600">
-                  Coverage: {Math.round((collectorHealth.filter(c => c.status === 'operational').length / collectorHealth.length) * 100)}%
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-
-        {/* Enhanced Services Status & Control */}
-        <Card className="border-2 border-gray-200 shadow-lg">
-          <CardHeader className="bg-gradient-to-r from-gray-50 to-slate-50 border-b">
-            <CardTitle className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-gray-100 rounded-lg">
-                  <Server className="h-5 w-5 text-gray-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Services Management</h3>
-                  <p className="text-sm text-gray-600">Monitor and control system components</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => loadDashboardData(true)}
-                  disabled={refreshing}
-                  className="flex items-center gap-2"
-                >
-                  <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 space-y-6">
-            {/* Services Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {systemStatus?.services && Object.entries(systemStatus.services).map(([service, status]) => {
-                const getServiceDetails = (serviceName: string) => {
-                  switch (serviceName) {
-                    case 'database':
-                      return {
-                        icon: <Database className="h-6 w-6" />,
-                        name: 'Database Engine',
-                        description: 'SQLite database with optimized queries and indexing',
-                        color: status === 'healthy' ? 'text-green-600' : 'text-red-600',
-                        bgColor: status === 'healthy' ? 'bg-green-50' : 'bg-red-50',
-                        borderColor: status === 'healthy' ? 'border-green-200' : 'border-red-200',
-                        accentColor: 'bg-green-500'
-                      };
-                    case 'sentiment_engine':
-                      return {
-                        icon: <BarChart3 className="h-6 w-6" />,
-                        name: 'Sentiment Analysis Engine',
-                        description: 'ProsusAI/finbert with Gemini AI verification (92-95% accuracy)',
-                        color: status === 'healthy' ? 'text-blue-600' : 'text-yellow-600',
-                        bgColor: status === 'healthy' ? 'bg-blue-50' : 'bg-yellow-50',
-                        borderColor: status === 'healthy' ? 'border-blue-200' : 'border-yellow-200',
-                        accentColor: 'bg-blue-500'
-                      };
-                    case 'data_collection':
-                      return {
-                        icon: <Zap className="h-6 w-6" />,
-                        name: 'Data Collection Hub',
-                        description: 'Multi-source aggregation: Hacker News, News, Financial APIs',
-                        color: status === 'healthy' ? 'text-purple-600' : 'text-red-600',
-                        bgColor: status === 'healthy' ? 'bg-purple-50' : 'bg-red-50',
-                        borderColor: status === 'healthy' ? 'border-purple-200' : 'border-red-200',
-                        accentColor: 'bg-purple-500'
-                      };
-                    case 'real_time_prices':
-                      return {
-                        icon: <TrendingUp className="h-6 w-6" />,
-                        name: 'Live Price Feed',
-                        description: 'Real-time market data with intelligent rate limiting',
-                        color: priceServiceStatus?.service_status?.is_running ? 'text-emerald-600' : 'text-gray-600',
-                        bgColor: priceServiceStatus?.service_status?.is_running ? 'bg-emerald-50' : 'bg-gray-50',
-                        borderColor: priceServiceStatus?.service_status?.is_running ? 'border-emerald-200' : 'border-gray-200',
-                        accentColor: 'bg-emerald-500'
-                      };
-                    default:
-                      return {
-                        icon: <Activity className="h-6 w-6" />,
-                        name: service.charAt(0).toUpperCase() + service.slice(1),
-                        description: 'System service component',
-                        color: status === 'healthy' ? 'text-green-600' : 'text-red-600',
-                        bgColor: status === 'healthy' ? 'bg-green-50' : 'bg-red-50',
-                        borderColor: status === 'healthy' ? 'border-green-200' : 'border-red-200',
-                        accentColor: 'bg-gray-500'
-                      };
-                  }
-                };
-
-                const serviceDetails = getServiceDetails(service);
-
-                return (
-                  <div
-                    key={service}
-                    className={`relative p-6 border-2 rounded-xl hover:shadow-xl transition-all duration-300 ${serviceDetails.bgColor} ${serviceDetails.borderColor} group`}
-                  >
-                    {/* Accent Bar */}
-                    <div className={`absolute top-0 left-0 w-full h-1 ${serviceDetails.accentColor} rounded-t-lg`}></div>
-
-                    {/* Service Header */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-xl bg-white shadow-md group-hover:shadow-lg transition-shadow ${serviceDetails.color}`}>
-                          {serviceDetails.icon}
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-lg text-gray-900">{serviceDetails.name}</h3>
-                          <p className="text-sm text-gray-600 mt-1 leading-relaxed">{serviceDetails.description}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        {getStatusIcon(status)}
-                        {getStatusBadge(status)}
-                      </div>
-                    </div>
-
-                    {/* Service Metrics */}
-                    <div className="bg-white rounded-xl p-5 shadow-md border border-gray-100">
-                      {service === 'real_time_prices' && priceServiceStatus && (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Status:</span>
-                              <span className={`font-medium ${priceServiceStatus.service_status.is_running ? 'text-green-600' : 'text-red-600'}`}>
-                                {priceServiceStatus.service_status.is_running ? 'Running' : 'Stopped'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Market:</span>
-                              <span className={`font-medium capitalize ${priceServiceStatus.service_status.current_market_status === 'open' ? 'text-green-600' : 'text-red-600'}`}>
-                                {priceServiceStatus.service_status.current_market_status}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Interval:</span>
-                              <span className="font-medium">{priceServiceStatus.service_status.update_interval}s</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Rate Usage:</span>
-                              <span className="font-medium">
-                                {Math.round((priceServiceStatus.service_status.rate_limiting.current_hour_count / priceServiceStatus.service_status.rate_limiting.requests_per_hour) * 100)}%
-                              </span>
-                            </div>
-                          </div>
-
-                          {priceServiceStatus.service_status.next_market_open && (
-                            <div className="pt-2 border-t">
-                              <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">Next Market Open:</span>
-                                <span className="font-medium text-blue-600">
-                                  {formatDateTime(priceServiceStatus.service_status.next_market_open, {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Price Service Controls */}
-                          <div className="flex gap-3 pt-4 border-t border-gray-200">
-                            {priceServiceStatus.service_status.is_running ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handlePriceServiceControl('stop')}
-                                disabled={priceServiceLoading}
-                                className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50 hover:border-red-400 transition-colors"
-                              >
-                                <XCircle className="h-4 w-4" />
-                                {priceServiceLoading ? 'Stopping...' : 'Stop Service'}
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                onClick={() => handlePriceServiceControl('start')}
-                                disabled={priceServiceLoading}
-                                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-md"
-                              >
-                                <Play className="h-4 w-4" />
-                                {priceServiceLoading ? 'Starting...' : 'Start Service'}
-                              </Button>
-                            )}
-
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={testPriceFetch}
-                              disabled={priceServiceLoading}
-                              className="flex items-center gap-2 border-gray-300 hover:bg-gray-50"
-                            >
-                              <Zap className="h-4 w-4" />
-                              Test Fetch
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {service === 'data_collection' && (
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">API Keys:</span>
-                            <span className="font-medium text-green-600">Configured</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Last Collection:</span>
-                            <span className="font-medium">
-                              {systemStatus?.metrics.last_collection ?
-                                formatDateTime(systemStatus.metrics.last_collection, {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                }) :
-                                'Never'
-                              }
-                            </span>
-                          </div>
-
-                        </div>
-                      )}
-
-                      {service === 'database' && (
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Total Records:</span>
-                            <span className="font-medium text-blue-600">{systemStatus?.metrics.total_records?.toLocaleString() || 0}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Active Stocks:</span>
-                            <span className="font-medium text-green-600">{systemStatus?.metrics.active_stocks || 0}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Price Records:</span>
-                            <span className="font-medium text-purple-600">{systemStatus?.metrics.price_records?.toLocaleString() || 0}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {service === 'sentiment_engine' && modelAccuracy && (
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Overall Accuracy:</span>
-                            <span className="font-medium text-blue-600">{(modelAccuracy.overall_accuracy * 100).toFixed(1)}%</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">ProsusAI/finbert:</span>
-                            <span className="font-medium text-green-600">{(modelAccuracy.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">With AI Verification:</span>
-                            <span className="font-medium text-purple-600">92-95%</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Global Actions */}
-            <div className="flex justify-center pt-6 border-t border-gray-200">
-              <div className="flex gap-4">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate('/admin/scheduler')}
-                  className="flex items-center gap-2 px-6 py-2 border-gray-300 hover:bg-gray-50"
-                >
-                  <Settings className="h-4 w-4" />
-                  Scheduler Manager
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => navigate('/admin/logs')}
-                  className="flex items-center gap-2 px-6 py-2 border-gray-300 hover:bg-gray-50"
-                >
-                  <Activity className="h-4 w-4" />
-                  System Logs
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => navigate('/admin/storage')}
-                  className="flex items-center gap-2 px-6 py-2 border-gray-300 hover:bg-gray-50"
-                >
-                  <Database className="h-4 w-4" />
-                  Storage Manager
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-
-
-        {/* Analytics & Performance Overview */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Sentiment Analysis Overview */}
-          <Card className="border-2 border-gray-200 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b">
-              <CardTitle className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <BarChart3 className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Sentiment Analytics</h3>
-                  <p className="text-sm text-gray-600">AI-powered sentiment distribution</p>
-                </div>
-              </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
-              <div className="space-y-6">
-                <div>
-                  <h4 className="font-semibold mb-4 text-gray-800">Current Distribution</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
-                      <span className="flex items-center gap-3">
-                        <div className="w-4 h-4 bg-green-500 rounded-full shadow-sm"></div>
-                        <span className="font-medium text-green-800">Positive Sentiment</span>
-                      </span>
-                      <span className="font-bold text-green-700 text-lg">{systemStatus?.metrics.sentiment_breakdown?.positive || 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <span className="flex items-center gap-3">
-                        <div className="w-4 h-4 bg-gray-500 rounded-full shadow-sm"></div>
-                        <span className="font-medium text-gray-800">Neutral Sentiment</span>
-                      </span>
-                      <span className="font-bold text-gray-700 text-lg">{systemStatus?.metrics.sentiment_breakdown?.neutral || 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
-                      <span className="flex items-center gap-3">
-                        <div className="w-4 h-4 bg-red-500 rounded-full shadow-sm"></div>
-                        <span className="font-medium text-red-800">Negative Sentiment</span>
-                      </span>
-                      <span className="font-bold text-red-700 text-lg">{systemStatus?.metrics.sentiment_breakdown?.negative || 0}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-gray-200">
-                  <h4 className="font-semibold mb-3 text-gray-800">Model Performance</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
-                      <div className="text-2xl font-bold text-green-600">
-                        {modelAccuracy ? `${(modelAccuracy.model_metrics.finbert_sentiment.accuracy * 100).toFixed(1)}%` : 'N/A'}
+            <CardContent>
+              {collectorHealth.some(c => c.status === 'error') && (
+                <Alert className="mb-4 py-2 bg-red-50 border-red-200">
+                  <AlertTriangle className="h-3 w-3 text-red-600" />
+                  <AlertDescription className="text-xs text-red-700">
+                    {collectorHealth.find(c => c.status === 'error')?.name} unavailable
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {collectorHealth.map((collector) => {
+                  const styles: Record<string, { emoji: string; bg: string; border: string }> = {
+                    hackernews: { emoji: '🔶', bg: 'bg-orange-50', border: 'border-orange-200' },
+                    gdelt: { emoji: '🌐', bg: 'bg-blue-50', border: 'border-blue-200' },
+                    finnhub: { emoji: '📊', bg: 'bg-indigo-50', border: 'border-indigo-200' },
+                    finhub: { emoji: '📊', bg: 'bg-indigo-50', border: 'border-indigo-200' },
+                    newsapi: { emoji: '📰', bg: 'bg-purple-50', border: 'border-purple-200' },
+                    marketaux: { emoji: '💹', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+                  };
+                  const style = styles[collector.name.toLowerCase()] || { emoji: '📡', bg: 'bg-gray-50', border: 'border-gray-200' };
+                  
+                  return (
+                    <div
+                      key={collector.name}
+                      className={`relative p-3 rounded-lg border ${
+                        collector.status === 'operational' ? `${style.bg} ${style.border}` : 'bg-red-50 border-red-200'
+                      }`}
+                    >
+                      <div className={`absolute top-2 right-2 h-2 w-2 rounded-full ${
+                        collector.status === 'operational' ? 'bg-green-500' : 'bg-red-500'
+                      }`} />
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-sm">{style.emoji}</span>
+                        <span className="font-medium text-xs text-gray-800">{collector.name}</span>
                       </div>
-                      <div className="text-sm text-green-700 font-medium">ProsusAI/finbert</div>
+                      <p className="text-lg font-bold text-gray-900">
+                        {collector.articles ?? collector.posts ?? 0}
+                      </p>
+                      <p className="text-[10px] text-gray-500">
+                        {collector.posts !== undefined ? 'posts' : 'articles'}
+                      </p>
                     </div>
-                    <div className="text-center p-3 bg-purple-50 rounded-lg border border-purple-200">
-                      <div className="text-2xl font-bold text-purple-600">92-95%</div>
-                      <div className="text-sm text-purple-700 font-medium">With Gemini AI</div>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })}
+              </div>
+              
+              <div className="mt-3 pt-3 border-t flex justify-between items-center text-xs">
+                <span className="text-gray-500">
+                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1"></span>
+                  {collectorHealth.filter(c => c.status === 'operational').length}/{collectorHealth.length} operational
+                </span>
+                <span className="text-gray-500">
+                  Coverage: {collectorHealth.length > 0 ? Math.round((collectorHealth.filter(c => c.status === 'operational').length / collectorHealth.length) * 100) : 0}%
+                </span>
               </div>
             </CardContent>
           </Card>
 
-          {/* Data Storage & Activity */}
-          <Card className="border-2 border-gray-200 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-blue-50 to-cyan-50 border-b">
-              <CardTitle className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Database className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Data Storage</h3>
-                  <p className="text-sm text-gray-600">Storage metrics and recent activity</p>
-                </div>
+          {/* Right Column - Sentiment Distribution */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-green-600" />
+                Sentiment Distribution
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
-              <div className="space-y-6">
-                <div>
-                  <h4 className="font-semibold mb-4 text-gray-800">Storage Breakdown</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200">
-                      <span className="font-medium text-purple-800">News Articles</span>
-                      <span className="font-bold text-purple-700 text-lg">{systemStatus?.metrics.news_articles?.toLocaleString() || 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
-                      <span className="font-medium text-orange-800">Hacker News Posts</span>
-                      <span className="font-bold text-orange-700 text-lg">{systemStatus?.metrics.hackernews_posts?.toLocaleString() || 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-teal-50 rounded-lg border border-teal-200">
-                      <span className="font-medium text-teal-800">Price Records</span>
-                      <span className="font-bold text-teal-700 text-lg">{systemStatus?.metrics.price_records?.toLocaleString() || 0}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-gray-200">
-                  <h4 className="font-semibold mb-3 text-gray-800">Recent Activity</h4>
-                  <div className="space-y-3">
-                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-600">Last Data Collection</span>
-                        <Clock className="h-4 w-4 text-gray-400" />
-                      </div>
-                      <div className="text-sm font-semibold text-gray-800">
-                        {systemStatus?.metrics.last_collection ?
-                          formatDateTime(systemStatus.metrics.last_collection, {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true
-                          }) :
-                          'No recent activity'
-                        }
-                      </div>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-600">Last Price Update</span>
-                        <TrendingUp className="h-4 w-4 text-gray-400" />
-                      </div>
-                      <div className="text-sm font-semibold text-gray-800">
-                        {systemStatus?.metrics.last_price_update ?
-                          formatDateTime(systemStatus.metrics.last_price_update, {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true
-                          }) :
-                          'No recent updates'
-                        }
-                      </div>
-                    </div>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between p-2 bg-green-50 rounded-lg">
+                <span className="flex items-center gap-2 text-sm">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  Positive
+                </span>
+                <span className="font-bold text-green-700">{systemStatus?.metrics.sentiment_breakdown?.positive || 0}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                <span className="flex items-center gap-2 text-sm">
+                  <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+                  Neutral
+                </span>
+                <span className="font-bold text-gray-700">{systemStatus?.metrics.sentiment_breakdown?.neutral || 0}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 bg-red-50 rounded-lg">
+                <span className="flex items-center gap-2 text-sm">
+                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                  Negative
+                </span>
+                <span className="font-bold text-red-700">{systemStatus?.metrics.sentiment_breakdown?.negative || 0}</span>
+              </div>
+              
+              <div className="pt-3 border-t">
+                <p className="text-xs text-gray-500 mb-2">Model Confidence</p>
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="text-center p-2 bg-blue-50 rounded-lg">
+                    <p className="text-lg font-bold text-blue-600">
+                      {modelAccuracy?.overall_confidence ? `${(modelAccuracy.overall_confidence * 100).toFixed(1)}%` : 'N/A'}
+                    </p>
+                    <p className="text-[10px] text-blue-600">Latest Pipeline Confidence</p>
                   </div>
                 </div>
               </div>
@@ -998,8 +788,124 @@ const AdminDashboard: React.FC = () => {
           </Card>
         </div>
 
+        {/* Services Row */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Server className="h-4 w-4 text-gray-600" />
+                System Services
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Database */}
+              <div className={`p-4 rounded-lg border-2 ${
+                systemStatus?.services?.database === 'healthy' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Database className={`h-4 w-4 ${systemStatus?.services?.database === 'healthy' ? 'text-green-600' : 'text-red-600'}`} />
+                    <span className="font-medium text-sm">Database</span>
+                  </div>
+                  {getStatusIcon(systemStatus?.services?.database || 'unknown')}
+                </div>
+                <p className="text-xs text-gray-600">Records: {systemStatus?.metrics.total_records?.toLocaleString() || 0}</p>
+              </div>
 
+              {/* Sentiment Engine */}
+              <div className={`p-4 rounded-lg border-2 ${
+                systemStatus?.services?.sentiment_engine === 'healthy' ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className={`h-4 w-4 ${systemStatus?.services?.sentiment_engine === 'healthy' ? 'text-blue-600' : 'text-yellow-600'}`} />
+                    <span className="font-medium text-sm">Sentiment</span>
+                  </div>
+                  {getStatusIcon(systemStatus?.services?.sentiment_engine || 'unknown')}
+                </div>
+                <p className="text-xs text-gray-600">
+                  Confidence: {modelAccuracy?.overall_confidence ? `${(modelAccuracy.overall_confidence * 100).toFixed(1)}%` : 'N/A'}
+                </p>
+              </div>
 
+              {/* Data Collection */}
+              <div className={`p-4 rounded-lg border-2 ${
+                systemStatus?.services?.data_collection === 'healthy' ? 'bg-purple-50 border-purple-200' : 'bg-red-50 border-red-200'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Zap className={`h-4 w-4 ${systemStatus?.services?.data_collection === 'healthy' ? 'text-purple-600' : 'text-red-600'}`} />
+                    <span className="font-medium text-sm">Collection</span>
+                  </div>
+                  {getStatusIcon(systemStatus?.services?.data_collection || 'unknown')}
+                </div>
+                <p className="text-xs text-gray-600">
+                  Last: {systemStatus?.metrics.last_collection 
+                    ? formatDateTime(systemStatus.metrics.last_collection, { hour: '2-digit', minute: '2-digit' })
+                    : 'Never'}
+                </p>
+              </div>
+
+              {/* Price Service */}
+              <div className={`p-4 rounded-lg border-2 ${
+                priceServiceStatus?.service_status?.is_running ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className={`h-4 w-4 ${priceServiceStatus?.service_status?.is_running ? 'text-emerald-600' : 'text-gray-500'}`} />
+                    <span className="font-medium text-sm">Prices</span>
+                  </div>
+                  {priceServiceStatus?.service_status?.is_running 
+                    ? <CheckCircle className="h-4 w-4 text-green-500" />
+                    : <XCircle className="h-4 w-4 text-gray-400" />
+                  }
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant={priceServiceStatus?.service_status?.is_running ? "outline" : "default"}
+                    className="h-6 text-xs px-2"
+                    onClick={() => handlePriceServiceControl(priceServiceStatus?.service_status?.is_running ? 'stop' : 'start')}
+                    disabled={priceServiceLoading}
+                  >
+                    {priceServiceStatus?.service_status?.is_running ? 'Stop' : 'Start'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-xs px-2"
+                    onClick={testPriceFetch}
+                    disabled={priceServiceLoading}
+                  >
+                    Test
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Navigation */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Button variant="outline" onClick={() => navigate('/admin/scheduler')} className="h-auto py-3 flex-col gap-1">
+            <Settings className="h-5 w-5 text-gray-600" />
+            <span className="text-xs">Scheduler</span>
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/admin/logs')} className="h-auto py-3 flex-col gap-1">
+            <Activity className="h-5 w-5 text-gray-600" />
+            <span className="text-xs">Logs</span>
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/admin/storage')} className="h-auto py-3 flex-col gap-1">
+            <Database className="h-5 w-5 text-gray-600" />
+            <span className="text-xs">Storage</span>
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/admin/model-accuracy')} className="h-auto py-3 flex-col gap-1">
+            <BarChart3 className="h-5 w-5 text-gray-600" />
+            <span className="text-xs">Benchmark</span>
+          </Button>
+        </div>
       </div>
     </AdminLayout>
   );

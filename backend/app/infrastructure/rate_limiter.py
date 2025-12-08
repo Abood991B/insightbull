@@ -24,9 +24,9 @@ from typing import Dict, Optional, Any, List, Set
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
-import logging
+from app.infrastructure.log_system import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 
 class BackoffStrategy(Enum):
@@ -257,7 +257,8 @@ class RateLimitHandler:
                 self.SEMAPHORE_LIMITS.get(source, 3)
             )
             
-        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        # Logger already initialized at module level
+        self.logger = logger
     
     async def acquire(self, source: str) -> None:
         """
@@ -723,7 +724,7 @@ class RateLimitHandler:
             try:
                 source = json.loads(entry.hash_key)['source']
                 counts[source] += 1
-            except:
+            except Exception:
                 pass
         return dict(counts)
     

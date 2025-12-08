@@ -21,13 +21,14 @@ Usage:
 
 import os
 import base64
-import logging
 from typing import Optional, Dict, Any
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-logger = logging.getLogger(__name__)
+from app.infrastructure.log_system import get_logger
+
+logger = get_logger()
 
 
 class APIKeyManager:
@@ -96,14 +97,15 @@ class APIKeyManager:
             api_key: The plain text API key to encrypt
             
         Returns:
-            Base64 encoded encrypted API key
+            Encrypted API key (Fernet token, which is already base64)
         """
         try:
             if not api_key:
                 return ""
             
+            # Fernet.encrypt() returns a base64-encoded token, no need to encode again
             encrypted_bytes = self._cipher_suite.encrypt(api_key.encode())
-            return base64.urlsafe_b64encode(encrypted_bytes).decode()
+            return encrypted_bytes.decode()
             
         except Exception as e:
             logger.error(f"Failed to encrypt API key: {e}")
@@ -124,14 +126,24 @@ class APIKeyManager:
             if not encrypted_key:
                 return ""
             
-            # Try to decrypt (if it's actually encrypted)
-            try:
-                encrypted_bytes = base64.urlsafe_b64decode(encrypted_key.encode())
-                decrypted_bytes = self._cipher_suite.decrypt(encrypted_bytes)
+            # Handle legacy double-encoded keys (base64 of base64)
+            key_to_decrypt = encrypted_key
+            
+            # Check if it's double-encoded (starts with Z0 which is base64 of 'gA')
+            if encrypted_key.startswith('Z0') and not encrypted_key.startswith('gA'):
+                try:
+                    # Try to decode the outer base64 layer
+                    import base64
+                    key_to_decrypt = base64.urlsafe_b64decode(encrypted_key.encode()).decode()
+                except Exception:
+                    pass  # Not double encoded, use as-is
+            
+            # Fernet tokens start with 'gA' (base64 of version byte 0x80)
+            if key_to_decrypt.startswith('gA'):
+                decrypted_bytes = self._cipher_suite.decrypt(key_to_decrypt.encode())
                 return decrypted_bytes.decode()
-                
-            except Exception:
-                # If decryption fails, assume it's already plain text
+            else:
+                # Not a Fernet token, return as-is (plain text)
                 logger.debug("Key appears to be plain text, returning as-is")
                 return encrypted_key
                 
@@ -366,7 +378,7 @@ def create_encrypted_env_template():
     encrypted_keys = manager.encrypt_all_keys(current_keys)
     
     print("\nEncrypted .env template:")
-    print("# Encrypted API Keys for Phase 5 Pipeline")
+    print("# Encrypted API Keys for Data Collection Pipeline")
     from app.utils.timezone import utc_now
     print("# Generated on:", utc_now().isoformat())
     print()

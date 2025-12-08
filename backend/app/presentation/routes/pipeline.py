@@ -14,7 +14,6 @@ Following FYP Report specification:
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from app.utils.timezone import utc_now, to_naive_utc
 
@@ -69,6 +68,8 @@ class APIKeysRequest(BaseModel):
 class PipelineStatusResponse(BaseModel):
     """Response model for pipeline status"""
     status: str
+    is_running: bool = False
+    progress: Optional[Dict[str, Any]] = None
     current_result: Optional[Dict[str, Any]]
     available_collectors: List[str]
     rate_limiter_status: Dict[str, Dict[str, Any]]

@@ -32,11 +32,17 @@ import {
   getSentimentColor, 
   getSentimentBadgeVariant 
 } from "@/shared/utils/sentimentUtils";
+import { usePipelineNotifications } from "@/shared/hooks/usePipelineNotifications";
 
 const StockAnalysis = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const symbolFromUrl = searchParams.get('symbol');
   const [selectedStock, setSelectedStock] = useState(symbolFromUrl || '');
+
+  // Listen for pipeline completion events and refetch data
+  usePipelineNotifications(() => {
+    // Query invalidation is handled by the hook, just need to be present
+  });
 
   // Fetch stock list for dropdown
   const { data: stockListResponse, isLoading: isLoadingList } = useQuery({

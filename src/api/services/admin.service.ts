@@ -64,8 +64,9 @@ export interface SourceMetrics {
 
 export interface ModelAccuracy {
   overall_accuracy: number;
+  overall_confidence?: number; // Added overall confidence metric
   model_metrics: {
-    finbert_sentiment: { // ProsusAI/finbert (88.3% benchmark accuracy) with optional Gemini AI verification
+    finbert_sentiment: { // ProsusAI/finbert (88.3% benchmark accuracy) with Gemma 3 27B AI verification
       accuracy: number;
       precision: number;
       recall: number;
@@ -77,7 +78,7 @@ export interface ModelAccuracy {
   evaluation_samples: number;
   evaluation_period: string;
   data_source: string;
-  ai_verification?: { // Gemini AI verification info
+  ai_verification?: { // Gemma 3 27B AI verification info
     enabled: boolean;
     provider: string;
     mode: string;
@@ -145,6 +146,12 @@ export interface APIConfiguration {
         avg_ml_confidence?: number;
         ai_enabled?: boolean;
         gemini_configured?: boolean;
+        api_key_valid?: boolean;
+        api_key_status?: string;
+        last_error?: string | null;
+        last_error_time?: string | null;
+        ai_model_id?: string;
+        ai_model_name?: string;
       };
     };
   };
@@ -301,7 +308,9 @@ export interface WatchlistResponse {
 }
 
 export interface ManualCollectionRequest {
-  stock_symbols?: string[];
+  symbols?: string[];
+  days_back?: number;
+  stock_symbols?: string[]; // Legacy support
   data_sources?: string[];
   priority?: 'low' | 'normal' | 'high';
 }
@@ -334,6 +343,29 @@ export interface ManualCollectionResponse {
   timestamp: string;
   warning?: string;
   error_details?: string;
+}
+
+// Pipeline Status with Progress Tracking
+export interface PipelineProgress {
+  current_stage: string;
+  stage_progress: number;
+  overall_progress: number;
+  message: string;
+  started_at: string | null;
+  stages_completed: string[];
+  current_collector: string | null;
+  items_collected: number;
+  items_analyzed: number;
+  items_stored: number;
+}
+
+export interface PipelineStatus {
+  status: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
+  is_running: boolean;
+  progress: PipelineProgress | null;
+  current_result: Record<string, any> | null;
+  available_collectors: string[];
+  rate_limiter_status: Record<string, any>;
 }
 
 export interface ScheduledJob {
@@ -911,7 +943,7 @@ class AdminAPIService {
   // PIPELINE MANAGEMENT
   // ============================================================================
   
-  async getPipelineStatus(): Promise<any> {
+  async getPipelineStatus(): Promise<PipelineStatus> {
     const response = await fetch(`${API_BASE_URL}/api/admin/pipeline/status`, {
       headers: getAuthHeaders(),
     });

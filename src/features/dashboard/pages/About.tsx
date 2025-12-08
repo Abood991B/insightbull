@@ -29,7 +29,7 @@ const About = () => {
     {
       icon: Zap,
       title: "Advanced NLP",
-      description: "ProsusAI/finbert model with Gemini AI verification for 92-95% accuracy"
+      description: "ProsusAI/finbert model with Gemma 3 27B AI verification for enhanced accuracy"
     },
     {
       icon: Shield,
@@ -130,7 +130,7 @@ const About = () => {
             <CardContent className="space-y-4">
               <p className="text-gray-700 leading-relaxed">
                 We employ advanced Natural Language Processing using ProsusAI/finbert for sentiment analysis,
-                enhanced with Gemini AI verification achieving 92-95% accuracy across all data sources.
+                enhanced with Gemma 3 27B AI verification for improved accuracy on uncertain predictions.
               </p>
               <p className="text-gray-700 leading-relaxed">
                 Our system processes thousands of data points daily, providing statistical correlation 
@@ -139,7 +139,7 @@ const About = () => {
               <div className="mt-4 space-y-3">
                 <div className="p-3 bg-green-50 rounded-lg">
                   <h4 className="font-semibold text-green-900">NLP Models</h4>
-                  <p className="text-sm text-green-700">ProsusAI/finbert (88.3% base) + Gemini AI (92-95% verified)</p>
+                  <p className="text-sm text-green-700">ProsusAI/finbert (88%+ base accuracy) + Gemma 3 27B verification</p>
                 </div>
                 <div className="p-3 bg-purple-50 rounded-lg">
                   <h4 className="font-semibold text-purple-900">Statistical Methods</h4>
