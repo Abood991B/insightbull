@@ -99,7 +99,8 @@ class AuthService:
             admin_user = AdminUser(user_id, user_email)
             admin_user.last_login = utc_now()
             
-            logger.info(f"Admin user {user_email} authenticated successfully")
+            # Debug-level log to reduce noise (auth happens on every request)
+            logger.debug(f"Admin user {user_email} authenticated")
             return admin_user
             
         except Exception as e:

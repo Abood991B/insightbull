@@ -428,8 +428,8 @@ async def _get_system_status(
     # Get total sentiment records count
     total_records = await sentiment_repo.get_total_count()
     
-    # Active data sources - all 5 sources (including GDELT global news)
-    active_sources = ["HackerNews", "GDELT", "NewsAPI", "FinHub", "Marketaux"]
+    # Active data sources - all 5 sources (including GDELT global news and YFinance)
+    active_sources = ["HackerNews", "YFinance", "GDELT", "NewsAPI", "FinHub"]
     
     # Convert last_collection to aware UTC for proper API serialization
     last_collection_aware = ensure_utc(last_collection) if last_collection else None

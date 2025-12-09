@@ -25,7 +25,7 @@ import {
 import { Label } from "../../../shared/components/ui/label";
 import { useToast } from '../../../shared/hooks/use-toast';
 import { formatDateTime } from '@/shared/utils/timezone';
-import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus, PipelineStatus, PipelineProgress } from '../../../api/services/admin.service';
+import { adminAPI, SystemStatus, ModelAccuracy, RealTimePriceServiceStatus, PipelineStatus, PipelineProgress, SchedulerHistoryResponse } from '../../../api/services/admin.service';
 import { broadcastPipelineEvent } from '@/shared/hooks/usePipelineNotifications';
 import SystemHealthAlerts from '../components/SystemHealthAlerts';
 import {
@@ -46,7 +46,9 @@ import {
   Info,
   Clock,
   Loader2,
-  Square
+  Square,
+  Calendar,
+  History
 } from 'lucide-react';
 
 // Collector Status Interface
@@ -79,6 +81,9 @@ const AdminDashboard: React.FC = () => {
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Scheduler run history
+  const [runHistory, setRunHistory] = useState<SchedulerHistoryResponse | null>(null);
 
   // Load dashboard data
   const loadDashboardData = async (showRefreshToast = false) => {
@@ -87,15 +92,19 @@ const AdminDashboard: React.FC = () => {
 
       // Load all dashboard data in parallel
       // Use "latest" view type for model accuracy to get recent confidence
-      const [statusResponse, accuracyResponse, priceServiceResponse] = await Promise.all([
+      const [statusResponse, accuracyResponse, priceServiceResponse, historyResponse] = await Promise.all([
         adminAPI.getSystemStatus(),
         adminAPI.getModelAccuracy("latest"),
-        adminAPI.getRealTimePriceServiceStatus()
+        adminAPI.getRealTimePriceServiceStatus(),
+        adminAPI.getSchedulerHistory(7).catch(() => null) // Don't fail if history unavailable
       ]);
 
       setSystemStatus(statusResponse);
       setModelAccuracy(accuracyResponse);
       setPriceServiceStatus(priceServiceResponse);
+      if (historyResponse) {
+        setRunHistory(historyResponse);
+      }
 
       if (showRefreshToast) {
         toast({
@@ -701,7 +710,6 @@ const AdminDashboard: React.FC = () => {
                     finnhub: { emoji: '📊', bg: 'bg-indigo-50', border: 'border-indigo-200' },
                     finhub: { emoji: '📊', bg: 'bg-indigo-50', border: 'border-indigo-200' },
                     newsapi: { emoji: '📰', bg: 'bg-purple-50', border: 'border-purple-200' },
-                    marketaux: { emoji: '💹', bg: 'bg-emerald-50', border: 'border-emerald-200' },
                   };
                   const style = styles[collector.name.toLowerCase()] || { emoji: '📡', bg: 'bg-gray-50', border: 'border-gray-200' };
                   
@@ -884,6 +892,105 @@ const AdminDashboard: React.FC = () => {
                 </div>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Pipeline Run History */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <History className="h-4 w-4 text-indigo-600" />
+                Pipeline Run History (7 Days)
+              </CardTitle>
+              {runHistory?.summary && (
+                <div className="flex gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {runHistory.summary.total_runs} runs
+                  </Badge>
+                  <Badge className="bg-green-100 text-green-800 text-xs">
+                    {runHistory.summary.successful_runs} success
+                  </Badge>
+                  {runHistory.summary.failed_runs > 0 && (
+                    <Badge className="bg-red-100 text-red-800 text-xs">
+                      {runHistory.summary.failed_runs} failed
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!runHistory || Object.keys(runHistory.history).length === 0 ? (
+              <div className="text-center py-6 text-gray-500">
+                <Calendar className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                <p className="text-sm">No pipeline runs recorded yet</p>
+                <p className="text-xs mt-1">Run the pipeline to start tracking history</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {Object.entries(runHistory.history)
+                  .sort(([a], [b]) => b.localeCompare(a)) // Sort by date descending
+                  .slice(0, 3) // Show last 3 days
+                  .map(([date, jobs]) => {
+                    const totalRuns = Object.values(jobs).reduce((sum, runs) => sum + runs.length, 0);
+                    const successRuns = Object.values(jobs).reduce(
+                      (sum, runs) => sum + runs.filter(r => r.status === 'completed').length, 0
+                    );
+                    const failedRuns = totalRuns - successRuns;
+                    
+                    return (
+                      <div key={date} className="border rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm">{date}</span>
+                          <div className="flex gap-1">
+                            <Badge variant="outline" className="text-xs">{totalRuns} runs</Badge>
+                            {successRuns > 0 && (
+                              <Badge className="bg-green-100 text-green-800 text-xs">{successRuns} ✓</Badge>
+                            )}
+                            {failedRuns > 0 && (
+                              <Badge className="bg-red-100 text-red-800 text-xs">{failedRuns} ✗</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                          {Object.entries(jobs).map(([jobName, runs]) => (
+                            <div key={jobName} className="text-xs p-2 bg-gray-50 rounded">
+                              <div className="font-medium truncate" title={jobName}>
+                                {jobName.replace(' Updates', '').replace(' Analysis', '').replace(' Preparation', '')}
+                              </div>
+                              <div className="flex items-center gap-1 mt-1">
+                                <span className="text-green-600">{runs.filter(r => r.status === 'completed').length}✓</span>
+                                {runs.filter(r => r.status !== 'completed').length > 0 && (
+                                  <span className="text-red-600">{runs.filter(r => r.status !== 'completed').length}✗</span>
+                                )}
+                                {runs.length > 0 && (
+                                  <span className="text-gray-400 ml-auto">
+                                    {Math.round(runs.reduce((s, r) => s + r.duration_seconds, 0) / runs.length)}s avg
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                {runHistory.summary && (
+                  <div className="flex items-center justify-between pt-2 border-t text-xs text-gray-500">
+                    <span>Avg duration: {runHistory.summary.avg_duration_seconds.toFixed(1)}s</span>
+                    <Button 
+                      variant="link" 
+                      size="sm" 
+                      className="h-auto p-0 text-xs"
+                      onClick={() => navigate('/admin/scheduler')}
+                    >
+                      View Full History →
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 

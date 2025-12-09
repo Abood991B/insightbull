@@ -6,7 +6,7 @@
  * - Human-readable preset schedules (no raw cron)
  * - Atomic pipeline execution (data collection + sentiment analysis together)
  * - Next run timeline visualization
- * - Collector health monitoring (MarketAux API failure handling)
+ * - Collector health monitoring
  * - Market context awareness
  * 
  * Aligns with FYP-Report.md Section 4 (System Design) and Section 7 (Implementation Plan)
@@ -24,7 +24,8 @@ import { MarketCountdown } from "@/shared/components/MarketCountdown";
 import { 
   adminAPI, 
   SchedulerResponse, 
-  ScheduledJob 
+  ScheduledJob,
+  SchedulerHistoryResponse
 } from "../../../api/services/admin.service";
 import { 
   RefreshCw, 
@@ -159,67 +160,67 @@ const PRESET_SCHEDULES: PresetSchedule[] = [
   {
     id: 'pre-market',
     name: 'Pre-Market Preparation',
-    description: 'Full pipeline run before market opens',
+    description: 'Full pipeline run when pre-market opens',
     icon: <Sunrise className="h-5 w-5" />,
-    schedule: `Daily at ${convertETTimeToUserTimezone(8)} ${timezoneName} (Mon-Fri)`,
-    cronExpression: '0 13 * * 1-5', // 8:00 AM ET = 13:00 UTC (Standard Time)
+    schedule: `Daily at 5 PM ${timezoneName} (Mon-Fri)`,
+    cronExpression: '0 9 * * 0-4', // 9 AM UTC Mon-Fri = 5 PM GMT+8 = 4 AM ET
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-amber-500',
     marketContext: 'pre-market',
-    rationale: 'Collect overnight news and sentiment BEFORE market opens. Gives traders fresh insights for the market opening bell.'
+    rationale: 'Collect overnight news right as pre-market trading begins (4 AM ET). Gives traders fresh insights before the main session.'
   },
   {
     id: 'market-active',
     name: 'Active Trading Updates',
     description: 'Frequent updates during market hours',
     icon: <Activity className="h-5 w-5" />,
-    schedule: `Every 30 minutes (${convertETTimeToUserTimezone(9, 30)} - ${convertETTimeToUserTimezone(16)} ${timezoneName}, Mon-Fri)`,
-    cronExpression: '*/30 14-20 * * 1-5', // 9:30 AM-4:00 PM ET = 14:30-20:59 UTC (Standard Time) - runs at :00 and :30
+    schedule: `Every 30 minutes (10 PM - 5 AM ${timezoneName}, Mon-Fri)`,
+    cronExpression: '0,30 14-20 * * 0-4', // Every 30 min, 2-8:59 PM UTC Mon-Fri
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-green-500',
     marketContext: 'market-hours',
-    rationale: 'Monitor real-time sentiment shifts during active trading. Catches breaking news and social media reactions immediately.'
+    rationale: 'Monitor real-time sentiment shifts during active trading (9:30 AM - 4 PM ET). Catches breaking news immediately.'
   },
   {
     id: 'after-hours-evening',
     name: 'After-Hours Analysis',
-    description: `Post-market sentiment at ${convertETTimeToUserTimezone(17)} ${timezoneName}`,
+    description: `Post-market sentiment 2 hours after close`,
     icon: <Sunset className="h-5 w-5" />,
-    schedule: `Daily at ${convertETTimeToUserTimezone(17)} ${timezoneName} (Mon-Fri)`,
-    cronExpression: '0 22 * * 1-5', // 5:00 PM ET = 22:00 UTC (Standard Time)
+    schedule: `Daily at 7 AM ${timezoneName} (Tue-Sat)`,
+    cronExpression: '0 23 * * 0-4', // 11 PM UTC Mon-Fri = 7 AM GMT+8 = 6 PM ET
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-orange-500',
     marketContext: 'after-hours',
-    rationale: 'Capture immediate post-market news and earnings reports. Critical for after-hours trading sentiment.'
+    rationale: 'Capture post-market news and earnings reports 2 hours after market close (6 PM ET).'
   },
   {
-    id: 'after-hours-late',
-    name: 'After-Hours Late Evening',
-    description: `Late evening sentiment at ${convertETTimeToUserTimezone(20)} ${timezoneName}`,
+    id: 'overnight-summary',
+    name: 'Overnight Summary',
+    description: `Final summary after after-hours ends`,
     icon: <Moon className="h-5 w-5" />,
-    schedule: `Daily at ${convertETTimeToUserTimezone(20)} ${timezoneName} (Mon-Fri)`,
-    cronExpression: '0 1 * * 2-6', // 8:00 PM ET Mon-Fri = 01:00 UTC Tue-Sat (Standard Time)
+    schedule: `Daily at 9 AM ${timezoneName} (Tue-Sat)`,
+    cronExpression: '0 1 * * 1-5', // 1 AM UTC Tue-Sat = 9 AM GMT+8 = 8 PM ET Mon-Fri
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-indigo-500',
     marketContext: 'after-hours',
-    rationale: 'Late evening news catch-up. Ensures comprehensive coverage of extended hours activity and breaking news.'
+    rationale: 'Final summary after all after-hours trading concludes (8 PM ET). Complete daily recap.'
   },
   {
     id: 'weekend-deep',
     name: 'Weekend Deep Analysis',
     description: 'Comprehensive weekly analysis',
     icon: <BarChart3 className="h-5 w-5" />,
-    schedule: `Saturday at ${convertETTimeToUserTimezone(10)} ${timezoneName}`,
-    cronExpression: '0 15 * * 6', // Saturday 10:00 AM ET = 15:00 UTC (Standard Time)
+    schedule: `Sunday at 6 PM ${timezoneName}`,
+    cronExpression: '0 10 * * 6', // Sunday 10 AM UTC = Sunday 6 PM GMT+8
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-blue-500',
     marketContext: 'weekend',
-    rationale: 'Weekly comprehensive analysis. Process accumulated weekend news to prepare for Monday market open.'
+    rationale: 'Weekly comprehensive analysis on Sunday evening. Process accumulated weekend news to prepare for Monday pre-market (opens 5 PM your time).'
   }
 ];
 
@@ -235,6 +236,8 @@ const SchedulerManagerV2 = () => {
   const [presetSchedules, setPresetSchedules] = useState<PresetSchedule[]>(PRESET_SCHEDULES);
   const [collectorHealth, setCollectorHealth] = useState<CollectorStatus[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+  const [runHistory, setRunHistory] = useState<SchedulerHistoryResponse | null>(null);
+  const [lastEventTimestamp, setLastEventTimestamp] = useState<string | null>(null);
   const [marketStatus, setMarketStatus] = useState<{
     isOpen: boolean;
     currentPeriod: string;
@@ -247,6 +250,50 @@ const SchedulerManagerV2 = () => {
     nextClose: null
   });
   const { toast } = useToast();
+
+  // ============================================================================
+  // Job Event Polling (for notifications)
+  // ============================================================================
+  
+  const checkJobEvents = async () => {
+    try {
+      const response = await adminAPI.getJobEvents(lastEventTimestamp || undefined);
+      
+      if (response.events && response.events.length > 0) {
+        // Update last timestamp to avoid duplicate notifications
+        setLastEventTimestamp(response.events[0].timestamp);
+        
+        // Show toast for each new event
+        for (const event of response.events) {
+          if (event.type === 'started') {
+            toast({
+              title: `Job Started: ${event.job_name}`,
+              description: "Pipeline execution in progress...",
+            });
+          } else if (event.type === 'completed') {
+            const duration = event.details.duration_seconds 
+              ? `${Math.round(event.details.duration_seconds)}s` 
+              : '';
+            toast({
+              title: `Job Completed: ${event.job_name}`,
+              description: `Finished successfully ${duration}`,
+            });
+            // Refresh data after completion
+            loadSchedulerData(false);
+          } else if (event.type === 'failed') {
+            toast({
+              title: `Job Failed: ${event.job_name}`,
+              description: event.details.error || "An error occurred",
+              variant: "destructive",
+            });
+          }
+        }
+      }
+    } catch (error) {
+      // Silently ignore polling errors
+      console.debug('Job event polling error:', error);
+    }
+  };
 
   // ============================================================================
   // Data Loading
@@ -267,6 +314,9 @@ const SchedulerManagerV2 = () => {
       // Fetch collector health from backend API
       updateCollectorHealth();
       
+      // Fetch run history (last 7 days)
+      loadRunHistory();
+      
       if (showRefreshToast) {
         toast({
           title: "Scheduler Updated",
@@ -286,6 +336,15 @@ const SchedulerManagerV2 = () => {
     }
   };
 
+  const loadRunHistory = async () => {
+    try {
+      const history = await adminAPI.getSchedulerHistory(7);
+      setRunHistory(history);
+    } catch (error) {
+      console.error('Failed to load run history:', error);
+    }
+  };
+
   useEffect(() => {
     loadSchedulerData();
     // Auto-refresh scheduler data every 30 seconds
@@ -294,11 +353,15 @@ const SchedulerManagerV2 = () => {
     // Update market status every 10 seconds (backend fetches real data)
     const marketInterval = setInterval(() => updateMarketStatus(), 10000);
     
+    // Poll for job events every 5 seconds (for notifications)
+    const eventInterval = setInterval(() => checkJobEvents(), 5000);
+    
     return () => {
       clearInterval(schedulerInterval);
       clearInterval(marketInterval);
+      clearInterval(eventInterval);
     };
-  }, []);
+  }, [lastEventTimestamp]);
 
   // ============================================================================
   // Market Status & Timeline
@@ -365,23 +428,27 @@ const SchedulerManagerV2 = () => {
       })
       .map(job => {
         const scheduledTime = new Date(job.next_run!);
-        const hour = scheduledTime.getHours();
+        const jobName = job.name.toLowerCase();
         
+        // Classify by job name (more reliable than hour-based detection)
         let type: TimelineEvent['type'] = 'overnight';
         let color = 'bg-gray-500';
         
-        if (scheduledTime.getDay() === 0 || scheduledTime.getDay() === 6) {
+        if (jobName.includes('weekend') || jobName.includes('deep')) {
           type = 'weekend';
           color = 'bg-blue-500';
-        } else if (hour >= 7 && hour < 9) {
+        } else if (jobName.includes('pre-market') || jobName.includes('preparation')) {
           type = 'pre-market';
           color = 'bg-amber-500';
-        } else if (hour >= 9 && hour < 16) {
+        } else if (jobName.includes('active') || jobName.includes('trading')) {
           type = 'market-hours';
           color = 'bg-green-500';
-        } else if (hour >= 16 && hour < 20) {
+        } else if (jobName.includes('after-hours') || jobName.includes('after hours')) {
           type = 'after-hours';
           color = 'bg-orange-500';
+        } else if (jobName.includes('overnight') || jobName.includes('summary')) {
+          type = 'overnight';
+          color = 'bg-purple-500';
         }
         
         return {
@@ -668,6 +735,89 @@ const SchedulerManagerV2 = () => {
           </CardContent>
         </Card>
 
+        {/* Pipeline Run History (Last 7 Days) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Pipeline Run History (Last 7 Days)
+            </CardTitle>
+            <CardDescription>
+              Track daily pipeline execution statistics
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!runHistory || Object.keys(runHistory.history).length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Activity className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No pipeline runs recorded yet</p>
+                <p className="text-sm">History will appear after scheduled jobs execute</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Summary Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-gray-50 p-3 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-blue-600">{runHistory.summary.total_runs}</div>
+                    <div className="text-xs text-muted-foreground">Total Runs</div>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-green-600">{runHistory.summary.successful_runs}</div>
+                    <div className="text-xs text-muted-foreground">Successful</div>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-red-600">{runHistory.summary.failed_runs}</div>
+                    <div className="text-xs text-muted-foreground">Failed</div>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-purple-600">
+                      {runHistory.summary.avg_duration_seconds > 0 
+                        ? `${Math.round(runHistory.summary.avg_duration_seconds)}s` 
+                        : 'N/A'}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Avg Duration</div>
+                  </div>
+                </div>
+
+                {/* Daily Breakdown */}
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Daily Breakdown</h4>
+                  {Object.entries(runHistory.history)
+                    .sort(([a], [b]) => b.localeCompare(a)) // Sort by date descending
+                    .slice(0, 7) // Show last 7 days
+                    .map(([date, jobs]) => {
+                      const totalRuns = Object.values(jobs).flat().length;
+                      const successfulRuns = Object.values(jobs).flat().filter(r => r.status === 'completed').length;
+                      
+                      return (
+                        <div key={date} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">
+                              {new Date(date).toLocaleDateString('en-US', {
+                                weekday: 'short',
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-muted-foreground">
+                              {Object.keys(jobs).length} jobs
+                            </span>
+                            <Badge variant={successfulRuns === totalRuns ? 'default' : 'secondary'}>
+                              {successfulRuns}/{totalRuns} runs
+                            </Badge>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Preset Schedules */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {presetSchedules.map((preset) => {
@@ -707,6 +857,14 @@ const SchedulerManagerV2 = () => {
                       <strong>Why?</strong> {preset.rationale}
                     </div>
                     
+                    {/* Running Status */}
+                    {matchingJob?.status === 'running' && (
+                      <div className="flex items-center gap-2 text-sm text-green-600 font-medium animate-pulse">
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Running...
+                      </div>
+                    )}
+                    
                     {matchingJob?.next_run && (
                       <div className="text-sm text-muted-foreground">
                         <strong>Next run:</strong> {formatDateTime(matchingJob.next_run)}
@@ -715,6 +873,16 @@ const SchedulerManagerV2 = () => {
                     {matchingJob?.last_run && (
                       <div className="text-sm text-muted-foreground">
                         <strong>Last run:</strong> {formatDateTime(matchingJob.last_run)}
+                        {matchingJob.last_duration_seconds && (
+                          <span className="ml-1">({Math.round(matchingJob.last_duration_seconds)}s)</span>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Today's run count */}
+                    {matchingJob && (matchingJob.today_run_count ?? 0) > 0 && (
+                      <div className="text-sm text-muted-foreground">
+                        <strong>Runs today:</strong> {matchingJob.today_run_count}
                       </div>
                     )}
                   </div>
@@ -811,7 +979,7 @@ const SchedulerManagerV2 = () => {
             <strong>Pipeline Execution Model:</strong> All schedules run the FULL pipeline 
             (Data Collection -&gt; Sentiment Analysis -&gt; Storage) as an atomic operation. 
             This ensures data consistency and proper sentiment analysis of fresh data.
-            Each run processes all 5 collectors (NewsAPI, FinHub, Hacker News, GDELT, MarketAux*) sequentially.
+            Each run processes all 5 collectors (NewsAPI, FinHub, Hacker News, GDELT, Yahoo Finance) sequentially.
           </AlertDescription>
         </Alert>
       </div>

@@ -352,5 +352,5 @@ if __name__ == "__main__":
         port=8000,
         reload=False,
         log_level=settings.log_level.lower(),
-        access_log=True
+        access_log=False  # Disable uvicorn access log - using custom middleware instead
     )

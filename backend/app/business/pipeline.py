@@ -28,8 +28,8 @@ from ..infrastructure.collectors.base_collector import (
 from ..infrastructure.collectors.hackernews_collector import HackerNewsCollector
 from ..infrastructure.collectors.finnhub_collector import FinHubCollector  
 from ..infrastructure.collectors.newsapi_collector import NewsAPICollector
-from ..infrastructure.collectors.marketaux_collector import MarketauxCollector
 from ..infrastructure.collectors.gdelt_collector import GDELTCollector
+from ..infrastructure.collectors.yfinance_collector import YFinanceCollector
 from ..infrastructure.rate_limiter import RateLimitHandler, RequestPriority
 from ..data_access.repositories.sentiment_repository import SentimentDataRepository
 from ..data_access.repositories.stock_repository import StockRepository
@@ -82,8 +82,8 @@ class PipelineConfig:
     include_hackernews: bool = True
     include_finnhub: bool = True
     include_newsapi: bool = True
-    include_marketaux: bool = True
     include_gdelt: bool = True
+    include_yfinance: bool = True
     include_comments: bool = True
     parallel_collectors: bool = True
     processing_config: Optional[ProcessingConfig] = None
@@ -391,13 +391,6 @@ class DataPipeline:
                     rate_limiter=self.rate_limiter
                 )
             
-            # MarketAux collector
-            if "marketaux" in api_keys:
-                self._collectors["marketaux"] = MarketauxCollector(
-                    api_key=api_keys["marketaux"],
-                    rate_limiter=self.rate_limiter
-                )
-            
             self.logger.info(f"Configured {len(self._collectors)} collectors")
             
         except Exception as e:
@@ -413,7 +406,7 @@ class DataPipeline:
         - (HackerNews does not require API keys)
         - NEWSAPI_KEY
         - FINNHUB_API_KEY
-        - MARKETAUX_API_KEY
+        - (YFinance does not require API keys)
         """
         try:
             collectors_configured = 0
@@ -473,21 +466,6 @@ class DataPipeline:
             else:
                 self.logger.warning("NewsAPI collector skipped - API key not configured", component="pipeline")
             
-            # MarketAux collector
-            marketaux_key = api_keys.get('marketaux_api_key')
-            if marketaux_key:
-                try:
-                    self._collectors["marketaux"] = MarketauxCollector(
-                        api_key=marketaux_key,
-                        rate_limiter=self.rate_limiter
-                    )
-                    collectors_configured += 1
-                    self.logger.info("MarketAux collector configured", component="pipeline")
-                except Exception as e:
-                    self.logger.warning(f"Failed to configure MarketAux collector: {str(e)}", component="pipeline")
-            else:
-                self.logger.warning("MarketAux collector skipped - API key not configured", component="pipeline")
-            
             # GDELT collector (no API key required - free and unlimited)
             try:
                 self._collectors["gdelt"] = GDELTCollector(
@@ -497,6 +475,16 @@ class DataPipeline:
                 self.logger.info("GDELT collector configured (no API key required)", component="pipeline")
             except Exception as e:
                 self.logger.warning(f"Failed to configure GDELT collector: {str(e)}", component="pipeline")
+            
+            # YFinance collector (no API key required - free and unlimited)
+            try:
+                self._collectors["yfinance"] = YFinanceCollector(
+                    rate_limiter=self.rate_limiter
+                )
+                collectors_configured += 1
+                self.logger.info("YFinance collector configured (no API key required)", component="pipeline")
+            except Exception as e:
+                self.logger.warning(f"Failed to configure YFinance collector: {str(e)}", component="pipeline")
             
             # Clear decrypted keys from memory for security
             # Cache cleared automatically
@@ -646,8 +634,8 @@ class DataPipeline:
                     "hackernews_items": collection_summary.get("HACKERNEWS", {}).get("items_collected", 0),
                     "finnhub_items": collection_summary.get("FINNHUB", {}).get("items_collected", 0),
                     "newsapi_items": collection_summary.get("NEWSAPI", {}).get("items_collected", 0),
-                    "marketaux_items": collection_summary.get("MARKETAUX", {}).get("items_collected", 0),
                     "gdelt_items": collection_summary.get("GDELT", {}).get("items_collected", 0),
+                    "yfinance_items": collection_summary.get("YFINANCE", {}).get("items_collected", 0),
                     "successful_sources": successful_collectors,
                     "total_sources": len(result.collector_stats)
                 }
@@ -945,17 +933,17 @@ class DataPipeline:
             else:
                 self.logger.info("NewsAPI collector is disabled by admin configuration", component="pipeline")
         
-        if config.include_marketaux and "marketaux" in self._collectors:
-            if collector_config_service.is_collector_enabled("marketaux"):
-                collectors_to_run.append(("marketaux", self._collectors["marketaux"]))
-            else:
-                self.logger.info("Marketaux collector is disabled by admin configuration", component="pipeline")
-        
         if config.include_gdelt and "gdelt" in self._collectors:
             if collector_config_service.is_collector_enabled("gdelt"):
                 collectors_to_run.append(("gdelt", self._collectors["gdelt"]))
             else:
                 self.logger.info("GDELT collector is disabled by admin configuration", component="pipeline")
+        
+        if config.include_yfinance and "yfinance" in self._collectors:
+            if collector_config_service.is_collector_enabled("yfinance"):
+                collectors_to_run.append(("yfinance", self._collectors["yfinance"]))
+            else:
+                self.logger.info("YFinance collector is disabled by admin configuration", component="pipeline")
         
         # Run collectors in parallel or sequential mode
         if config.parallel_collectors:
@@ -1050,7 +1038,7 @@ class DataPipeline:
         Record API quota usage after successful collection.
         
         Args:
-            source: Source name (newsapi, marketaux, etc.)
+            source: Source name (newsapi, finnhub, etc.)
             num_symbols: Number of symbols collected
         """
         try:
@@ -1058,12 +1046,8 @@ class DataPipeline:
             quota_service = get_quota_tracking_service()
             
             # Calculate requests made based on source
-            if source == "marketaux":
-                # Marketaux uses batch mode (10 symbols per request)
-                requests = (num_symbols + 9) // 10
-            else:
-                # Other sources: 1 request per symbol
-                requests = num_symbols
+            # Most sources: 1 request per symbol
+            requests = num_symbols
             
             result = quota_service.record_usage(source, requests)
             
@@ -1548,7 +1532,7 @@ class DataPipeline:
                                 stock = await stock_repository.create(stock_data)
                             
                             # Store based on source type
-                            if source_name.lower() in ['newsapi', 'marketaux', 'finnhub', 'gdelt']:
+                            if source_name.lower() in ['newsapi', 'finnhub', 'gdelt', 'yfinance']:
                                 # Check for duplicate URL before storing
                                 url = getattr(raw_data, 'url', '')
                                 if url:
@@ -1969,9 +1953,10 @@ class DataPipeline:
                 'hackernews': DataSource.HACKERNEWS,
                 'finnhub': DataSource.FINNHUB,
                 'newsapi': DataSource.NEWSAPI,
-                'marketaux': DataSource.MARKETAUX
+                'gdelt': DataSource.GDELT,
+                'yfinance': DataSource.YFINANCE
             }
-            return collector_mapping.get(collector_source.lower(), DataSource.NEWS)
+            return collector_mapping.get(collector_source.lower(), DataSource.NEWSAPI)
         
         # Default fallback
         return DataSource.NEWS
@@ -2150,7 +2135,7 @@ class DataPipeline:
                         extra={"operation": "duplicate_skip", "source": "hackernews", "stock_id": str(stock.id)}
                     )
                     
-            elif source_lower in ['newsapi', 'finnhub', 'marketaux']:
+            elif source_lower in ['newsapi', 'finnhub', 'gdelt', 'yfinance']:
                 # Update news_articles
                 stmt = (
                     update(NewsArticle)
@@ -2282,8 +2267,8 @@ class DataPipeline:
                 include_hackernews=True,
                 include_finnhub=True,
                 include_newsapi=True,
-                include_marketaux=True,
                 include_gdelt=True,
+                include_yfinance=True,
                 parallel_collectors=True
             )
             
@@ -2374,7 +2359,7 @@ class DataPipeline:
                 
                 # 1. Find news articles without sentiment analysis
                 news_result = await db.execute(
-                    select(NewsArticle.id, NewsArticle.title, NewsArticle.content, NewsArticle.stock_id)
+                    select(NewsArticle.id, NewsArticle.title, NewsArticle.content, NewsArticle.stock_id, NewsArticle.stock_mentions)
                     .where(
                         NewsArticle.published_at >= cutoff_time,
                         NewsArticle.sentiment_score.is_(None),  # Not yet analyzed
@@ -2386,7 +2371,7 @@ class DataPipeline:
                 
                 # 2. Find Hacker News posts without sentiment analysis  
                 hn_result = await db.execute(
-                    select(HackerNewsPost.id, HackerNewsPost.title, HackerNewsPost.content, HackerNewsPost.stock_id)
+                    select(HackerNewsPost.id, HackerNewsPost.title, HackerNewsPost.content, HackerNewsPost.stock_id, HackerNewsPost.stock_mentions)
                     .where(
                         HackerNewsPost.created_utc >= cutoff_time,
                         HackerNewsPost.sentiment_score.is_(None),  # Not yet analyzed
@@ -2411,37 +2396,53 @@ class DataPipeline:
                 self.logger.info(f"Found {len(news_articles)} news articles and {len(hn_posts)} Hacker News posts to process")
                 
                 # 3. Prepare sentiment analysis inputs
+                # Import quality filter for better confidence scores
+                from app.service.sentiment_processing.hybrid_sentiment_analyzer import is_text_analyzable
+                
                 sentiment_inputs = []
+                skipped_count = 0
                 
                 # Process news articles
                 for article in news_articles:
                     text_content = f"{article.title}\n\n{article.content or ''}"[:2000]  # Limit text length
-                    if len(text_content.strip()) > 10:  # Skip very short content
+                    is_valid, reason = is_text_analyzable(text_content)
+                    if is_valid:
                         sentiment_inputs.append(TextInput(
                             text=text_content,
                             source=DataSource.NEWS,
                             metadata={
                                 "article_id": article.id,
                                 "stock_id": article.stock_id,
+                                "stock_mentions": article.stock_mentions,  # Pass stock mentions through
                                 "type": "news"
                             }
                         ))
+                    else:
+                        skipped_count += 1
                 
                 # Process Hacker News posts
                 for post in hn_posts:
                     text_content = f"{post.title or ''}\n\n{post.content or ''}"[:2000]  # Limit text length
-                    if len(text_content.strip()) > 10:  # Skip very short content
+                    is_valid, reason = is_text_analyzable(text_content)
+                    if is_valid:
                         sentiment_inputs.append(TextInput(
                             text=text_content,
                             source=DataSource.HACKERNEWS,
                             metadata={
                                 "post_id": post.id,
                                 "stock_id": post.stock_id,
+                                "stock_mentions": post.stock_mentions,  # Pass stock mentions through
                                 "type": "hackernews"
                             }
                         ))
+                    else:
+                        skipped_count += 1
+                
+                if skipped_count > 0:
+                    self.logger.info(f"Skipped {skipped_count} items due to low text quality")
                 
                 # 4. Run sentiment analysis
+                discarded_count = 0
                 if sentiment_inputs:
                     sentiment_engine = get_sentiment_engine()
                     sentiment_results = await sentiment_engine.analyze_batch(sentiment_inputs)
@@ -2450,6 +2451,13 @@ class DataPipeline:
                     for result in sentiment_results:
                         try:
                             metadata = result.metadata
+                            
+                            # Check if result was discarded due to low confidence
+                            # (confidence = 0.0 signals discard)
+                            if result.confidence == 0.0 or "discarded" in (result.method or "").lower():
+                                discarded_count += 1
+                                self.logger.debug(f"Discarding low-confidence result: {result.label} ({result.ml_confidence:.1%})")
+                                continue  # Skip storing this result
                             
                             if metadata["type"] == "news":
                                 # Update news article
@@ -2482,6 +2490,7 @@ class DataPipeline:
                                 sentiment_label=result.label,
                                 model_used=result.model_name,
                                 raw_text=result.text[:1000],  # Store truncated text
+                                stock_mentions=metadata.get("stock_mentions"),  # Copy stock mentions from source
                                 content_hash=SentimentData.generate_content_hash(
                                     result.text, result.source.value, ""
                                 ),
@@ -2497,12 +2506,16 @@ class DataPipeline:
                     
                     await db.commit()
                     
-                    self.logger.info(f"Processed {processed_count} items, created {sentiment_records} sentiment records")
+                    self.logger.info(
+                        f"Processed {processed_count} items, created {sentiment_records} sentiment records"
+                        + (f", discarded {discarded_count} low-confidence" if discarded_count > 0 else "")
+                    )
                 
             return {
                 "status": "success",
                 "items_processed": processed_count,
                 "sentiment_records": sentiment_records,
+                "discarded_low_confidence": discarded_count,
                 "symbols_processed": len(stock_ids),
                 "hours_back": hours_back
             }

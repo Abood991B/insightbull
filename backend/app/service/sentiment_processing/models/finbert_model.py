@@ -58,7 +58,7 @@ class FinBERTModel(SentimentModel):
     - Neutral: 85.6% (ProsusAI) vs 91.8% (finbert-tone)
     
     Handles:
-    - Financial news articles (finnhub, marketaux, newsapi)
+    - Financial news articles (finnhub, newsapi)
     - Community discussions (hackernews)
     - Global news (gdelt)
     - Company announcements
@@ -99,10 +99,10 @@ class FinBERTModel(SentimentModel):
             description="ProsusAI/finbert sentiment analyzer - 88.3% accuracy on Financial PhraseBank",
             supported_sources=[
                 DataSource.FINNHUB,   # Financial news sources -> FinBERT-Tone
-                DataSource.MARKETAUX,
                 DataSource.NEWSAPI,
                 DataSource.GDELT,     # Global news from GDELT -> FinBERT-Tone
-                DataSource.HACKERNEWS # Community discussions -> FinBERT-Tone
+                DataSource.HACKERNEWS, # Community discussions -> FinBERT-Tone
+                DataSource.YFINANCE   # Yahoo Finance news -> FinBERT-Tone
             ],
             max_batch_size=16 if self.use_gpu else 8,  # Smaller batches for GPU memory
             avg_processing_time=150.0 if not self.use_gpu else 50.0  # CPU vs GPU timing
@@ -804,9 +804,10 @@ class EnsembleFinBERTModel(SentimentModel):
             description="Ensemble of multiple FinBERT models for robust financial sentiment analysis",
             supported_sources=[
                 DataSource.FINNHUB,
-                DataSource.MARKETAUX,
                 DataSource.NEWSAPI,
-                DataSource.GDELT      # Global news from GDELT -> FinBERT
+                DataSource.GDELT,      # Global news from GDELT -> FinBERT
+                DataSource.HACKERNEWS,
+                DataSource.YFINANCE    # Yahoo Finance news -> FinBERT
             ],
             max_batch_size=12 if self.use_gpu else 6,  # Smaller batches due to multiple models
             avg_processing_time=200.0 if not self.use_gpu else 75.0  # Slower due to ensemble
@@ -1103,7 +1104,7 @@ if __name__ == "__main__":
             TextInput("The company faces significant headwinds due to supply chain disruptions.", DataSource.NEWS),
             TextInput("Market conditions remain stable with moderate growth expected.", DataSource.NEWS),
             TextInput("Tesla stock surged after announcing breakthrough in battery technology.", DataSource.FINNHUB),
-            TextInput("Banking sector struggles amid rising interest rates and regulatory pressure.", DataSource.MARKETAUX)
+            TextInput("Banking sector struggles amid rising interest rates and regulatory pressure.", DataSource.NEWSAPI)
         ]
         
         print("Testing FinBERT model...")

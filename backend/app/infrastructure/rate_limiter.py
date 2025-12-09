@@ -167,16 +167,15 @@ class RateLimitHandler:
             max_retries=2              # Fewer retries to conserve quota
         ),
         
-        # Marketaux API - Free tier: 100 requests/day
-        # Supports batch requests (up to 10 symbols per request)
-        "marketaux": RateLimitConfig(
-            requests_per_minute=5,     # ~100/day = 4/hr, be conservative
-            requests_per_hour=50,
-            burst_limit=2,
+        # YFinance - No API key required, unlimited (rate limit via scraping etiquette)
+        "yfinance": RateLimitConfig(
+            requests_per_minute=30,    # Be respectful to Yahoo
+            requests_per_hour=500,
+            burst_limit=5,
             backoff_strategy=BackoffStrategy.EXPONENTIAL,
-            initial_delay=2.0,
-            max_delay=300.0,
-            max_retries=2
+            initial_delay=1.0,
+            max_delay=60.0,
+            max_retries=3
         )
     }
     
@@ -193,7 +192,7 @@ class RateLimitHandler:
         "gdelt": 300,        # 5 minutes (updates every 15 min)
         "finnhub": 600,      # 10 minutes (conserve quota)
         "newsapi": 1800,     # 30 minutes (very limited quota)
-        "marketaux": 1800    # 30 minutes (very limited quota)
+        "yfinance": 300      # 5 minutes (unlimited, but respectful)
     }
     
     # Concurrency limits per source
@@ -203,7 +202,7 @@ class RateLimitHandler:
         "gdelt": 3,         # 3 concurrent (be courteous)
         "finnhub": 3,       # 3 concurrent (moderate limit)
         "newsapi": 1,       # 1 concurrent (very limited)
-        "marketaux": 2      # 2 concurrent (limited but supports batching)
+        "yfinance": 3       # 3 concurrent (unlimited but polite)
     }
     
     # Optimal items per symbol for each source
@@ -213,7 +212,7 @@ class RateLimitHandler:
         "gdelt": 30,        # Returns up to 250/request, be selective
         "finnhub": 20,      # Company news is well-curated
         "newsapi": 10,      # Limited quota, quality over quantity
-        "marketaux": 15     # Moderate, supports batching
+        "yfinance": 15      # Returns ~10-15 articles per symbol
     }
     
     def __init__(self, custom_configs: Optional[Dict[str, RateLimitConfig]] = None):
@@ -788,12 +787,12 @@ class RateLimitHandler:
                 "delay_between_symbols": 5.0,
                 "max_concurrent": 1
             },
-            "marketaux": {
-                "mode": "batch",               # Supports batch requests
-                "batch_size": 10,              # Up to 10 symbols per request
-                "delay_between_batches": 3.0,
-                "delay_between_symbols": 0,    # Batched, no per-symbol delay
-                "max_concurrent": 2
+            "yfinance": {
+                "mode": "sequential",          # Per-symbol requests
+                "batch_size": 1,
+                "delay_between_batches": 1.0,
+                "delay_between_symbols": 0.5,
+                "max_concurrent": 3
             }
         }
         
@@ -806,7 +805,7 @@ class RateLimitHandler:
         })
         
         # Adjust based on number of symbols
-        if num_symbols > 15 and source in ["newsapi", "marketaux"]:
+        if num_symbols > 15 and source == "newsapi":
             # For many symbols with limited APIs, increase delays
             strategy["delay_between_batches"] *= 1.5
         

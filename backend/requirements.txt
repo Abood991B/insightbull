@@ -22,6 +22,7 @@ aiohttp==3.10.10
 praw==7.7.1
 finnhub-python==2.4.20
 newsapi-python==0.2.7
+yfinance>=0.2.50
 
 # Sentiment Analysis & NLP
 transformers==4.45.2

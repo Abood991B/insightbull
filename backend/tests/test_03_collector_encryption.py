@@ -41,7 +41,6 @@ async def test_data_collector_encryption():
         collectors_info = [
             ("HackerNews", collector.hackernews_collector),
             ("FinHub", collector.finnhub_collector),
-            ("MarketAux", collector.marketaux_collector),
             ("NewsAPI", collector.newsapi_collector)
         ]
         
@@ -53,7 +52,7 @@ async def test_data_collector_encryption():
             else:
                 print(f"   ⚠️  {name} collector: INACTIVE (no API key)")
         
-        print(f"\n   📊 Summary: {active_count}/4 collectors active")
+        print(f"\n   📊 Summary: {active_count}/3 collectors active")
         
         print("\n3. Testing SecureAPIKeyLoader integration...")
         
@@ -62,7 +61,7 @@ async def test_data_collector_encryption():
             print("   ✅ SecureAPIKeyLoader is integrated")
             
             # Test key retrieval (HackerNews has no API key - free and unlimited)
-            test_keys = ['FINNHUB_API_KEY', 'NEWSAPI_KEY', 'MARKETAUX_API_KEY']
+            test_keys = ['FINNHUB_API_KEY', 'NEWSAPI_KEY']
             for key_name in test_keys:
                 key_value = collector.secure_loader.get_decrypted_key(key_name)
                 if key_value:
@@ -86,7 +85,6 @@ async def test_data_collector_encryption():
         collection_methods = [
             ("HackerNews", collector._collect_hackernews_data),
             ("FinHub", collector._collect_finnhub_data),
-            ("MarketAux", collector._collect_marketaux_data),
             ("NewsAPI", collector._collect_newsapi_data)
         ]
         
@@ -108,7 +106,6 @@ async def test_data_collector_encryption():
         env_status = {
             'FINNHUB_API_KEY': bool(os.getenv('FINNHUB_API_KEY')),
             'NEWSAPI_KEY': bool(os.getenv('NEWSAPI_KEY')),
-            'MARKETAUX_API_KEY': bool(os.getenv('MARKETAUX_API_KEY')),
             'API_ENCRYPTION_KEY': bool(os.getenv('API_ENCRYPTION_KEY'))
         }
         
@@ -155,8 +152,7 @@ def show_detailed_collector_status():
     requirements = {
         'HackerNews': [],  # Free Algolia API - no credentials needed
         'FinHub': ['FINNHUB_API_KEY'],
-        'NewsAPI': ['NEWSAPI_KEY'],
-        'MarketAux': ['MARKETAUX_API_KEY']
+        'NewsAPI': ['NEWSAPI_KEY']
     }
     
     for collector_name, required_keys in requirements.items():

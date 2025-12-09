@@ -3,37 +3,53 @@ Logging Middleware
 ==================
 
 Custom middleware for request/response logging using structured logging.
+Implements smart filtering to reduce noise from high-frequency polling endpoints.
 """
 
 import time
 import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from typing import Callable
+from typing import Callable, Set
 
 
 logger = structlog.get_logger()
 
 
+# High-frequency endpoints that should not be logged on every request
+# These are polled frequently by the frontend and create excessive log noise
+QUIET_ENDPOINTS: Set[str] = {
+    "/api/admin/scheduler/events",      # Polled every 5 seconds
+    "/api/admin/scheduler/jobs",        # Polled every 30 seconds
+    "/api/stocks/market/status",        # Polled every 10 seconds
+    "/api/dashboard/overview",          # Auto-refresh
+    "/health",                          # Health checks
+}
+
+# Only log these endpoints if they return an error status code
+QUIET_SUCCESS_ONLY_ENDPOINTS: Set[str] = {
+    "/api/stocks/prices/latest",        # Price updates
+}
+
+
 class LoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware for logging HTTP requests and responses."""
+    """
+    Middleware for logging HTTP requests and responses.
+    
+    Implements smart filtering to reduce log noise:
+    - High-frequency polling endpoints are not logged unless they fail
+    - Successful responses on quiet endpoints are skipped
+    - Errors are always logged regardless of endpoint
+    """
     
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process request and log details."""
         start_time = time.time()
+        path = request.url.path
         
-        # Extract request information
-        request_info = {
-            "method": request.method,
-            "path": request.url.path,
-            "query_params": str(request.query_params),
-            "client_ip": request.client.host if request.client else "unknown",
-            "user_agent": request.headers.get("user-agent", "unknown"),
-            "request_id": id(request)  # Simple request ID
-        }
-        
-        # Log incoming request
-        logger.info("Request started", **request_info)
+        # Determine logging behavior for this endpoint
+        should_skip_logging = path in QUIET_ENDPOINTS
+        should_log_errors_only = path in QUIET_SUCCESS_ONLY_ENDPOINTS
         
         try:
             # Process request
@@ -42,16 +58,27 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             # Calculate processing time
             process_time = time.time() - start_time
             
-            # Log response
-            logger.info(
-                "Request completed",
-                **request_info,
-                status_code=response.status_code,
-                process_time_ms=round(process_time * 1000, 2)
+            # Add processing time header (always)
+            response.headers["X-Process-Time"] = str(process_time)
+            
+            # Determine if we should log this response
+            is_error = response.status_code >= 400
+            should_log = (
+                is_error or  # Always log errors
+                (not should_skip_logging and not should_log_errors_only) or  # Normal endpoints
+                (should_log_errors_only and is_error)  # Error-only endpoints with error
             )
             
-            # Add processing time header
-            response.headers["X-Process-Time"] = str(process_time)
+            if should_log:
+                log_level = logger.warning if response.status_code >= 400 else logger.info
+                log_level(
+                    "HTTP",
+                    method=request.method,
+                    path=path,
+                    status=response.status_code,
+                    duration_ms=round(process_time * 1000, 2),
+                    client=request.client.host if request.client else "unknown"
+                )
             
             return response
             
@@ -59,12 +86,14 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             # Calculate processing time for failed requests
             process_time = time.time() - start_time
             
-            # Log error
+            # Always log errors
             logger.error(
-                "Request failed",
-                **request_info,
+                "HTTP error",
+                method=request.method,
+                path=path,
                 exception=str(exc),
-                process_time_ms=round(process_time * 1000, 2),
+                duration_ms=round(process_time * 1000, 2),
+                client=request.client.host if request.client else "unknown",
                 exc_info=True
             )
             

@@ -22,7 +22,7 @@ Phase 5 Data Collection Pipeline - Comprehensive Test Suite
         )===================================================
 
 This test file validates the complete Phase 5 implementation including:
-- Multi-source data collection (HackerNews, FinHub, NewsAPI, MarketAux)
+- Multi-source data collection (HackerNews, FinHub, NewsAPI, GDELT)
 - API key management and security
 - Data pipeline orchestration
 - Error handling and resilience
@@ -63,7 +63,6 @@ try:
     from app.infrastructure.collectors.hackernews_collector import HackerNewsCollector
     from app.infrastructure.collectors.finnhub_collector import FinHubCollector
     from app.infrastructure.collectors.newsapi_collector import NewsAPICollector
-    from app.infrastructure.collectors.marketaux_collector import MarketauxCollector
     
     IMPORTS_AVAILABLE = True
 except ImportError as e:
@@ -94,8 +93,7 @@ class Phase5TestSuite:
         self.test_config = PipelineConfig(
             symbols=self.test_symbols,
             date_range=DateRange.last_days(2),  # Reduced from 5 to 2 days
-            max_items_per_symbol=2,  # Reduced from 5 to 2 items
-            include_marketaux=False  # Keep disabled due to API quota limits
+            max_items_per_symbol=2  # Reduced from 5 to 2 items
         )
     
     def log_test(self, test_name: str, success: bool, details: Dict[str, Any] = None):
@@ -125,8 +123,7 @@ class Phase5TestSuite:
         # Note: HackerNews uses free Algolia API (no key required)
         required_keys = {
             'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY'),
-            'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY'),
-            'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY')
+            'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY')
         }
         
         all_keys_valid = True
@@ -154,9 +151,6 @@ class Phase5TestSuite:
             }),
             ('NewsAPI', NewsAPICollector, {
                 'api_key': os.getenv('NEWSAPI_KEY')
-            }),
-            ('MarketAux', MarketauxCollector, {
-                'api_key': os.getenv('MARKETAUX_API_KEY')
             })
         ]
         

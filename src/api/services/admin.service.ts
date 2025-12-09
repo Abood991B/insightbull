@@ -116,10 +116,10 @@ export interface APIConfiguration {
       error?: string | null;
       enabled?: boolean;
     };
-    marketaux: {
+    yfinance?: {
       status: 'active' | 'inactive' | 'error' | 'unknown';
       last_test: string | null;
-      api_key: string;
+      requires_api_key: boolean;
       error?: string | null;
       enabled?: boolean;
     };
@@ -180,7 +180,7 @@ export interface CollectorToggleResponse {
 }
 
 export interface APIKeyUpdate {
-  service: 'hackernews' | 'finnhub' | 'newsapi' | 'marketaux' | 'gemini';
+  service: 'hackernews' | 'finnhub' | 'newsapi' | 'gemini';
   keys: Record<string, string>;
 }
 
@@ -382,6 +382,26 @@ export interface ScheduledJob {
   error_count: number;
   last_error: string | null;
   enabled: boolean;
+  today_run_count?: number;
+  last_duration_seconds?: number | null;
+}
+
+export interface JobEvent {
+  type: 'started' | 'completed' | 'failed';
+  job_name: string;
+  timestamp: string;
+  details: {
+    job_id?: string;
+    duration_seconds?: number;
+    items_collected?: number;
+    items_analyzed?: number;
+    error?: string;
+  };
+}
+
+export interface JobEventsResponse {
+  events: JobEvent[];
+  count: number;
 }
 
 // Sentiment Engine Metrics
@@ -428,6 +448,31 @@ export interface SchedulerResponse {
   jobs: ScheduledJob[];
   total_jobs: number;
   scheduler_running: boolean;
+}
+
+export interface RunHistoryEntry {
+  timestamp: string;
+  status: 'completed' | 'failed' | 'exception';
+  duration_seconds: number;
+  items_collected?: number;
+  items_analyzed?: number;
+  error?: string;
+}
+
+export interface SchedulerHistoryResponse {
+  history: {
+    [date: string]: {
+      [jobName: string]: RunHistoryEntry[];
+    };
+  };
+  summary: {
+    total_runs: number;
+    successful_runs: number;
+    failed_runs: number;
+    total_duration_seconds: number;
+    avg_duration_seconds: number;
+    days_covered: number;
+  };
 }
 
 export interface JobConfig {
@@ -985,6 +1030,23 @@ class AdminAPIService {
     return handleApiResponse(response);
   }
 
+  async getJobEvents(since?: string): Promise<JobEventsResponse> {
+    const url = since 
+      ? `${API_BASE_URL}/api/admin/scheduler/events?since=${encodeURIComponent(since)}`
+      : `${API_BASE_URL}/api/admin/scheduler/events`;
+    const response = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
+  async getSchedulerHistory(days: number = 7): Promise<SchedulerHistoryResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/admin/scheduler/history?days=${days}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  }
+
   async createScheduledJob(jobConfig: JobConfig): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/api/admin/scheduler/jobs`, {
       method: 'POST',
@@ -1116,6 +1178,41 @@ class AdminAPIService {
       headers: getAuthHeaders(),
     });
     return handleApiResponse(response);
+  }
+
+  async exportTableToCSV(tableName: string, limit: number = 10000): Promise<void> {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+    });
+    
+    const response = await fetch(`${API_BASE_URL}/api/admin/database/tables/${tableName}/export?${params}`, {
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to export table');
+    }
+    
+    // Get filename from Content-Disposition header or use default
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = `${tableName}_export.csv`;
+    if (contentDisposition) {
+      const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+      if (matches && matches[1]) {
+        filename = matches[1].replace(/['"]/g, '');
+      }
+    }
+    
+    // Create blob and download
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   }
 
   // Database cleanup utilities removed - using unified Stock table structure

@@ -36,8 +36,7 @@ class APIEncryptionTester:
     def __init__(self):
         self.test_api_keys = {
             'FINNHUB_API_KEY': 'test_finnhub_key_abcdef',
-            'NEWSAPI_KEY': 'test_newsapi_key_ghijkl',
-            'MARKETAUX_API_KEY': 'test_marketaux_key_mnopqr'
+            'NEWSAPI_KEY': 'test_newsapi_key_ghijkl'
         }
         self.results = []
     
@@ -211,7 +210,7 @@ class APIEncryptionTester:
             # Count active collectors
             active_collectors = sum(1 for collector_attr in [
                 'hackernews_collector', 'finnhub_collector', 
-                'marketaux_collector', 'newsapi_collector'
+                'newsapi_collector'
             ] if getattr(collector, collector_attr) is not None)
             
             self.log_test(
@@ -222,7 +221,7 @@ class APIEncryptionTester:
             
             # Test collector status
             collectors_status = {}
-            for collector_name in ['hackernews_collector', 'finnhub_collector', 'marketaux_collector', 'newsapi_collector']:
+            for collector_name in ['hackernews_collector', 'finnhub_collector', 'newsapi_collector']:
                 collector_obj = getattr(collector, collector_name)
                 collectors_status[collector_name] = collector_obj is not None
             
@@ -244,7 +243,6 @@ class APIEncryptionTester:
             current_keys = {
                 'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY'),
                 'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY'),
-                'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY'),
                 'API_ENCRYPTION_KEY': os.getenv('API_ENCRYPTION_KEY')
             }
             

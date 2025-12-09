@@ -307,12 +307,11 @@ class SecureAPIKeyLoader:
         if self._cache:
             return self._cache
         
-        # Load keys from environment first (HackerNews needs no API key)
+        # Load keys from environment first (HackerNews and YFinance need no API key)
         encrypted_keys = {
             'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
             'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
             'NEWS_API_KEY': os.getenv('NEWS_API_KEY', ''),  # Alternative name
-            'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', ''),
             'GEMINI_API_KEY': os.getenv('GEMINI_API_KEY', '')  # AI verification
         }
         
@@ -327,7 +326,6 @@ class SecureAPIKeyLoader:
         mapped_keys = {
             'finnhub_api_key': decrypted_keys.get('FINNHUB_API_KEY', ''),
             'news_api_key': decrypted_keys.get('NEWSAPI_KEY', '') or decrypted_keys.get('NEWS_API_KEY', ''),
-            'marketaux_api_key': decrypted_keys.get('MARKETAUX_API_KEY', ''),
             'gemini_api_key': decrypted_keys.get('GEMINI_API_KEY', '')
         }
         
@@ -364,11 +362,10 @@ def create_encrypted_env_template():
     print("API Key Encryption Utility")
     print("=" * 40)
     
-    # Load current keys (HackerNews needs no API key)
+    # Load current keys (HackerNews and YFinance need no API key)
     current_keys = {
         'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
         'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
-        'MARKETAUX_API_KEY': os.getenv('MARKETAUX_API_KEY', ''),
         'GEMINI_API_KEY': os.getenv('GEMINI_API_KEY', '')  # AI verification
     }
     

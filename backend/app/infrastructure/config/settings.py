@@ -27,10 +27,10 @@ class Settings(BaseSettings):
     
     # API Keys
     finnhub_api_key: str = ""
-    marketaux_api_key: str = ""
     news_api_key: str = ""
     
     # HackerNews API - No API key required (free and unlimited)
+    # YFinance - No API key required (free and unlimited)
     
     # Application Settings
     app_name: str = "Insight Stock Dashboard"

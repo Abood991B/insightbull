@@ -7,7 +7,7 @@ in the FYP Implementation Plan Layer 2: Business Layer.
 Implements the DataCollector component that orchestrates:
 - HackerNews community data collection (free, no API key required)
 - GDELT global news collection (free, no API key required)
-- Financial news from FinHub, Marketaux, NewsAPI
+- Financial news from FinHub, NewsAPI
 - Stock price data from Yahoo Finance
 - Rate limiting and error handling
 - Data preprocessing coordination
@@ -26,9 +26,9 @@ from ..utils.timezone import utc_now, to_naive_utc
 from app.infrastructure.collectors import (
     HackerNewsCollector,
     FinHubCollector, 
-    MarketauxCollector,
     NewsAPICollector,
-    GDELTCollector
+    GDELTCollector,
+    YFinanceCollector
 )
 from app.infrastructure.rate_limiter import RateLimitHandler
 from app.infrastructure.log_system import get_logger
@@ -96,18 +96,6 @@ class DataCollector:
             self.finnhub_collector = None
             self.logger.warning("FinHub collector skipped - API key not configured", component="data_collector")
         
-        # MarketAux collector
-        marketaux_key = api_keys.get('marketaux_api_key', '')
-        if marketaux_key:
-            self.marketaux_collector = MarketauxCollector(
-                api_key=marketaux_key,
-                rate_limiter=self.rate_limiter
-            )
-            self.logger.info("MarketAux collector configured", component="data_collector")
-        else:
-            self.marketaux_collector = None
-            self.logger.warning("MarketAux collector skipped - API key not configured", component="data_collector")
-        
         # NewsAPI collector
         newsapi_key = api_keys.get('news_api_key', '')
         if newsapi_key:
@@ -124,11 +112,15 @@ class DataCollector:
         self.gdelt_collector = GDELTCollector(rate_limiter=self.rate_limiter)
         self.logger.info("GDELT collector configured (no API key required)", component="data_collector")
         
+        # YFinance collector - no API keys required (free and unlimited)
+        self.yfinance_collector = YFinanceCollector(rate_limiter=self.rate_limiter)
+        self.logger.info("YFinance collector configured (no API key required)", component="data_collector")
+        
         # Count active collectors
         active_collectors = sum(1 for collector in [
             self.hackernews_collector, self.finnhub_collector, 
-            self.marketaux_collector, self.newsapi_collector,
-            self.gdelt_collector
+            self.newsapi_collector,
+            self.gdelt_collector, self.yfinance_collector
         ] if collector is not None)
         
         self.logger.info(f"Auto-configured {active_collectors} collectors with encrypted API keys")
@@ -151,7 +143,7 @@ class DataCollector:
         job = CollectionJob(
             job_id=job_id,
             symbols=symbols,
-            sources=["hackernews", "finnhub", "marketaux", "newsapi", "gdelt"],
+            sources=["hackernews", "finnhub", "newsapi", "gdelt", "yfinance"],
             date_range=date_range,
             started_at=utc_now()
         )
@@ -170,15 +162,15 @@ class DataCollector:
             collection_tasks = [
                 self._collect_hackernews_data(symbols, date_range),
                 self._collect_finnhub_data(symbols, date_range),
-                self._collect_marketaux_data(symbols, date_range),
                 self._collect_newsapi_data(symbols, date_range),
-                self._collect_gdelt_data(symbols, date_range)
+                self._collect_gdelt_data(symbols, date_range),
+                self._collect_yfinance_data(symbols, date_range)
             ]
             
             results = await asyncio.gather(*collection_tasks, return_exceptions=True)
             
             # Process results
-            source_names = ["hackernews", "finnhub", "marketaux", "newsapi", "gdelt"]
+            source_names = ["hackernews", "finnhub", "newsapi", "gdelt", "yfinance"]
             for i, result in enumerate(results):
                 source = source_names[i]
                 if isinstance(result, Exception):
@@ -312,50 +304,6 @@ class DataCollector:
             self.logger.error(f"Finnhub collection failed: {str(e)}")
             raise
     
-    async def _collect_marketaux_data(self, symbols: List[str], 
-                                     date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
-        """Collect Marketaux news data"""
-        if not self.marketaux_collector:
-            return []
-        
-        try:
-            await self.rate_limiter.acquire("marketaux")
-            
-            # Import required classes
-            from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
-            
-            # Create proper configuration
-            date_range_obj = DateRange(
-                start_date=date_range['start'],
-                end_date=date_range['end']
-            )
-            config = CollectionConfig(
-                symbols=symbols,
-                date_range=date_range_obj,
-                max_items_per_symbol=25
-            )
-            
-            # Use the standardized collect_data method
-            result = await self.marketaux_collector.collect_data(config)
-            
-            # Convert RawData objects to dictionaries
-            return [
-                {
-                    'source': data.source.value,
-                    'content_type': data.content_type,
-                    'text': data.text,
-                    'timestamp': data.timestamp,
-                    'stock_symbol': data.stock_symbol,
-                    'url': data.url,
-                    'metadata': data.metadata or {}
-                }
-                for data in result.data
-            ] if result.success else []
-            
-        except Exception as e:
-            self.logger.error(f"Marketaux collection failed: {str(e)}")
-            raise
-    
     async def _collect_newsapi_data(self, symbols: List[str], 
                                    date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
         """Collect NewsAPI data"""
@@ -442,6 +390,50 @@ class DataCollector:
             
         except Exception as e:
             self.logger.error(f"GDELT collection failed: {str(e)}")
+            raise
+    
+    async def _collect_yfinance_data(self, symbols: List[str], 
+                                     date_range: Dict[str, datetime]) -> List[Dict[str, Any]]:
+        """Collect Yahoo Finance news data"""
+        if not self.yfinance_collector:
+            return []
+        
+        try:
+            await self.rate_limiter.acquire("yfinance")
+            
+            # Import required classes
+            from app.infrastructure.collectors.base_collector import CollectionConfig, DateRange
+            
+            # Create proper configuration
+            date_range_obj = DateRange(
+                start_date=date_range['start'],
+                end_date=date_range['end']
+            )
+            config = CollectionConfig(
+                symbols=symbols,
+                date_range=date_range_obj,
+                max_items_per_symbol=15  # YFinance typically returns 10-15 articles
+            )
+            
+            # Use the standardized collect_data method
+            result = await self.yfinance_collector.collect_data(config)
+            
+            # Convert RawData objects to dictionaries
+            return [
+                {
+                    'source': data.source.value,
+                    'content_type': data.content_type,
+                    'text': data.text,
+                    'timestamp': data.timestamp,
+                    'stock_symbol': data.stock_symbol,
+                    'url': data.url,
+                    'metadata': data.metadata or {}
+                }
+                for data in result.data
+            ] if result.success else []
+            
+        except Exception as e:
+            self.logger.error(f"YFinance collection failed: {str(e)}")
             raise
     
     def get_job_status(self, job_id: str) -> Optional[CollectionJob]:

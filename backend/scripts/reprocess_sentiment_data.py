@@ -109,7 +109,6 @@ class SentimentReprocessor:
             "hackernews": DataSource.HACKERNEWS,
             "finnhub": DataSource.FINNHUB,
             "newsapi": DataSource.NEWSAPI,
-            "marketaux": DataSource.MARKETAUX,
             "gdelt": DataSource.GDELT,
             "reddit": DataSource.HACKERNEWS,  # Fallback
         }

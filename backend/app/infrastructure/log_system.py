@@ -208,7 +208,7 @@ class LogSystem:
             "HackerNews collector configured",
             "FinHub collector configured", 
             "NewsAPI collector configured",
-            "MarketAux collector configured",
+            "YFinance collector configured",
             "collector configured"
         ]
         
@@ -291,8 +291,8 @@ class LogSystem:
                     component = 'finnhub_collector'
                 elif 'newsapi_collector' in module_name:
                     component = 'newsapi_collector'
-                elif 'marketaux_collector' in module_name:
-                    component = 'marketaux_collector'
+                elif 'yfinance_collector' in module_name:
+                    component = 'yfinance_collector'
                 elif 'collector_config' in module_name:
                     component = 'collector_config'
                 elif 'pipeline' in module_name:

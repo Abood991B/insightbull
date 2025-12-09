@@ -17,7 +17,7 @@ The backend implements a clean 5-layer architecture:
 ## Features
 
 - Real-time sentiment analysis using FinBERT and VADER models
-- Multi-source data collection (Reddit, FinHub, NewsAPI, Marketaux)
+- Multi-source data collection (HackerNews, FinHub, NewsAPI, GDELT)
 - RESTful API with automatic OpenAPI documentation
 - Async/await support for high performance
 - Structured logging with correlation IDs
@@ -131,7 +131,6 @@ Key environment variables:
 
 - `DATABASE_URL`: PostgreSQL connection string
 - `FINNHUB_API_KEY`: FinHub API key for stock data
-- `MARKETAUX_API_KEY`: Marketaux API key for news
 - `NEWS_API_KEY`: NewsAPI key for news articles
 - `REDDIT_CLIENT_ID`: Reddit API client ID
 - `REDDIT_CLIENT_SECRET`: Reddit API client secret

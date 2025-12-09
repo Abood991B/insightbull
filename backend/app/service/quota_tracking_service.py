@@ -7,7 +7,7 @@ Automatically disables sources when quotas are near exhaustion.
 
 Supports:
 - NewsAPI: 100 requests/day
-- Marketaux: 100 requests/day
+- YFinance: Unlimited (tracked for monitoring)
 - Any other sources with daily quotas
 
 Features:
@@ -68,16 +68,17 @@ DEFAULT_QUOTAS: Dict[str, Dict[str, Any]] = {
         "warning_threshold": 0.7,      # Warn at 70%
         "auto_disable_threshold": 0.9   # Disable at 90%
     },
-    "marketaux": {
-        "daily_limit": 100,
-        "warning_threshold": 0.7,
-        "auto_disable_threshold": 0.9
-    },
     # Free APIs with high limits - track but don't auto-disable
     "finnhub": {
         "daily_limit": 3600,  # 60/min * 60 min = 3600/hr, but realistically ~2000/day
         "warning_threshold": 0.8,
         "auto_disable_threshold": 0.95  # Higher threshold, rarely hit
+    },
+    # YFinance - unlimited but track for monitoring
+    "yfinance": {
+        "daily_limit": 10000,  # Soft limit for monitoring
+        "warning_threshold": 0.9,
+        "auto_disable_threshold": 0.99
     }
 }
 
@@ -249,7 +250,7 @@ class QuotaTrackingService:
         Record API usage for a source.
         
         Args:
-            source: Source name (newsapi, marketaux, etc.)
+            source: Source name (newsapi, finnhub, yfinance, etc.)
             requests_made: Number of requests to record
             
         Returns:
@@ -517,11 +518,7 @@ class QuotaTrackingService:
             
             # Calculate expected requests
             # Most sources: 1 request per symbol per run
-            # Marketaux: batched (10 symbols per request)
-            if source == "marketaux":
-                requests_per_run = (num_symbols + 9) // 10  # Ceil division
-            else:
-                requests_per_run = num_symbols
+            requests_per_run = num_symbols
             
             total_daily = requests_per_run * runs_per_day
             remaining = daily_limit - total_daily

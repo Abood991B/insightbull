@@ -26,7 +26,7 @@ from ...data_access.repositories.stock_repository import StockRepository
 from ..deps import get_db_session
 from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/admin/pipeline", tags=["Admin Pipeline Management"])
+router = APIRouter(prefix="/api/admin/pipeline", tags=["Admin Pipeline Management"])
 
 # Global pipeline instance (in production, this would be dependency injected)
 _pipeline_instance: Optional[DataPipeline] = None
@@ -41,7 +41,6 @@ class PipelineConfigRequest(BaseModel):
     include_hackernews: bool = Field(default=True, description="Include Hacker News data collection")
     include_finnhub: bool = Field(default=True, description="Include FinHub data collection") 
     include_newsapi: bool = Field(default=True, description="Include NewsAPI data collection")
-    include_marketaux: bool = Field(default=True, description="Include MarketAux data collection")
     include_comments: bool = Field(default=True, description="Include Hacker News comments")
     parallel_collectors: bool = Field(default=True, description="Run collectors in parallel")
 
@@ -61,8 +60,7 @@ class ProcessingConfigRequest(BaseModel):
 class APIKeysRequest(BaseModel):
     """Request model for API keys configuration"""
     finnhub: Optional[str] = Field(default=None, description="FinHub API key")
-    newsapi: Optional[str] = Field(default=None, description="NewsAPI key") 
-    marketaux: Optional[str] = Field(default=None, description="MarketAux API key")
+    newsapi: Optional[str] = Field(default=None, description="NewsAPI key")
 
 
 class PipelineStatusResponse(BaseModel):
@@ -124,9 +122,6 @@ async def configure_pipeline(
         if api_keys.newsapi:
             api_keys_dict["newsapi"] = api_keys.newsapi
         
-        if api_keys.marketaux:
-            api_keys_dict["marketaux"] = api_keys.marketaux
-        
         # Configure collectors
         pipeline.configure_collectors(api_keys_dict)
         
@@ -187,7 +182,6 @@ async def run_pipeline(
             include_hackernews=config.include_hackernews,
             include_finnhub=config.include_finnhub,
             include_newsapi=config.include_newsapi,
-            include_marketaux=config.include_marketaux,
             include_comments=config.include_comments,
             parallel_collectors=config.parallel_collectors,
             processing_config=proc_config

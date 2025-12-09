@@ -27,8 +27,8 @@ class DataSource(Enum):
     HACKERNEWS = "hackernews"
     FINNHUB = "finnhub"
     NEWSAPI = "newsapi"
-    MARKETAUX = "marketaux"
     GDELT = "gdelt"
+    YFINANCE = "yfinance"
 
 
 @dataclass

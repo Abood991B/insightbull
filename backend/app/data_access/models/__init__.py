@@ -63,6 +63,7 @@ class SentimentData(Base):
     sentiment_label = Column(String(20), nullable=False, index=True, default="Neutral")  # Positive, Negative, Neutral
     model_used = Column(String(50), nullable=True)  # FinBERT (ProsusAI/finbert) - nullable for migration compatibility
     raw_text = Column(Text)
+    stock_mentions = Column(JSON)  # Array of stock symbols mentioned in the content (e.g., ["AAPL", "MSFT"])
     additional_metadata = Column(JSON)  # Additional metadata: source_url, content_type, original_timestamp, label
     content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection
     created_at = Column(DateTime(timezone=True), server_default=func.now())  # When sentiment analysis was performed

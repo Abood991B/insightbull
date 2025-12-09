@@ -78,10 +78,10 @@ class DistilBERTFinancialModel(SentimentModel):
             description="Lightweight ensemble model for confidence voting (82M params, 60% faster)",
             supported_sources=[
                 DataSource.FINNHUB,
-                DataSource.MARKETAUX,
                 DataSource.NEWSAPI,
                 DataSource.GDELT,
-                DataSource.HACKERNEWS
+                DataSource.HACKERNEWS,
+                DataSource.YFINANCE
             ],
             max_batch_size=32 if self.use_gpu else 16,  # Faster than FinBERT
             avg_processing_time=80.0 if not self.use_gpu else 30.0

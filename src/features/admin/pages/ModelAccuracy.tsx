@@ -19,8 +19,8 @@ const SOURCE_CONFIG: Record<string, { label: string; icon: React.ReactNode; colo
   hackernews: { label: 'HackerNews', icon: <MessageSquare className="h-4 w-4" />, color: 'orange' },
   finnhub: { label: 'Finnhub', icon: <TrendingUp className="h-4 w-4" />, color: 'blue' },
   newsapi: { label: 'NewsAPI', icon: <Newspaper className="h-4 w-4" />, color: 'purple' },
-  marketaux: { label: 'Marketaux', icon: <BarChart3 className="h-4 w-4" />, color: 'green' },
   gdelt: { label: 'GDELT', icon: <Globe className="h-4 w-4" />, color: 'indigo' },
+  yfinance: { label: 'Yahoo Finance', icon: <TrendingUp className="h-4 w-4" />, color: 'violet' },
 };
 
 const ModelAccuracy = () => {

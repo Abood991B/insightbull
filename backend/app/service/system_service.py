@@ -151,13 +151,13 @@ class SystemService:
                 key_loader = SecureAPIKeyLoader()
                 keys = key_loader.load_api_keys()
                 
-                # Check if at least some API keys are configured (HackerNews needs no key)
+                # Check if at least some API keys are configured (HackerNews and YFinance need no key)
                 has_hackernews = True  # Always available - no API key needed
+                has_yfinance = True  # Always available - no API key needed
                 has_finnhub = bool(keys.get('finnhub_api_key'))
                 has_news = bool(keys.get('news_api_key'))
-                has_marketaux = bool(keys.get('marketaux_api_key'))
                 
-                if has_hackernews or has_finnhub or has_news or has_marketaux:
+                if has_hackernews or has_yfinance or has_finnhub or has_news:
                     services["data_collection"] = "healthy"
                 else:
                     services["data_collection"] = "unhealthy"

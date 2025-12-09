@@ -145,7 +145,6 @@ class TestSentimentAnalysis:
         assert DataSource.HACKERNEWS.value == "hackernews"
         assert DataSource.FINNHUB.value == "finnhub"
         assert DataSource.NEWSAPI.value == "newsapi"
-        assert DataSource.MARKETAUX.value == "marketaux"
     
     def test_engine_config(self):
         """Test engine configuration."""
@@ -168,7 +167,7 @@ def create_sample_texts():
     return [
         TextInput("Apple reports record quarterly revenue", DataSource.NEWSAPI, "AAPL"),
         TextInput("Tesla faces production challenges", DataSource.FINNHUB, "TSLA"),
-        TextInput("Microsoft cloud growth accelerates", DataSource.MARKETAUX, "MSFT"),
+        TextInput("Microsoft cloud growth accelerates", DataSource.NEWSAPI, "MSFT"),
         TextInput("NVIDIA demand exceeds expectations", DataSource.NEWSAPI, "NVDA")
     ]
 

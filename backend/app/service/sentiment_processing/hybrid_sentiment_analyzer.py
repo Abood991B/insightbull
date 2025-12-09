@@ -23,6 +23,7 @@ Integration:
 
 import os
 import json
+import re
 import torch
 import asyncio
 from typing import Dict, List, Tuple, Optional
@@ -64,6 +65,80 @@ except ImportError:
 # AI Model Configuration - Change these to switch models
 AI_MODEL_ID = "gemma-3-27b-it"  # Model ID for Google AI Studio API
 AI_MODEL_DISPLAY_NAME = "Gemma 3 27B"  # Human-readable name for UI
+
+# Minimum text length for reliable sentiment analysis
+MIN_TEXT_LENGTH = 20  # Very short texts often get low confidence
+
+
+def preprocess_text_for_sentiment(text: str) -> str:
+    """
+    Preprocess text for sentiment analysis to improve confidence scores.
+    
+    Cleaning steps:
+    1. Remove URLs (distracting for FinBERT)
+    2. Remove excessive whitespace
+    3. Remove special characters that don't carry sentiment
+    4. Normalize common financial abbreviations
+    5. Remove repeated punctuation
+    
+    Args:
+        text: Raw text input
+        
+    Returns:
+        Cleaned text optimized for FinBERT
+    """
+    if not text:
+        return ""
+    
+    # 1. Remove URLs
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)
+    
+    # 2. Remove HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # 3. Remove email addresses
+    text = re.sub(r'\S+@\S+', '', text)
+    
+    # 4. Remove stock ticker formatting noise (keep the ticker)
+    text = re.sub(r'\$([A-Z]{1,5})\b', r'\1', text)  # $AAPL -> AAPL
+    
+    # 5. Normalize repeated punctuation
+    text = re.sub(r'([!?.]){2,}', r'\1', text)  # !!! -> !
+    
+    # 6. Remove special characters (keep alphanumeric, spaces, basic punctuation)
+    text = re.sub(r'[^\w\s.,!?\'"-]', ' ', text)
+    
+    # 7. Normalize whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # 8. Truncate if too long (FinBERT works best with 128 tokens ~ 500 chars)
+    if len(text) > 600:
+        text = text[:600]
+    
+    return text
+
+
+def is_text_analyzable(text: str) -> Tuple[bool, str]:
+    """
+    Check if text is suitable for sentiment analysis.
+    
+    Returns:
+        Tuple of (is_analyzable, reason)
+    """
+    if not text:
+        return False, "Empty text"
+    
+    cleaned = preprocess_text_for_sentiment(text)
+    
+    if len(cleaned) < MIN_TEXT_LENGTH:
+        return False, f"Text too short ({len(cleaned)} chars < {MIN_TEXT_LENGTH})"
+    
+    # Check if mostly numbers/symbols (not useful for sentiment)
+    alpha_ratio = sum(c.isalpha() for c in cleaned) / max(len(cleaned), 1)
+    if alpha_ratio < 0.5:
+        return False, f"Text is mostly non-alphabetic ({alpha_ratio:.0%})"
+    
+    return True, "OK"
 
 
 class VerificationMode(Enum):
@@ -168,9 +243,10 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
         model_name: str = "ProsusAI/finbert",
         gemini_api_key: Optional[str] = None,
         verification_mode: VerificationMode = VerificationMode.LOW_CONFIDENCE_AND_NEUTRAL,
-        confidence_threshold: float = 0.85,
+        confidence_threshold: float = 0.90,  # Raised from 0.85 - AI verify below 90%
+        min_confidence_threshold: float = 0.80,  # NEW: Discard predictions below this
         ai_enabled: bool = True,
-        ensemble_enabled: bool = True,  # NEW: Enable DistilBERT ensemble
+        ensemble_enabled: bool = True,  # Enable DistilBERT ensemble
     ):
         """
         Initialize the AI-verified sentiment analyzer.
@@ -179,13 +255,15 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
             model_name: HuggingFace model for ML predictions
             gemini_api_key: Google Gemini API key (auto-loads from SecureAPIKeyLoader if None)
             verification_mode: When to use AI verification
-            confidence_threshold: Below this, send to AI for verification
+            confidence_threshold: Below this, send to AI for verification (default 0.90)
+            min_confidence_threshold: Discard predictions below this (default 0.80)
             ai_enabled: Master switch to enable/disable AI verification
             ensemble_enabled: Enable DistilBERT ensemble voting (default: True)
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.verification_mode = verification_mode
         self.confidence_threshold = confidence_threshold
+        self.min_confidence_threshold = min_confidence_threshold  # NEW: Minimum threshold
         self.ai_enabled = ai_enabled
         self.ensemble_enabled = ensemble_enabled
         self._stats = AIVerificationStats()
@@ -333,8 +411,11 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
     
     def _get_ml_prediction(self, text: str) -> Tuple[str, float, Dict[str, float]]:
         """Get prediction from the primary ML model (FinBERT)."""
+        # Preprocess text for better confidence
+        cleaned_text = preprocess_text_for_sentiment(text)
+        
         encodings = self.tokenizer(
-            text,
+            cleaned_text,
             truncation=True,
             padding=True,
             max_length=128,
@@ -385,9 +466,10 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
                 self._ensemble_initialized = True
                 logger.info("DistilBERT ensemble model loaded successfully")
             
-            # Get prediction
+            # Get prediction (use preprocessed text)
+            cleaned_text = preprocess_text_for_sentiment(text)
             encodings = self.ensemble_tokenizer(
-                text,
+                cleaned_text,
                 truncation=True,
                 padding=True,
                 max_length=128,
@@ -864,6 +946,32 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
                 score = min(score, -0.1)  # Ensure negative
             else:
                 score = 0.0
+        
+        # Step 4: Check minimum confidence threshold
+        # If final confidence is below minimum, return None to signal discard
+        if final_confidence < self.min_confidence_threshold:
+            logger.debug(
+                "Discarding low-confidence prediction",
+                extra={
+                    "confidence": final_confidence,
+                    "threshold": self.min_confidence_threshold,
+                    "label": final_label,
+                    "text_preview": text[:50]
+                }
+            )
+            # Return a result marked for discard (confidence set to 0)
+            return SentimentResult(
+                text=text,
+                label=final_label,
+                score=score,
+                confidence=0.0,  # Signal to discard
+                ml_label=ml_label,
+                ml_confidence=ml_confidence,
+                ai_verified=bool(ai_label),
+                ai_label=ai_label,
+                ai_reasoning=f"Discarded: confidence {final_confidence:.1%} < {self.min_confidence_threshold:.0%} threshold",
+                method="discarded (low confidence)"
+            )
         
         return SentimentResult(
             text=text,

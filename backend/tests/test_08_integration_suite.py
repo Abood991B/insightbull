@@ -182,8 +182,7 @@ class TestPhase9PipelineTesting:
             max_items_per_symbol=5,
             include_hackernews=True,
             include_finnhub=True,
-            include_newsapi=True,
-            include_marketaux=True
+            include_newsapi=True
         )
         
         # Execute pipeline
@@ -256,8 +255,7 @@ class TestPhase9PipelineTesting:
             max_items_per_symbol=3,  # Small number for performance test
             include_hackernews=True,
             include_finnhub=False,  # Disable some collectors for speed
-            include_newsapi=False,
-            include_marketaux=False
+            include_newsapi=False
         )
         
         # Measure execution time
@@ -288,8 +286,7 @@ class TestPhase9PipelineTesting:
                 max_items_per_symbol=1,
                 include_hackernews=False,
                 include_finnhub=False,
-                include_newsapi=False,
-                include_marketaux=False
+                include_newsapi=False
             )
             assert False, "Should have raised ValueError for invalid date range"
         except ValueError as e:
@@ -306,8 +303,7 @@ class TestPhase9PipelineTesting:
                 max_items_per_symbol=0,
                 include_hackernews=False,
                 include_finnhub=False,
-                include_newsapi=False,
-                include_marketaux=False
+                include_newsapi=False
             )
             assert False, "Should have raised ValueError for empty symbols list"
         except ValueError as e:

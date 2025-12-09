@@ -121,7 +121,6 @@ async def trigger_manual_collection(
             include_hackernews=True,
             include_finnhub=True,
             include_newsapi=True,
-            include_marketaux=True,
             parallel_collectors=True
         )
         
@@ -428,7 +427,7 @@ async def get_sentiment_engine_metrics(
                     "session_count": finbert_usage,
                     "database_count": finbert_count or 0,
                     "percentage_of_total": 100.0,
-                    "used_for": ["All Sources: HackerNews, FinHub, Marketaux, NewsAPI, GDELT"],
+                    "used_for": ["All Sources: HackerNews, FinHub, NewsAPI, GDELT"],
                     "model_type": "FinBERT-Tone",
                     "features": [
                         "95.7% average confidence across all sources",
@@ -1248,7 +1247,9 @@ async def get_scheduled_jobs(
                 "run_count": job.run_count,
                 "error_count": job.error_count,
                 "last_error": job.last_error,
-                "enabled": job.enabled
+                "enabled": job.enabled,
+                "today_run_count": getattr(job, 'today_run_count', 0),
+                "last_duration_seconds": getattr(job, 'last_duration_seconds', None)
             })
         
         return {
@@ -1262,6 +1263,86 @@ async def get_scheduled_jobs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve scheduled jobs"
+        )
+
+
+@router.get("/scheduler/events")
+async def get_job_events(
+    since: Optional[str] = Query(None, description="Get events since this ISO timestamp"),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get recent job execution events for notifications.
+    
+    Returns events like job started, completed, or failed.
+    Used by frontend to show toast notifications.
+    """
+    try:
+        from app.business.scheduler import get_recent_job_events
+        events = get_recent_job_events(since)
+        
+        return {
+            "events": events,
+            "count": len(events)
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving job events", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve job events"
+        )
+
+
+@router.get("/scheduler/history")
+async def get_scheduler_history(
+    days: int = Query(7, ge=1, le=30, description="Number of days of history to retrieve"),
+    current_admin: AdminUser = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Get scheduler run history for the last N days.
+    
+    Returns daily breakdown of job runs with timing and status.
+    Useful for debugging and comparison.
+    """
+    try:
+        from app.business.scheduler import Scheduler
+        scheduler = Scheduler()
+        history = scheduler.get_run_history(days)
+        
+        # Calculate summary stats
+        total_runs = 0
+        successful_runs = 0
+        failed_runs = 0
+        total_duration = 0
+        
+        for date, jobs in history.items():
+            for job_name, runs in jobs.items():
+                for run in runs:
+                    total_runs += 1
+                    if run.get("status") == "completed":
+                        successful_runs += 1
+                    else:
+                        failed_runs += 1
+                    total_duration += run.get("duration_seconds", 0)
+        
+        return {
+            "history": history,
+            "summary": {
+                "total_runs": total_runs,
+                "successful_runs": successful_runs,
+                "failed_runs": failed_runs,
+                "total_duration_seconds": round(total_duration, 2),
+                "avg_duration_seconds": round(total_duration / total_runs, 2) if total_runs > 0 else 0,
+                "days_covered": len(history)
+            }
+        }
+        
+    except Exception as e:
+        logger.error("Error retrieving scheduler history", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve scheduler history"
         )
 
 
@@ -1552,8 +1633,8 @@ async def get_collector_health(
         hn_count = counts_by_source.get('hackernews', 0)
         finnhub_count = counts_by_source.get('finnhub', 0)
         newsapi_count = counts_by_source.get('newsapi', 0)
-        marketaux_count = counts_by_source.get('marketaux', 0)
         gdelt_count = counts_by_source.get('gdelt', 0)
+        yfinance_count = counts_by_source.get('yfinance', 0)
         
         # Define collectors with their configuration requirements
         collectors = [
@@ -1590,12 +1671,12 @@ async def get_collector_health(
                 "api_key_configured": bool(keys.get('news_api_key'))
             },
             {
-                "name": "MarketAux",
-                "internal_name": "marketaux",
+                "name": "Yahoo Finance",
+                "internal_name": "yfinance",
                 "source": "news",
-                "items_collected": marketaux_count,
-                "api_key_required": True,
-                "api_key_configured": bool(keys.get('marketaux_api_key'))
+                "items_collected": yfinance_count,
+                "api_key_required": False,  # YFinance is free and unlimited
+                "api_key_configured": True  # Always available
             }
         ]
         
@@ -2253,6 +2334,119 @@ async def get_table_data(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve table data"
+        )
+
+
+@router.get("/database/tables/{table_name}/export")
+async def export_table_to_csv(
+    table_name: str,
+    limit: int = Query(10000, ge=1, le=100000, description="Maximum number of records to export"),
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin)
+):
+    """
+    Export table data to CSV format for download.
+    
+    Args:
+        table_name: Name of the table to export
+        limit: Maximum number of records to export (default 10000, max 100000)
+    """
+    try:
+        logger.info("Admin exporting table to CSV", 
+                   admin_user=current_admin.email,
+                   table_name=table_name,
+                   limit=limit)
+        
+        from app.data_access.models import (
+            StocksWatchlist, SentimentData, StockPrice, NewsArticle,
+            HackerNewsPost, SystemLog
+        )
+        from sqlalchemy import select
+        import csv
+        import io
+        from fastapi.responses import StreamingResponse
+        
+        # Define model mapping
+        model_mapping = {
+            'stocks_watchlist': StocksWatchlist,
+            'sentiment_data': SentimentData,
+            'stock_prices': StockPrice,
+            'news_articles': NewsArticle,
+            'hackernews_posts': HackerNewsPost,
+            'system_logs': SystemLog
+        }
+        
+        if table_name not in model_mapping:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Table {table_name} not found"
+            )
+        
+        model = model_mapping[table_name]
+        
+        # Get data with limit
+        query = select(model).limit(limit)
+        
+        # Add ordering by id or created_at if available
+        if hasattr(model, 'created_at'):
+            query = query.order_by(model.created_at.desc())
+        elif hasattr(model, 'id'):
+            query = query.order_by(model.id.desc())
+        
+        result = await db.execute(query)
+        records = result.scalars().all()
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        
+        if records:
+            # Get column names from the first record
+            column_names = [column.name for column in model.__table__.columns]
+            writer = csv.DictWriter(output, fieldnames=column_names)
+            writer.writeheader()
+            
+            # Write data rows
+            for record in records:
+                row_dict = {}
+                for column_name in column_names:
+                    value = getattr(record, column_name)
+                    # Convert datetime objects to ISO strings
+                    if hasattr(value, 'isoformat'):
+                        value = value.isoformat()
+                    # Convert UUID objects to strings
+                    elif hasattr(value, 'hex'):
+                        value = str(value)
+                    # Handle None values
+                    elif value is None:
+                        value = ''
+                    row_dict[column_name] = value
+                writer.writerow(row_dict)
+        
+        # Prepare response
+        output.seek(0)
+        
+        logger.info(f"Exported {len(records)} records from {table_name} to CSV")
+        
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{table_name}_{timestamp}.csv"
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error exporting table to CSV", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export table: {str(e)}"
         )
 
 

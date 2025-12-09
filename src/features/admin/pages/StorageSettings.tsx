@@ -24,7 +24,8 @@ import {
   Table,
   Eye,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  Download
 } from "lucide-react";
 import {
   Collapsible,
@@ -142,6 +143,27 @@ const StorageSettings = () => {
       });
     } finally {
       setTableDataLoading(false);
+    }
+  };
+
+  // Export table to CSV
+  const exportTableToCSV = async (tableName: string) => {
+    try {
+      setOperationLoading(prev => ({ ...prev, [`export-${tableName}`]: true }));
+      await adminAPI.exportTableToCSV(tableName, 10000);
+      toast({
+        title: "Export Successful",
+        description: `${tableName} has been exported to CSV format.`,
+      });
+    } catch (error) {
+      console.error('Failed to export table:', error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export table to CSV. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setOperationLoading(prev => ({ ...prev, [`export-${tableName}`]: false }));
     }
   };
 
@@ -401,6 +423,19 @@ const StorageSettings = () => {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    exportTableToCSV(tableName);
+                                  }}
+                                  disabled={operationLoading[`export-${tableName}`]}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  {operationLoading[`export-${tableName}`] ? 'Exporting...' : 'Download CSV'}
+                                </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"

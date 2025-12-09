@@ -118,7 +118,6 @@ async def test_deep_integration():
         # Test actual Phase 5 components
         from app.infrastructure.collectors.hackernews_collector import HackerNewsCollector
         from app.infrastructure.collectors.newsapi_collector import NewsAPICollector
-        from app.infrastructure.collectors.marketaux_collector import MarketauxCollector
         from app.infrastructure.collectors.finnhub_collector import FinHubCollector
         from app.infrastructure.collectors.base_collector import BaseCollector
         print("✅ All data collectors imported successfully")

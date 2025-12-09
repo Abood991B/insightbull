@@ -236,7 +236,7 @@ class TestIntegration:
                 ),
                 TextInput(
                     "Microsoft (MSFT) announced M&A deal worth $50M, P/E ratio improves",
-                    DataSource.MARKETAUX
+                    DataSource.FINNHUB
                 ),
                 TextInput(
                     "Tesla shares drop 10% after CEO comments on Q3 guidance [Advertisement]",

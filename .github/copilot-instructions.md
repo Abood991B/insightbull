@@ -100,7 +100,7 @@ The backend is fully operational - focus on connecting frontend to real APIs:
 
 ### Data Collection Pipeline
 - **Entry Point**: `business/pipeline.py` - Facade pattern orchestrating collectors
-- **Collectors**: `HackerNewsCollector`, `GDELTCollector`, `FinHubCollector`, `NewsAPICollector`, `MarketauxCollector`
+- **Collectors**: `HackerNewsCollector`, `YFinanceCollector`, `GDELTCollector`, `FinHubCollector`, `NewsAPICollector`
 - **Watchlist**: Dynamic stock management via `WatchlistService` (database-driven, not static lists)
 - **Scheduler**: `business/scheduler.py` using APScheduler for automated collection
 
@@ -195,7 +195,7 @@ The backend is fully operational - focus on connecting frontend to real APIs:
 
 ### External Dependencies
 - **Google OAuth2**: Requires `VITE_GOOGLE_CLIENT_ID` and callback URI setup
-- **API Keys**: FinHub, Marketaux, NewsAPI, Reddit (managed via admin panel post-encryption)
+- **API Keys**: FinHub, NewsAPI (managed via admin panel post-encryption)
 - **Database**: PostgreSQL (prod) or SQLite (dev) - configured via `DATABASE_URL`
 
 ## Common Pitfalls

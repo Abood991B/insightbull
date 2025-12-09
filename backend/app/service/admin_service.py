@@ -135,7 +135,6 @@ class AdminService(WatchlistSubject):
             # Get API keys for services that require them
             finnhub_key = keys.get('finnhub_api_key', '')
             newsapi_key = keys.get('news_api_key', '')
-            marketaux_key = keys.get('marketaux_api_key', '')
 
             # Get Gemini API key for AI verification
             gemini_key = keys.get('gemini_api_key', '')
@@ -316,38 +315,45 @@ class AdminService(WatchlistSubject):
                         f"NewsAPI connection test exception: {newsapi_error}",
                         extra={"operation": "api_validation", "service": "newsapi", "status": "error", "error_type": type(e).__name__}
                     )
-
-            # Test Marketaux connection if key is available
-            marketaux_status = "inactive"
-            marketaux_last_test = None
-            marketaux_error = None
-            if marketaux_key:
-                try:
-                    from app.infrastructure.collectors.marketaux_collector import MarketauxCollector
-                    marketaux_collector = MarketauxCollector(api_key=marketaux_key)
-                    is_valid = await marketaux_collector.validate_connection()
-                    marketaux_status = "active" if is_valid else "error"
-                    marketaux_last_test = utc_now().isoformat()
-                    
-                    if is_valid:
-                        self.logger.info(
-                            "Marketaux connection validated successfully",
-                            extra={"operation": "api_validation", "service": "marketaux", "status": "success"}
-                        )
-                    else:
-                        marketaux_error = "API validation returned false - check API key"
-                        self.logger.warning(
-                            f"Marketaux validation failed: {marketaux_error}",
-                            extra={"operation": "api_validation", "service": "marketaux", "status": "failed"}
-                        )
-                except Exception as e:
-                    marketaux_status = "error"
-                    marketaux_last_test = utc_now().isoformat()
-                    marketaux_error = str(e)
-                    self.logger.error(
-                        f"Marketaux connection test exception: {marketaux_error}",
-                        extra={"operation": "api_validation", "service": "marketaux", "status": "error", "error_type": type(e).__name__}
+            
+            # YFinance is always available - no API key required (free and unlimited)
+            yfinance_status = "active"
+            yfinance_last_test = utc_now().isoformat()
+            yfinance_error = None
+            try:
+                from app.infrastructure.collectors.yfinance_collector import YFinanceCollector
+                yfinance_collector = YFinanceCollector()
+                is_valid = await yfinance_collector.validate_connection()
+                yfinance_status = "active" if is_valid else "error"
+                yfinance_last_test = utc_now().isoformat()
+                
+                if is_valid:
+                    self.logger.info(
+                        "YFinance connection validated successfully",
+                        extra={"operation": "api_validation", "service": "yfinance", "status": "success"}
                     )
+                else:
+                    yfinance_error = "YFinance validation failed"
+                    self.logger.warning(
+                        f"YFinance validation failed: {yfinance_error}",
+                        extra={"operation": "api_validation", "service": "yfinance", "status": "failed"}
+                    )
+            except ImportError as e:
+                yfinance_status = "error"
+                yfinance_last_test = utc_now().isoformat()
+                yfinance_error = "yfinance package not installed"
+                self.logger.warning(
+                    f"YFinance validation failed: {yfinance_error}",
+                    extra={"operation": "api_validation", "service": "yfinance", "status": "failed"}
+                )
+            except Exception as e:
+                yfinance_status = "error"
+                yfinance_last_test = utc_now().isoformat()
+                yfinance_error = str(e)
+                self.logger.error(
+                    f"YFinance connection test exception: {yfinance_error}",
+                    extra={"operation": "api_validation", "service": "yfinance", "status": "error", "error_type": type(e).__name__}
+                )
             
             # Build API configuration structure expected by frontend
             # Include enabled status from collector config service
@@ -395,13 +401,12 @@ class AdminService(WatchlistSubject):
                         "error": newsapi_error if newsapi_status == "error" else None,
                         "enabled": is_collector_enabled("newsapi", True, bool(newsapi_key))
                     },
-                    "marketaux": {
-                        "status": marketaux_status,
-                        "last_test": marketaux_last_test,
-                        "api_key": marketaux_key,
-                        "api_key_required": True,
-                        "error": marketaux_error if marketaux_status == "error" else None,
-                        "enabled": is_collector_enabled("marketaux", True, bool(marketaux_key))
+                    "yfinance": {
+                        "status": yfinance_status,
+                        "last_test": yfinance_last_test,
+                        "api_key_required": False,
+                        "error": yfinance_error if yfinance_status == "error" else None,
+                        "enabled": is_collector_enabled("yfinance", False, True)
                     }
                 },
                 "ai_services": {
@@ -421,10 +426,10 @@ class AdminService(WatchlistSubject):
                 "summary": {
                     "total_collectors": 5,
                     "total_ai_services": 1,
-                    "configured": sum(1 for key in [finnhub_key, newsapi_key, marketaux_key] if key) + 2,  # +2 for HackerNews and GDELT always configured
-                    "active": sum(1 for status in [hackernews_status, gdelt_status, finnhub_status, newsapi_status, marketaux_status] if status == "active"),
-                    "enabled": sum(1 for name, has_key in [("hackernews", True), ("gdelt", True), ("finnhub", bool(finnhub_key)), ("newsapi", bool(newsapi_key)), ("marketaux", bool(marketaux_key))] if is_collector_enabled(name, name in ["finnhub", "newsapi", "marketaux"], has_key)),
-                    "disabled": 5 - sum(1 for name, has_key in [("hackernews", True), ("gdelt", True), ("finnhub", bool(finnhub_key)), ("newsapi", bool(newsapi_key)), ("marketaux", bool(marketaux_key))] if is_collector_enabled(name, name in ["finnhub", "newsapi", "marketaux"], has_key)),
+                    "configured": sum(1 for key in [finnhub_key, newsapi_key] if key) + 3,  # +3 for HackerNews, GDELT, and YFinance always configured
+                    "active": sum(1 for status in [hackernews_status, gdelt_status, finnhub_status, newsapi_status, yfinance_status] if status == "active"),
+                    "enabled": sum(1 for name, has_key in [("hackernews", True), ("gdelt", True), ("yfinance", True), ("finnhub", bool(finnhub_key)), ("newsapi", bool(newsapi_key))] if is_collector_enabled(name, name in ["finnhub", "newsapi"], has_key)),
+                    "disabled": 5 - sum(1 for name, has_key in [("hackernews", True), ("gdelt", True), ("yfinance", True), ("finnhub", bool(finnhub_key)), ("newsapi", bool(newsapi_key))] if is_collector_enabled(name, name in ["finnhub", "newsapi"], has_key)),
                     "ai_configured": 1 if (gemini_key and api_key_valid) else 0,
                     "ai_enabled": 1 if (gemini_key and api_key_valid and collector_config_service.is_ai_service_enabled("gemini")) else 0
                 },
@@ -464,10 +469,6 @@ class AdminService(WatchlistSubject):
                 if "api_key" in keys:
                     key_loader.update_api_key("NEWSAPI_KEY", keys["api_key"])
                     updated_keys.append("newsapi_key")
-            elif service == "marketaux":
-                if "api_key" in keys:
-                    key_loader.update_api_key("MARKETAUX_API_KEY", keys["api_key"])
-                    updated_keys.append("marketaux_api_key")
             elif service == "gemini":
                 if "api_key" in keys:
                     api_key_value = keys["api_key"]
@@ -1179,7 +1180,7 @@ class AdminService(WatchlistSubject):
         """
         Calculate sentiment metrics broken down by data source.
         
-        Returns full metrics for each source: hackernews, finnhub, newsapi, marketaux, gdelt.
+        Returns full metrics for each source: hackernews, finnhub, newsapi, gdelt.
         Includes accuracy, precision, recall, F1-score, confidence, and sample counts.
         """
         if not sentiment_data:

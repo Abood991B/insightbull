@@ -10,7 +10,6 @@ Based on actual API documentation:
 - GDELT: Unlimited (free), 250 articles/request max
 - Finnhub: 60 calls/minute (free tier)
 - NewsAPI: 100 requests/day (free tier)
-- Marketaux: 100 requests/day (free tier)
 """
 
 from dataclasses import dataclass, field
@@ -281,46 +280,46 @@ COLLECTOR_SETTINGS: Dict[str, SourceSettings] = {
     ),
     
     # -------------------------------------------------------------------------
-    # MARKETAUX
+    # YFINANCE (Yahoo Finance)
     # -------------------------------------------------------------------------
-    # API: https://www.marketaux.com/documentation
-    # Limits: 100 requests/day (free tier)
-    # Best for: Financial news with entity recognition
-    # Supports batch requests (up to 10 symbols per request)
+    # Library: yfinance (pip install yfinance)
+    # Limits: No official limits, completely free and unlimited
+    # Best for: Direct stock news, company-specific articles
+    # Note: Returns ~10-15 articles per symbol typically
     # -------------------------------------------------------------------------
-    "marketaux": SourceSettings(
-        name="marketaux",
-        display_name="Marketaux",
-        requires_api_key=True,
+    "yfinance": SourceSettings(
+        name="yfinance",
+        display_name="Yahoo Finance",
+        requires_api_key=False,
         
-        # Rate limiting - 100/day
-        requests_per_minute=5,
-        requests_per_hour=50,
-        daily_quota=100,
+        # Rate limiting - be courteous (no official limits)
+        requests_per_minute=60,
+        requests_per_hour=3600,
+        daily_quota=None,  # Unlimited
         
-        # Collection strategy - BATCH mode (10 symbols per request)
-        collection_mode=CollectionMode.BATCH,
-        max_concurrent_requests=2,
-        batch_size=10,  # Marketaux supports 10 symbols per request
-        delay_between_requests=3.0,
-        delay_between_symbols=0,  # Batched together
+        # Collection strategy - sequential to be courteous
+        collection_mode=CollectionMode.SEQUENTIAL,
+        max_concurrent_requests=3,
+        batch_size=1,
+        delay_between_requests=0.3,
+        delay_between_symbols=0.3,
         
-        # Fetching
+        # Fetching - typically returns 10-15 articles per symbol
         max_items_per_symbol=15,
-        max_items_per_request=100,
+        max_items_per_request=15,  # yfinance returns per-ticker
         
-        # Quality
+        # Quality - direct stock news is highly relevant
         min_relevance_score=0.5,
         prefer_recent=True,
-        include_comments=False,
+        include_comments=False,  # No comments
         
-        # Cache - long TTL
-        cache_ttl_seconds=1800,  # 30 minutes
+        # Cache - moderate TTL
+        cache_ttl_seconds=300,  # 5 minutes
         
-        # Retries - fewer to conserve quota
-        max_retries=2,
-        initial_retry_delay=2.0,
-        max_retry_delay=300.0,
+        # Retries
+        max_retries=3,
+        initial_retry_delay=1.0,
+        max_retry_delay=60.0,
         
         # Sentiment - FinBERT for financial news
         sentiment_model="finbert"
@@ -395,9 +394,9 @@ def get_optimal_pipeline_config(num_symbols: int) -> Dict[str, Any]:
     # Free APIs first, then by quality
     config["collection_priority"] = [
         "hackernews",   # Free, fast, tech-focused
+        "yfinance",     # Free, direct stock news
         "gdelt",        # Free, global coverage
         "finnhub",      # Paid but generous
-        "marketaux",    # Limited but batched
         "newsapi"       # Most limited, last
     ]
     

@@ -307,13 +307,6 @@ async def get_api_configuration(
                 status=APIKeyStatus.ACTIVE if settings.newsapi_key else APIKeyStatus.INACTIVE,
                 rate_limit=1000,  # NewsAPI rate limit
                 last_tested=utc_now()
-            ),
-            APIServiceConfig(
-                service_name="Marketaux",
-                is_configured=bool(settings.marketaux_api_key),
-                status=APIKeyStatus.ACTIVE if settings.marketaux_api_key else APIKeyStatus.INACTIVE,
-                rate_limit=200,  # Marketaux rate limit
-                last_tested=utc_now()
             )
         ]
         
@@ -361,7 +354,7 @@ async def update_api_configuration(
             )
         
         # Validate service name
-        valid_services = ["hackernews", "gdelt", "newsapi", "finnhub", "marketaux"]
+        valid_services = ["hackernews", "gdelt", "newsapi", "finnhub"]
         if request.service_name.lower() not in valid_services:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -721,7 +714,6 @@ async def trigger_manual_data_collection(
             include_hackernews=True,
             include_finnhub=True,
             include_newsapi=True,
-            include_marketaux=True,
             include_comments=True
         )
         

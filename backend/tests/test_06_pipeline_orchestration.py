@@ -71,8 +71,7 @@ class TestPhase7PipelineOrchestration:
             max_items_per_symbol=5,
             include_hackernews=False,  # Skip external APIs for testing
             include_newsapi=False,
-            include_finnhub=False,
-            include_marketaux=False
+            include_finnhub=False
         )
         
         # Mock external dependencies to avoid API calls
@@ -220,8 +219,7 @@ class TestPhase7EndToEndIntegration:
             max_items_per_symbol=1,
             include_hackernews=False,  # Skip external APIs
             include_newsapi=False,
-            include_finnhub=False,
-            include_marketaux=False
+            include_finnhub=False
         )
         
         # Mock external dependencies

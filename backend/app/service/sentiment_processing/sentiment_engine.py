@@ -52,7 +52,8 @@ class EngineConfig:
     # AI Verification settings (Gemini integration)
     enable_ai_verification: bool = True  # Enable AI verification when Gemini is configured
     ai_verification_mode: str = "low_confidence_and_neutral"  # none, low_confidence, neutral_only, low_confidence_and_neutral, all
-    ai_confidence_threshold: float = 0.85  # Threshold below which AI verification is triggered
+    ai_confidence_threshold: float = 0.85  # AI verify below this threshold
+    min_confidence_threshold: float = 0.80  # Discard predictions below this
 
 
 @dataclass
@@ -122,9 +123,9 @@ class SentimentEngine:
         self._model_routing = {
             DataSource.HACKERNEWS: "ProsusAI/finbert",
             DataSource.FINNHUB: "ProsusAI/finbert",
-            DataSource.MARKETAUX: "ProsusAI/finbert",
             DataSource.NEWSAPI: "ProsusAI/finbert",
-            DataSource.GDELT: "ProsusAI/finbert"
+            DataSource.GDELT: "ProsusAI/finbert",
+            DataSource.YFINANCE: "ProsusAI/finbert"
         }
     
     async def initialize(self) -> None:
@@ -176,6 +177,7 @@ class SentimentEngine:
                 self._ai_analyzer = AIVerifiedSentimentAnalyzer(
                     verification_mode=verification_mode,
                     confidence_threshold=self.config.ai_confidence_threshold,
+                    min_confidence_threshold=self.config.min_confidence_threshold,  # NEW: Pass min threshold
                     ai_enabled=True  # Let it auto-load Gemini key
                 )
                 
@@ -184,7 +186,8 @@ class SentimentEngine:
                         "AI verification enabled with Google Gemini",
                         extra={
                             "verification_mode": verification_mode.value,
-                            "confidence_threshold": self.config.ai_confidence_threshold
+                            "confidence_threshold": self.config.ai_confidence_threshold,
+                            "min_confidence_threshold": self.config.min_confidence_threshold
                         }
                     )
                 else:
@@ -274,8 +277,11 @@ class SentimentEngine:
                 }
                 
                 results = []
-                for ai_result in ai_results:
+                for i, ai_result in enumerate(ai_results):
                     try:
+                        # Get the corresponding input for metadata
+                        input_obj = inputs[i] if i < len(inputs) else None
+                        
                         # Determine clear model name based on what actually happened
                         if ai_result.ai_verified:
                             if ai_result.ai_label != ai_result.ml_label:
@@ -299,7 +305,10 @@ class SentimentEngine:
                                 'ai_reasoning': ai_result.ai_reasoning
                             },
                             processing_time=0.0,
-                            model_name=model_display
+                            model_name=model_display,
+                            text=input_obj.text if input_obj else "",  # Preserve text from input
+                            source=input_obj.source if input_obj else None,  # Preserve source from input
+                            metadata=input_obj.metadata if input_obj else {}  # Preserve metadata from input
                         )
                         results.append(result)
                     except Exception as e:
@@ -348,8 +357,18 @@ class SentimentEngine:
             for input_obj in inputs:
                 result = all_results.get(id(input_obj))
                 if result is None:
-                    # Create neutral fallback result
-                    result = self._create_neutral_result()
+                    # Create neutral fallback result with metadata preserved
+                    result = SentimentResult(
+                        label=SentimentLabel.NEUTRAL,
+                        score=0.0,
+                        confidence=0.0,
+                        raw_scores={'fallback': True},
+                        processing_time=0.0,
+                        model_name="Fallback",
+                        text=input_obj.text,
+                        source=input_obj.source,
+                        metadata=input_obj.metadata or {}
+                    )
                 results.append(result)
             
             # Update statistics
@@ -419,7 +438,8 @@ class SentimentEngine:
                     confidence=0.0,
                     raw_scores={'error': str(e)},
                     processing_time=0.0,
-                    model_name=model_name
+                    model_name=model_name,
+                    metadata=input_obj.metadata or {}  # Preserve metadata from input
                 )
                 error_results.append((input_obj, error_result))
             
@@ -437,8 +457,22 @@ class SentimentEngine:
         return dict(groups)
     
     def _create_fallback_results(self, inputs: List[TextInput]) -> List[SentimentResult]:
-        """Create neutral fallback results when models fail."""
-        return [self._create_neutral_result() for _ in inputs]
+        """Create neutral fallback results when models fail, preserving metadata."""
+        results = []
+        for input_obj in inputs:
+            result = SentimentResult(
+                label=SentimentLabel.NEUTRAL,
+                score=0.0,
+                confidence=0.0,
+                raw_scores={'fallback': True},
+                processing_time=0.0,
+                model_name="Fallback",
+                text=input_obj.text,
+                source=input_obj.source,
+                metadata=input_obj.metadata or {}
+            )
+            results.append(result)
+        return results
     
     def _get_cache_key(self, text: str) -> str:
         """Generate a cache key for a text."""
@@ -656,7 +690,7 @@ if __name__ == "__main__":
             TextInput("Apple Inc. reported strong quarterly earnings today.", DataSource.NEWS, stock_symbol="AAPL"),
             TextInput("Market conditions are uncertain...", DataSource.TWITTER),
             TextInput("Tesla announces breakthrough in battery technology.", DataSource.FINNHUB, stock_symbol="TSLA"),
-            TextInput("Banking sector faces regulatory challenges.", DataSource.MARKETAUX),
+            TextInput("Banking sector faces regulatory challenges.", DataSource.NEWSAPI),
         ]
         
         try:

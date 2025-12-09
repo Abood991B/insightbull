@@ -46,11 +46,11 @@ DEFAULT_CONFIG = {
             "requires_api_key": True,
             "description": "General news data collection"
         },
-        "marketaux": {
+        "yfinance": {
             "enabled": True,
-            "display_name": "Marketaux",
-            "requires_api_key": True,
-            "description": "Financial news and market data"
+            "display_name": "Yahoo Finance",
+            "requires_api_key": False,
+            "description": "Free financial news from Yahoo Finance"
         }
     },
     "ai_services": {

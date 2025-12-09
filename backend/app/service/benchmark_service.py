@@ -65,6 +65,11 @@ class ModelBenchmarkService:
         "data", "training", "financial_phrasebank.csv"
     )
     
+    COLLECTOR_CONFIG_FILE = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "data", "collector_config.json"
+    )
+    
     # ProsusAI/finbert label mapping: 0=positive, 1=negative, 2=neutral
     LABEL_MAP = {0: "positive", 1: "negative", 2: "neutral"}
     
@@ -73,6 +78,31 @@ class ModelBenchmarkService:
         self.model = None
         self.tokenizer = None
         self._is_loaded = False
+    
+    def _get_ai_config(self) -> Dict[str, Any]:
+        """Load AI verification config from collector_config.json."""
+        try:
+            if os.path.exists(self.COLLECTOR_CONFIG_FILE):
+                with open(self.COLLECTOR_CONFIG_FILE, 'r') as f:
+                    config = json.load(f)
+                    ai_services = config.get('ai_services', {})
+                    gemini_config = ai_services.get('gemini', {})
+                    return {
+                        'enabled': gemini_config.get('enabled', True),
+                        'display_name': gemini_config.get('display_name', 'Gemma 3 27B AI'),
+                        'verification_mode': gemini_config.get('verification_mode', 'low_confidence_and_neutral'),
+                        'confidence_threshold': gemini_config.get('confidence_threshold', 0.85)
+                    }
+        except Exception as e:
+            logger.warning(f"Could not load AI config, using defaults: {e}")
+        
+        # Fallback defaults
+        return {
+            'enabled': True,
+            'display_name': 'Gemma 3 27B AI',
+            'verification_mode': 'low_confidence_and_neutral',
+            'confidence_threshold': 0.85
+        }
     
     def _load_model(self) -> None:
         """Load the ProsusAI/finbert model."""
@@ -206,12 +236,18 @@ class ModelBenchmarkService:
             'neutral': {'positive': 0, 'negative': 0, 'neutral': 0}
         }
         
+        # Load AI verification config from collector_config.json
+        ai_config = self._get_ai_config()
+        confidence_threshold = ai_config['confidence_threshold']
+        verification_mode = ai_config['verification_mode']
+        ai_enabled = ai_config['enabled']
+        ai_display_name = ai_config['display_name']
+        
         correct = 0
         total_confidence = 0.0
         low_confidence_count = 0  # Track predictions that would trigger AI verification
         low_confidence_wrong = 0  # Track wrong predictions that AI could correct
         neutral_count = 0  # Track neutral predictions that would trigger AI verification
-        confidence_threshold = 0.85  # Same as engine config
         start_time = time.time()
         
         # Process all samples
@@ -304,15 +340,16 @@ class ModelBenchmarkService:
             avg_confidence=round(avg_confidence, 4),
             comparison_with_previous=comparison,
             ai_verification={
-                "enabled": True,
-                "provider": "Google Gemini",
-                "mode": "low_confidence_and_neutral",
+                "enabled": ai_enabled,
+                "provider": ai_display_name,
+                "mode": verification_mode,
                 "confidence_threshold": confidence_threshold,
                 "estimated_accuracy_with_ai": round(estimated_accuracy_with_ai, 4),
                 "low_confidence_predictions": low_confidence_count,
                 "low_confidence_wrong": low_confidence_wrong,
                 "potential_corrections": potential_corrections,
-                "verification_candidates_percent": round(ai_verification_percentage, 1)
+                "verification_candidates_percent": round(ai_verification_percentage, 1),
+                "note": "Settings from collector_config.json"
             }
         )
         
@@ -340,13 +377,31 @@ class ModelBenchmarkService:
         logger.info(f"Benchmark results saved to {self.BENCHMARK_FILE}")
     
     def get_last_benchmark(self) -> Optional[Dict[str, Any]]:
-        """Get the last benchmark results."""
+        """Get the last benchmark results with current AI verification config."""
         if not os.path.exists(self.BENCHMARK_FILE):
             return None
         
         try:
             with open(self.BENCHMARK_FILE, 'r') as f:
-                return json.load(f)
+                results = json.load(f)
+            
+            # Update AI verification config with current settings from collector_config.json
+            # This ensures the UI always shows current config, not historical settings
+            current_ai_config = self._get_ai_config()
+            if results and 'ai_verification' in results:
+                # Keep the calculated metrics from the benchmark run
+                stored_ai_data = results['ai_verification']
+                
+                # Update with current config settings
+                results['ai_verification']['enabled'] = current_ai_config['enabled']
+                results['ai_verification']['provider'] = current_ai_config['display_name']
+                results['ai_verification']['mode'] = current_ai_config['verification_mode']
+                results['ai_verification']['confidence_threshold'] = current_ai_config['confidence_threshold']
+                
+                # Add note about live config sync
+                results['ai_verification']['note'] = "Live settings from collector_config.json (updated in real-time)"
+            
+            return results
         except Exception as e:
             logger.error(f"Failed to load benchmark results: {e}")
             return None

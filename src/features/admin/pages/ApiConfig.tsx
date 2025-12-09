@@ -39,7 +39,7 @@ const ApiConfig = () => {
       
       const initialFormData: {[key: string]: string} = {};
       Object.entries(data.apis).forEach(([key, config]) => {
-        if (key !== 'hackernews' && key !== 'gdelt') {
+        if (key !== 'hackernews' && key !== 'gdelt' && key !== 'yfinance') {
           initialFormData[key] = (config as any).api_key || '';
         }
       });
@@ -137,7 +137,7 @@ const ApiConfig = () => {
       case 'gdelt': return <Globe className="h-5 w-5" />;
       case 'finnhub': return <TrendingUp className="h-5 w-5" />;
       case 'newsapi': return <Newspaper className="h-5 w-5" />;
-      case 'marketaux': return <Database className="h-5 w-5" />;
+      case 'yfinance': return <TrendingUp className="h-5 w-5" />;
       default: return <Database className="h-5 w-5" />;
     }
   };
@@ -148,7 +148,7 @@ const ApiConfig = () => {
       case 'gdelt': return { displayName: 'GDELT', description: 'Global news (100+ countries)', requiresKey: false, link: null };
       case 'finnhub': return { displayName: 'Finnhub', description: 'Financial market data', requiresKey: true, link: 'https://finnhub.io/register' };
       case 'newsapi': return { displayName: 'NewsAPI', description: 'General news aggregation', requiresKey: true, link: 'https://newsapi.org/register' };
-      case 'marketaux': return { displayName: 'Marketaux', description: 'Market news & analysis', requiresKey: true, link: 'https://www.marketaux.com/register' };
+      case 'yfinance': return { displayName: 'Yahoo Finance', description: 'Financial news (unlimited)', requiresKey: false, link: null };
       default: return { displayName: name, description: '', requiresKey: true, link: null };
     }
   };
@@ -449,7 +449,16 @@ const ApiConfig = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(apiConfig.apis).map(([name, config]) => {
+                {Object.entries(apiConfig.apis)
+                  .sort(([nameA], [nameB]) => {
+                    const infoA = getCollectorInfo(nameA);
+                    const infoB = getCollectorInfo(nameB);
+                    // Free collectors first (requiresKey=false), then API-required
+                    if (!infoA.requiresKey && infoB.requiresKey) return -1;
+                    if (infoA.requiresKey && !infoB.requiresKey) return 1;
+                    return 0;
+                  })
+                  .map(([name, config]) => {
                   const info = getCollectorInfo(name);
                   const isEnabled = (config as any).enabled !== false;
                   const isToggling = toggling[name] || false;

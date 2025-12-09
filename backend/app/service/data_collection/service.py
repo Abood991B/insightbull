@@ -25,7 +25,6 @@ from app.infrastructure.collectors import (
     HackerNewsCollector,
     FinHubCollector,
     NewsAPICollector,
-    MarketauxCollector,
     GDELTCollector
 )
 from app.infrastructure import get_logger
@@ -72,10 +71,8 @@ class DataCollectionService:
             ),
             'newsapi': NewsAPICollector(
                 api_key=self.security.get_api_key("NEWSAPI_KEY", "newsapi_key")
-            ),
-            'marketaux': MarketauxCollector(
-                api_key=self.security.get_api_key("MARKETAUX_API_KEY", "marketaux_api_key")
             )
+            # YFinance collector will be added separately (no API key required)
         }
         self.logger = get_logger()
     
@@ -138,7 +135,7 @@ class DataCollectionService:
                     data = await self._collect_gdelt_with_rules(
                         collector, symbol, days_back, max_items
                     )
-                elif source in ['finnhub', 'newsapi', 'marketaux']:
+                elif source in ['finnhub', 'newsapi', 'yfinance']:
                     data = await self._collect_news_with_rules(
                         collector, symbol, days_back, max_items
                     )
@@ -271,7 +268,7 @@ class DataCollectionService:
     
     async def _collect_news_with_rules(
         self,
-        collector: Union[FinHubCollector, NewsAPICollector, MarketauxCollector],
+        collector: Union[FinHubCollector, NewsAPICollector],
         symbol: str,
         days_back: int,
         max_items: int

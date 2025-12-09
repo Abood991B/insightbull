@@ -40,10 +40,10 @@ const About = () => {
 
   const dataSourceCard = [
     { name: "Hacker News", description: "Tech community sentiment from news.ycombinator.com", badge: "Social" },
+    { name: "Yahoo Finance", description: "Direct stock news and company articles via yfinance", badge: "Finance" },
     { name: "GDELT", description: "Global news monitoring from 100+ countries in 65 languages", badge: "Global" },
     { name: "FinHub", description: "Professional financial news and market data", badge: "News" },
-    { name: "NewsAPI", description: "Global news sentiment analysis", badge: "News" },
-    { name: "Marketaux", description: "Market news and real-time analysis", badge: "Market" }
+    { name: "NewsAPI", description: "Global news sentiment analysis", badge: "News" }
   ];
 
   const stocks = [
