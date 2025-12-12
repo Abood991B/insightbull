@@ -161,14 +161,32 @@ async def _get_market_sentiment_overview(
         
         logger.info(f"Using fallback sentiment data: {len(recent_sentiments)} records found")
     
-    # Calculate sentiment distribution (only from ACTIVE stocks)
-    sentiment_scores = [float(s.sentiment_score) for s in recent_sentiments]
-    average_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+    # Group sentiments by stock to calculate per-stock averages first
+    # This ensures high-volume stocks don't skew the market-wide average
+    stock_sentiments = {}
+    for s in recent_sentiments:
+        if s.stock_id not in stock_sentiments:
+            stock_sentiments[s.stock_id] = []
+        stock_sentiments[s.stock_id].append(float(s.sentiment_score))
     
-    # Count stocks by sentiment category
-    positive_count = len([s for s in sentiment_scores if s > 0.1])
-    negative_count = len([s for s in sentiment_scores if s < -0.1])
-    neutral_count = len(sentiment_scores) - positive_count - negative_count
+    # Calculate average sentiment for each stock
+    stock_averages = []
+    for stock_id, scores in stock_sentiments.items():
+        avg = sum(scores) / len(scores)
+        stock_averages.append(avg)
+    
+    # Calculate market metrics based on STOCK AVERAGES (Equal-Weighted)
+    if stock_averages:
+        average_sentiment = sum(stock_averages) / len(stock_averages)
+        # Use 0.05 threshold for market breadth metrics
+        positive_count = len([s for s in stock_averages if s > 0.05])
+        negative_count = len([s for s in stock_averages if s < -0.05])
+        neutral_count = len(stock_averages) - positive_count - negative_count
+    else:
+        average_sentiment = 0.0
+        positive_count = 0
+        negative_count = 0
+        neutral_count = 0
     
     # Total stocks count (already have all_stocks from above)
     total_stocks = len([s for s in all_stocks if s.is_active])
@@ -210,8 +228,37 @@ async def _get_top_stocks_by_sentiment(
     import yfinance as yf
     
     for stock in active_stocks[:limit]:  # Limit processing for performance
-        # Get latest sentiment
-        latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
+        # Get 24h average sentiment instead of just latest point for stability
+        cutoff_time = to_naive_utc(utc_now() - timedelta(hours=24))
+        sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
+            stock.symbol, cutoff_time, to_naive_utc(utc_now())
+        )
+        
+        sentiment_score = None
+        sentiment_label = None
+        last_updated_utc = None
+        
+        if sentiment_records:
+            scores = [float(s.sentiment_score) for s in sentiment_records]
+            sentiment_score = sum(scores) / len(scores)
+            
+            # Determine label based on average score
+            if sentiment_score > 0.05:
+                sentiment_label = "positive"
+            elif sentiment_score < -0.05:
+                sentiment_label = "negative"
+            else:
+                sentiment_label = "neutral"
+                
+            # Use latest record timestamp
+            last_updated_utc = ensure_utc(sentiment_records[0].created_at)
+        else:
+            # Fallback to latest single point if no data in last 24h
+            latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
+            if latest_sentiment:
+                sentiment_score = float(latest_sentiment.sentiment_score)
+                sentiment_label = latest_sentiment.sentiment_label
+                last_updated_utc = ensure_utc(latest_sentiment.created_at)
         
         # 🔴 FETCH FRESH PRICES AND MARKET CAP DIRECTLY FROM YAHOO FINANCE
         current_price = None
@@ -261,17 +308,14 @@ async def _get_top_stocks_by_sentiment(
                     price_change_24h = ((current_price - float(yesterday_price.close_price)) / float(yesterday_price.close_price)) * 100
                     price_change_24h = round(price_change_24h, 2)
         
-        # Convert timestamp to aware UTC for proper API serialization
-        last_updated_utc = ensure_utc(latest_sentiment.created_at) if latest_sentiment else None
-        
         stock_summaries.append(StockSummary(
             symbol=stock.symbol,
             company_name=stock.name,  # Fixed: model uses 'name' not 'company_name'
             current_price=current_price,
             price_change_24h=price_change_24h,
             market_cap=market_cap,  # Real-time market cap from Yahoo Finance
-            sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
-            sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
+            sentiment_score=round(sentiment_score, 3) if sentiment_score is not None else None,
+            sentiment_label=sentiment_label,
             last_updated=last_updated_utc
         ))
     
@@ -334,13 +378,40 @@ async def _get_recent_price_movers(
             
             # Only include significant movers (>2% change)
             if abs(price_change) > 2.0:
-                # Get latest sentiment
-                latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
+                # Get 24h average sentiment instead of just latest point for stability
+                cutoff_time = to_naive_utc(utc_now() - timedelta(hours=24))
+                sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
+                    stock.symbol, cutoff_time, to_naive_utc(utc_now())
+                )
+                
+                sentiment_score = None
+                sentiment_label = None
+                last_updated_utc = None
+                
+                if sentiment_records:
+                    scores = [float(s.sentiment_score) for s in sentiment_records]
+                    sentiment_score = sum(scores) / len(scores)
+                    
+                    # Determine label based on average score
+                    # Thresholds: > 0.05 is Positive, < -0.05 is Negative, else Neutral
+                    if sentiment_score > 0.05:
+                        sentiment_label = "positive"
+                    elif sentiment_score < -0.05:
+                        sentiment_label = "negative"
+                    else:
+                        sentiment_label = "neutral"
+                        
+                    # Use latest record timestamp
+                    last_updated_utc = ensure_utc(sentiment_records[0].created_at)
+                else:
+                    # Fallback to latest single point if no data in last 24h
+                    latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
+                    if latest_sentiment:
+                        sentiment_score = float(latest_sentiment.sentiment_score)
+                        sentiment_label = latest_sentiment.sentiment_label
+                        last_updated_utc = ensure_utc(latest_sentiment.created_at)
                 
                 logger.debug(f"{stock.symbol}: MOVER! ${current_price:.2f} ({price_change:+.2f}%), MarketCap={market_cap}")
-                
-                # Convert timestamp to aware UTC for proper API serialization
-                last_updated_utc = ensure_utc(latest_sentiment.created_at) if latest_sentiment else None
                 
                 movers.append(StockSummary(
                     symbol=stock.symbol,
@@ -348,8 +419,8 @@ async def _get_recent_price_movers(
                     current_price=current_price,
                     price_change_24h=round(price_change, 2),
                     market_cap=market_cap,  # Real-time market cap from Yahoo Finance
-                    sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
-                    sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
+                    sentiment_score=round(sentiment_score, 3) if sentiment_score is not None else None,
+                    sentiment_label=sentiment_label,
                     last_updated=last_updated_utc
                 ))
         
@@ -374,10 +445,41 @@ async def _get_recent_price_movers(
                 
                 # Only include significant movers
                 if abs(price_change) > 2.0:
-                    latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
+                    # Get 24h average sentiment instead of just latest point for stability
+                    cutoff_time = to_naive_utc(utc_now() - timedelta(hours=24))
+                    sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
+                        stock.symbol, cutoff_time, to_naive_utc(utc_now())
+                    )
+                    
+                    sentiment_score = None
+                    sentiment_label = None
+                    last_updated_utc = None
+                    
+                    if sentiment_records:
+                        scores = [float(s.sentiment_score) for s in sentiment_records]
+                        sentiment_score = sum(scores) / len(scores)
+                        
+                        # Determine label based on average score
+                        if sentiment_score > 0.05:
+                            sentiment_label = "positive"
+                        elif sentiment_score < -0.05:
+                            sentiment_label = "negative"
+                        else:
+                            sentiment_label = "neutral"
+                            
+                        # Use latest record timestamp
+                        last_updated_utc = ensure_utc(sentiment_records[0].created_at)
+                    else:
+                        # Fallback to latest single point if no data in last 24h
+                        latest_sentiment = await sentiment_repo.get_latest_sentiment_for_stock(stock.symbol)
+                        if latest_sentiment:
+                            sentiment_score = float(latest_sentiment.sentiment_score)
+                            sentiment_label = latest_sentiment.sentiment_label
+                            last_updated_utc = ensure_utc(latest_sentiment.created_at)
                     
                     # Convert timestamp to aware UTC for proper API serialization
-                    last_updated_utc = ensure_utc(latest_price.price_timestamp)
+                    if not last_updated_utc:
+                        last_updated_utc = ensure_utc(latest_price.price_timestamp)
                     
                     movers.append(StockSummary(
                         symbol=stock.symbol,
@@ -385,8 +487,8 @@ async def _get_recent_price_movers(
                         current_price=float(latest_price.close_price),
                         price_change_24h=round(price_change, 2),
                         market_cap=None,  # Market cap unavailable in database fallback
-                        sentiment_score=round(float(latest_sentiment.sentiment_score), 3) if latest_sentiment else None,
-                        sentiment_label=latest_sentiment.sentiment_label if latest_sentiment else None,
+                        sentiment_score=round(sentiment_score, 3) if sentiment_score is not None else None,
+                        sentiment_label=sentiment_label,
                         last_updated=last_updated_utc
                     ))
             except Exception as db_e:

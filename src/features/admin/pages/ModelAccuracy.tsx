@@ -3,6 +3,7 @@ import AdminLayout from "@/shared/components/layouts/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
+import { SENTIMENT_THRESHOLDS } from "@/shared/utils/sentimentUtils";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -162,8 +163,8 @@ const ModelAccuracy = () => {
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Avg Sentiment Score</span>
             <span className={`font-semibold ${
-              metrics.avg_sentiment_score > 0.1 ? 'text-green-600' : 
-              metrics.avg_sentiment_score < -0.1 ? 'text-red-600' : 'text-gray-600'
+              metrics.avg_sentiment_score > SENTIMENT_THRESHOLDS.POSITIVE ? 'text-green-600' : 
+              metrics.avg_sentiment_score < SENTIMENT_THRESHOLDS.NEGATIVE ? 'text-red-600' : 'text-gray-600'
             }`}>
               {metrics.avg_sentiment_score > 0 ? '+' : ''}{metrics.avg_sentiment_score.toFixed(3)}
             </span>

@@ -15,6 +15,7 @@ import type { DashboardSummary, StockSummary } from "@/api/types/backend-schemas
 // Import empty state components
 import {EmptyPipelineState, PartialDataWarning } from "@/shared/components/states";
 import { validateDashboardData } from "@/shared/utils/dataValidation";
+import { SENTIMENT_THRESHOLDS } from "@/shared/utils/sentimentUtils";
 import DashboardSkeleton from "@/features/dashboard/components/DashboardSkeleton";
 
 // Import utility functions
@@ -115,12 +116,12 @@ const Index = () => {
 
   // Split stocks for display
   const topPositive = top_stocks
-    .filter(s => (s.sentiment_score ?? 0) > 0)
+    .filter(s => (s.sentiment_score ?? 0) > SENTIMENT_THRESHOLDS.POSITIVE)
     .sort((a, b) => (b.sentiment_score ?? 0) - (a.sentiment_score ?? 0))
     .slice(0, 5);
     
   const topNegative = top_stocks
-    .filter(s => (s.sentiment_score ?? 0) < 0)
+    .filter(s => (s.sentiment_score ?? 0) < SENTIMENT_THRESHOLDS.NEGATIVE)
     .sort((a, b) => (a.sentiment_score ?? 0) - (b.sentiment_score ?? 0))
     .slice(0, 5);
 
@@ -342,7 +343,7 @@ const Index = () => {
                 <TrendingUp className="h-5 w-5 text-green-600" />
                 <CardTitle className="text-lg">Top Positive Sentiment</CardTitle>
               </div>
-              <CardDescription>Stocks with highest positive sentiment scores</CardDescription>
+              <CardDescription>Stocks with highest sentiment scores (-1 to +1 scale)</CardDescription>
             </CardHeader>
             <CardContent>
               {topPositive.length > 0 ? (
@@ -359,12 +360,12 @@ const Index = () => {
                         </div>
                         <div>
                           <div className="font-bold text-gray-900">{stock.symbol}</div>
-                          <div className="text-sm text-gray-600">{formatPrice(stock.current_price)}</div>
+                          <div className="text-sm text-gray-600">${formatPrice(stock.current_price)}</div>
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="font-bold text-green-600 text-lg">
-                          {((stock.sentiment_score ?? 0) * 100).toFixed(0)}%
+                          +{(stock.sentiment_score ?? 0).toFixed(2)}
                         </div>
                         <div className="text-xs text-gray-600">{formatChange(stock.price_change_24h)}</div>
                       </div>
@@ -384,7 +385,7 @@ const Index = () => {
                 <TrendingDown className="h-5 w-5 text-red-600" />
                 <CardTitle className="text-lg">Top Negative Sentiment</CardTitle>
               </div>
-              <CardDescription>Stocks with lowest sentiment scores</CardDescription>
+              <CardDescription>Stocks with lowest sentiment scores (-1 to +1 scale)</CardDescription>
             </CardHeader>
             <CardContent>
               {topNegative.length > 0 ? (
@@ -401,12 +402,12 @@ const Index = () => {
                         </div>
                         <div>
                           <div className="font-bold text-gray-900">{stock.symbol}</div>
-                          <div className="text-sm text-gray-600">{formatPrice(stock.current_price)}</div>
+                          <div className="text-sm text-gray-600">${formatPrice(stock.current_price)}</div>
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="font-bold text-red-600 text-lg">
-                          -{Math.abs((stock.sentiment_score ?? 0) * 100).toFixed(0)}%
+                          {(stock.sentiment_score ?? 0).toFixed(2)}
                         </div>
                         <div className="text-xs text-gray-600">{formatChange(stock.price_change_24h)}</div>
                       </div>
@@ -451,7 +452,7 @@ const Index = () => {
                                     : 'bg-gray-100 text-gray-700'
                                 }`}
                               >
-                                {(stock.sentiment_score ?? 0) > 0 ? '+' : ''}{((stock.sentiment_score ?? 0) * 100).toFixed(0)}%
+                                {(stock.sentiment_score ?? 0) >= 0 ? '+' : ''}{(stock.sentiment_score ?? 0).toFixed(2)}
                               </Badge>
                             )}
                           </div>
@@ -554,31 +555,6 @@ const Index = () => {
             </Card>
           </div>
         </div>
-
-        {/* System Status */}
-        <Card>
-          <CardHeader>
-            <CardTitle>System Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <span className="text-sm text-gray-600">Pipeline Status:</span>
-                <p className={`font-semibold ${getPipelineStatusDisplay(system_status.pipeline_status).color}`}>
-                  {getPipelineStatusDisplay(system_status.pipeline_status).text}
-                </p>
-              </div>
-              <div>
-                <span className="text-sm text-gray-600">Total Records:</span>
-                <p className="font-semibold">{system_status.total_sentiment_records.toLocaleString()}</p>
-              </div>
-              <div>
-                <span className="text-sm text-gray-600">Data Sources:</span>
-                <p className="font-semibold">{system_status.active_data_sources.join(', ')}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </UserLayout>
   );

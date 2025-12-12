@@ -7,19 +7,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/shared/components/ui/badge";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { Skeleton } from "@/shared/components/ui/skeleton";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
 
-// Import services and types
+// Import services
 import { stockService } from "@/api/services/stock.service";
-import type { StockDetail, StockList } from "@/api/types/backend-schemas";
 
 // Import chart components
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
-// Chart colors
+// Chart colors - Accessible color palette
 const SENTIMENT_COLORS = {
-  positive: '#10B981', // green-500
-  negative: '#EF4444', // red-500
+  positive: '#059669', // emerald-600 (darker for accessibility)
+  negative: '#DC2626', // red-600 (darker for accessibility)
   neutral: '#6B7280'   // gray-500
 };
 
@@ -30,35 +29,129 @@ import { EmptyWatchlistState } from "@/shared/components/states";
 import { 
   getSentimentLabel, 
   getSentimentColor, 
-  getSentimentBadgeVariant 
+  getSentimentBadgeVariant,
+  SENTIMENT_THRESHOLDS
 } from "@/shared/utils/sentimentUtils";
 import { usePipelineNotifications } from "@/shared/hooks/usePipelineNotifications";
+
+// Sentiment Gauge Component - Visual indicator for sentiment score
+const SentimentGauge = ({ score }: { score: number }) => {
+  // Convert -1 to +1 scale to 0-180 degrees
+  const normalizedScore = (score + 1) / 2; // 0 to 1
+  const rotation = normalizedScore * 180 - 90; // -90 to 90 degrees
+  
+  return (
+    <div className="relative w-full max-w-[160px] mx-auto">
+      {/* Gauge background */}
+      <div className="relative h-20 overflow-hidden">
+        <div className="absolute inset-0 flex">
+          <div className="w-1/3 h-full bg-gradient-to-r from-red-500 to-red-400 rounded-tl-full" />
+          <div className="w-1/3 h-full bg-gradient-to-r from-yellow-400 to-yellow-300" />
+          <div className="w-1/3 h-full bg-gradient-to-r from-green-400 to-green-500 rounded-tr-full" />
+        </div>
+        {/* Needle */}
+        <div 
+          className="absolute bottom-0 left-1/2 w-1 h-16 bg-gray-800 rounded-t-full origin-bottom transition-transform duration-500"
+          style={{ transform: `translateX(-50%) rotate(${rotation}deg)` }}
+        />
+        {/* Center dot */}
+        <div className="absolute bottom-0 left-1/2 w-4 h-4 bg-gray-800 rounded-full transform -translate-x-1/2 translate-y-1/2" />
+      </div>
+      {/* Labels */}
+      <div className="flex justify-between text-xs text-gray-500 mt-1 px-1">
+        <span>-1.0</span>
+        <span>0</span>
+        <span>+1.0</span>
+      </div>
+    </div>
+  );
+};
+
+// Custom tooltip for pie chart - calculates percentage from total
+const CustomPieTooltip = ({ active, payload, totalRecords }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0];
+    const percentage = totalRecords > 0 ? ((data.value / totalRecords) * 100).toFixed(1) : '0';
+    return (
+      <div className="bg-white p-3 shadow-lg rounded-lg border">
+        <p className="font-semibold" style={{ color: data.payload.color }}>
+          {data.name}
+        </p>
+        <p className="text-sm text-gray-600">
+          Count: {data.value} records
+        </p>
+        <p className="text-sm text-gray-600">
+          {percentage}% of total
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
+// Custom tooltip for bar chart
+const CustomBarTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-white p-3 shadow-lg rounded-lg border">
+        <p className="font-bold text-gray-900">{data.symbol}</p>
+        <p className="text-sm text-gray-600">{data.company_name}</p>
+        <div className="mt-2 pt-2 border-t">
+          <p className="text-sm">
+            <span className="text-gray-500">Sentiment Score: </span>
+            <span className={`font-semibold ${data.sentiment_score > SENTIMENT_THRESHOLDS.POSITIVE ? 'text-green-600' : data.sentiment_score < SENTIMENT_THRESHOLDS.NEGATIVE ? 'text-red-600' : 'text-gray-600'}`}>
+              {data.sentiment_score.toFixed(3)}
+            </span>
+          </p>
+          <p className="text-sm text-gray-500">
+            Based on {data.data_points} data points
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+// Timeframe options with labels
+const TIMEFRAME_OPTIONS = [
+  { value: '1d', label: '24H' },
+  { value: '7d', label: '7D' },
+  { value: '14d', label: '14D' },
+  { value: '30d', label: '30D' },
+] as const;
+
+type TimeframeValue = typeof TIMEFRAME_OPTIONS[number]['value'];
 
 const StockAnalysis = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const symbolFromUrl = searchParams.get('symbol');
   const [selectedStock, setSelectedStock] = useState(symbolFromUrl || '');
+  const [timeframe, setTimeframe] = useState<TimeframeValue>('7d');
 
   // Listen for pipeline completion events and refetch data
   usePipelineNotifications(() => {
-    // Query invalidation is handled by the hook, just need to be present
+    // Query invalidation is handled by the hook
   });
 
   // Fetch stock list for dropdown
   const { data: stockListResponse, isLoading: isLoadingList } = useQuery({
     queryKey: ['stocks-list'],
     queryFn: () => stockService.getAllStocks(100, true),
-    staleTime: 30 * 1000, // 30 seconds - sync with admin changes faster
-    refetchOnWindowFocus: true, // Refetch when user returns to tab
-    refetchInterval: 60 * 1000, // Poll every minute for admin changes
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60 * 1000,
   });
 
-  // Fetch selected stock analysis data
-  const { data: stockAnalysisResponse, isLoading: isLoadingAnalysis, error } = useQuery({
-    queryKey: ['stock-analysis', selectedStock],
-    queryFn: () => stockService.getStockAnalysis(selectedStock, '7d'),
-    enabled: !!selectedStock, // Only fetch if stock is selected
-    staleTime: 60 * 1000, // Cache for 1 minute
+  // Fetch selected stock analysis data with timeframe
+  // Each timeframe gets its own cache entry, refetches when timeframe changes
+  const { data: stockAnalysisResponse, isLoading: isLoadingAnalysis, error, isFetching } = useQuery({
+    queryKey: ['stock-analysis', selectedStock, timeframe],
+    queryFn: () => stockService.getStockAnalysis(selectedStock, timeframe),
+    enabled: !!selectedStock,
+    staleTime: 30 * 1000, // 30 seconds cache per timeframe
+    refetchOnMount: true,
   });
 
   // Set first stock as default when list loads
@@ -104,18 +197,33 @@ const StockAnalysis = () => {
     );
   }
 
-  // Find current stock in list
-  const currentStockInfo = stockList.stocks.find(s => s.symbol === selectedStock);
-
-  // Helper functions
-  const formatPrice = (price: number | null) => {
-    return price !== null ? `$${price.toFixed(2)}` : 'N/A';
+  // Helper function to get sentiment icon
+  const getSentimentIcon = (score: number) => {
+    if (score > SENTIMENT_THRESHOLDS.POSITIVE) return <TrendingUp className="h-5 w-5 text-green-600" />;
+    if (score < SENTIMENT_THRESHOLDS.NEGATIVE) return <TrendingDown className="h-5 w-5 text-red-600" />;
+    return <Minus className="h-5 w-5 text-gray-500" />;
   };
 
-  const formatChange = (change: number | null) => {
-    if (change === null) return 'N/A';
-    const sign = change >= 0 ? '+' : '';
-    return `${sign}${change.toFixed(2)}%`;
+  // Prepare pie chart data with filtering for zero values
+  const getPieChartData = () => {
+    if (!stockAnalysis?.sentiment_distribution) return [];
+    const { positive, negative, neutral } = stockAnalysis.sentiment_distribution;
+    return [
+      { name: 'Positive', value: positive, color: SENTIMENT_COLORS.positive },
+      { name: 'Negative', value: negative, color: SENTIMENT_COLORS.negative },
+      { name: 'Neutral', value: neutral, color: SENTIMENT_COLORS.neutral }
+    ].filter(item => item.value > 0);
+  };
+
+  // Prepare bar chart data with color coding
+  const getBarChartData = () => {
+    if (!stockAnalysis?.top_performers) return [];
+    return stockAnalysis.top_performers.map((performer: any) => ({
+      ...performer,
+      fill: performer.sentiment_score > SENTIMENT_THRESHOLDS.POSITIVE ? SENTIMENT_COLORS.positive : 
+            performer.sentiment_score < SENTIMENT_THRESHOLDS.NEGATIVE ? SENTIMENT_COLORS.negative : 
+            SENTIMENT_COLORS.neutral
+    }));
   };
 
   return (
@@ -125,23 +233,49 @@ const StockAnalysis = () => {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Stock Analysis</h1>
-            <p className="text-gray-600 mt-2">
-              Detailed analysis of individual stock performance and sentiment from our real-time dashboard
+            <p className="text-gray-600 mt-1">
+              Comprehensive sentiment analysis and performance metrics
             </p>
           </div>
           
-          <Select value={selectedStock} onValueChange={handleStockChange}>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Select stock" />
-            </SelectTrigger>
-            <SelectContent>
-              {stockList.stocks.map((stock) => (
-                <SelectItem key={stock.symbol} value={stock.symbol}>
-                  {stock.symbol} - {stock.company_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Timeframe Selector */}
+            <div className="inline-flex items-center gap-2">
+              <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+                {TIMEFRAME_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => setTimeframe(option.value)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                      timeframe === option.value
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {/* Loading indicator when fetching new timeframe data */}
+              {isFetching && !isLoadingAnalysis && (
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              )}
+            </div>
+            
+            {/* Stock Selector */}
+            <Select value={selectedStock} onValueChange={handleStockChange}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Select stock" />
+              </SelectTrigger>
+              <SelectContent>
+                {stockList.stocks.map((stock) => (
+                  <SelectItem key={stock.symbol} value={stock.symbol}>
+                    {stock.symbol} - {stock.company_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Error State */}
@@ -162,9 +296,9 @@ const StockAnalysis = () => {
                 <Skeleton className="h-6 w-48" />
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  {[1, 2, 3, 4].map(i => (
-                    <Skeleton key={i} className="h-24" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {[1, 2, 3].map(i => (
+                    <Skeleton key={i} className="h-32" />
                   ))}
                 </div>
               </CardContent>
@@ -173,63 +307,110 @@ const StockAnalysis = () => {
               <Skeleton className="h-80" />
               <Skeleton className="h-80" />
             </div>
-            <Skeleton className="h-96" />
           </div>
         )}
 
-        {/* Stock Overview */}
+        {/* Stock Overview - Redesigned with 3 key metrics */}
         {!isLoadingAnalysis && stockAnalysis && (
-          <Card className="border-l-4 border-l-blue-500">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-3">
-                {stockAnalysis.symbol} - {stockAnalysis.stock_overview.company_name}
-                <Badge 
-                  variant={getSentimentBadgeVariant(stockAnalysis.stock_overview.sentiment_score)}
-                  className="text-sm"
-                >
-                  {getSentimentLabel(stockAnalysis.stock_overview.sentiment_score)}
-                </Badge>
-              </CardTitle>
-              <CardDescription>
-                Real-time stock information and sentiment analysis | Sector: {stockAnalysis.stock_overview.sector}
-              </CardDescription>
+          <Card className="border-l-4 border-l-blue-500 overflow-hidden">
+            <CardHeader className="pb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex items-center gap-3">
+                  <CardTitle className="text-xl">
+                    {stockAnalysis.symbol}
+                  </CardTitle>
+                  <Badge 
+                    variant={getSentimentBadgeVariant(stockAnalysis.stock_overview.sentiment_score)}
+                    className="text-sm"
+                  >
+                    {getSentimentLabel(stockAnalysis.stock_overview.sentiment_score)}
+                  </Badge>
+                  {/* Market Status Badge */}
+                  <Badge 
+                    variant="outline"
+                    className={`text-xs ${
+                      stockAnalysis.stock_overview.market_status === 'Open' ? 'border-green-500 text-green-600' : 
+                      stockAnalysis.stock_overview.market_status === 'Pre-Market' ? 'border-blue-500 text-blue-600' :
+                      stockAnalysis.stock_overview.market_status === 'After-Hours' ? 'border-orange-500 text-orange-600' :
+                      'border-gray-400 text-gray-500'
+                    }`}
+                  >
+                    {stockAnalysis.stock_overview.market_status}
+                  </Badge>
+                </div>
+                <span className="text-sm text-gray-500">
+                  {stockAnalysis.stock_overview.company_name} • {stockAnalysis.stock_overview.sector}
+                </span>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Current Price */}
-                <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">Current Price</p>
-                  <p className="text-3xl font-bold text-blue-600">
+                <div className="text-center p-5 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl">
+                  <p className="text-sm font-medium text-blue-700 mb-1">Current Price</p>
+                  <p className="text-4xl font-bold text-blue-600">
                     ${stockAnalysis.stock_overview.current_price}
                   </p>
-                </div>
-
-                {/* Sentiment Score */}
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">Sentiment Score</p>
-                  <p className={`text-3xl font-bold ${getSentimentColor(stockAnalysis.stock_overview.sentiment_score)}`}>
-                    {stockAnalysis.stock_overview.sentiment_score.toFixed(2)}
+                  <p className={`text-sm font-medium mt-2 ${stockAnalysis.stock_overview.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {stockAnalysis.stock_overview.price_change_24h >= 0 ? '↑' : '↓'} {Math.abs(stockAnalysis.stock_overview.price_change_24h).toFixed(2)}% (24h)
                   </p>
                 </div>
 
-                {/* 24h Change */}
-                <div className="text-center p-4 bg-purple-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">24h Change</p>
-                  <p className={`text-3xl font-bold ${stockAnalysis.stock_overview.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {stockAnalysis.stock_overview.price_change_24h >= 0 ? '+' : ''}{stockAnalysis.stock_overview.price_change_24h}%
+                {/* Sentiment Score with Gauge */}
+                <div className="text-center p-5 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl">
+                  <p className="text-sm font-medium text-gray-700 mb-1">
+                    Sentiment Score
+                    <span className="ml-1 text-xs font-normal text-gray-500">
+                      ({TIMEFRAME_OPTIONS.find(t => t.value === timeframe)?.label})
+                    </span>
+                  </p>
+                  <SentimentGauge score={stockAnalysis.stock_overview.sentiment_score} />
+                  <div className="flex items-center justify-center gap-2 mt-2">
+                    {getSentimentIcon(stockAnalysis.stock_overview.sentiment_score)}
+                    <span className={`text-lg font-bold ${getSentimentColor(stockAnalysis.stock_overview.sentiment_score)}`}>
+                      {stockAnalysis.stock_overview.sentiment_score >= 0 ? '+' : ''}{stockAnalysis.stock_overview.sentiment_score.toFixed(3)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Scale: -1.0 (bearish) to +1.0 (bullish)
                   </p>
                 </div>
 
-                {/* Market Status */}
-                <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-2">Market Status</p>
-                  <p className={`text-3xl font-bold ${
-                    stockAnalysis.stock_overview.market_status === 'Open' ? 'text-green-600' : 
-                    stockAnalysis.stock_overview.market_status === 'Pre-Market' ? 'text-blue-600' :
-                    stockAnalysis.stock_overview.market_status === 'After-Hours' ? 'text-orange-600' :
-                    'text-gray-600'
-                  }`}>
-                    {stockAnalysis.stock_overview.market_status}
+                {/* Sentiment Distribution Summary */}
+                <div className="text-center p-5 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl">
+                  <p className="text-sm font-medium text-purple-700 mb-3">Sentiment Breakdown</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 flex items-center gap-1">
+                        <span className="w-3 h-3 rounded-full bg-green-500"></span> Positive
+                      </span>
+                      <span className="font-semibold text-green-600">
+                        {stockAnalysis.sentiment_distribution.positive_percent?.toFixed(0) || 0}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 flex items-center gap-1">
+                        <span className="w-3 h-3 rounded-full bg-gray-400"></span> Neutral
+                      </span>
+                      <span className="font-semibold text-gray-600">
+                        {stockAnalysis.sentiment_distribution.neutral_percent?.toFixed(0) || 0}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600 flex items-center gap-1">
+                        <span className="w-3 h-3 rounded-full bg-red-500"></span> Negative
+                      </span>
+                      <span className="font-semibold text-red-600">
+                        {stockAnalysis.sentiment_distribution.negative_percent?.toFixed(0) || 0}%
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3">
+                    Based on {stockAnalysis.sentiment_distribution.total} records
+                    <br />
+                    <span className="text-gray-400">
+                      (Last {timeframe === '1d' ? '24 hours' : timeframe === '7d' ? '7 days' : timeframe === '14d' ? '14 days' : '30 days'})
+                    </span>
                   </p>
                 </div>
               </div>
@@ -237,82 +418,117 @@ const StockAnalysis = () => {
           </Card>
         )}
 
-        {/* Charts Section */}
+        {/* Charts Section - Improved Layout */}
         {!isLoadingAnalysis && stockAnalysis && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Sentiment Distribution Pie Chart */}
+            {/* Sentiment Distribution Donut Chart */}
             <Card>
               <CardHeader>
-                <CardTitle>Sentiment Distribution</CardTitle>
-                <CardDescription>Breakdown of sentiment analysis for {stockAnalysis.symbol}</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  Sentiment Distribution
+                  <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    {stockAnalysis.symbol}
+                  </span>
+                </CardTitle>
+                <CardDescription>
+                  Proportion of positive, neutral, and negative sentiment records
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {stockAnalysis.sentiment_distribution.total > 0 ? (
-                  <div className="h-80">
+                  <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={[
-                            { name: 'Positive', value: stockAnalysis.sentiment_distribution.positive, color: SENTIMENT_COLORS.positive },
-                            { name: 'Negative', value: stockAnalysis.sentiment_distribution.negative, color: SENTIMENT_COLORS.negative },
-                            { name: 'Neutral', value: stockAnalysis.sentiment_distribution.neutral, color: SENTIMENT_COLORS.neutral }
-                          ]}
+                          data={getPieChartData()}
                           cx="50%"
                           cy="50%"
-                          labelLine={false}
-                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                          outerRadius={80}
-                          fill="#8884d8"
+                          innerRadius={55}
+                          outerRadius={85}
+                          paddingAngle={3}
                           dataKey="value"
+                          label={({ name, percent }) => 
+                            percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''
+                          }
+                          labelLine={false}
                         >
-                          {[
-                            { name: 'Positive', value: stockAnalysis.sentiment_distribution.positive, color: SENTIMENT_COLORS.positive },
-                            { name: 'Negative', value: stockAnalysis.sentiment_distribution.negative, color: SENTIMENT_COLORS.negative },
-                            { name: 'Neutral', value: stockAnalysis.sentiment_distribution.neutral, color: SENTIMENT_COLORS.neutral }
-                          ].map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          {getPieChartData().map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} stroke="white" strokeWidth={2} />
                           ))}
                         </Pie>
-                        <Tooltip />
+                        <Tooltip content={<CustomPieTooltip totalRecords={stockAnalysis.sentiment_distribution.total} />} />
+                        <Legend 
+                          verticalAlign="bottom" 
+                          height={36}
+                          formatter={(value, entry: any) => (
+                            <span className="text-sm text-gray-700">{value}</span>
+                          )}
+                        />
                       </PieChart>
                     </ResponsiveContainer>
-                    <div className="mt-4 text-center text-sm text-gray-600">
-                      Total: {stockAnalysis.sentiment_distribution.total} sentiment records
-                    </div>
                   </div>
                 ) : (
-                  <div className="h-80 flex items-center justify-center text-gray-500">
-                    No sentiment data available
+                  <div className="h-72 flex flex-col items-center justify-center text-gray-500">
+                    <Info className="h-12 w-12 text-gray-300 mb-3" />
+                    <p>No sentiment data available</p>
+                    <p className="text-sm text-gray-400 mt-1">Run the data pipeline to collect sentiment</p>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Top Sentiment Performers Bar Chart */}
+            {/* Top Sentiment Performers - Horizontal Bar Chart */}
             <Card>
               <CardHeader>
-                <CardTitle>Top Sentiment Performers</CardTitle>
-                <CardDescription>Highest sentiment scores in watchlist</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  Watchlist Comparison
+                  <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    Top 5
+                  </span>
+                </CardTitle>
+                <CardDescription>
+                  Compare sentiment scores across your watchlist stocks
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {stockAnalysis.top_performers.length > 0 ? (
-                  <div className="h-80">
+                  <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={stockAnalysis.top_performers}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="symbol" />
-                        <YAxis />
-                        <Tooltip 
-                          formatter={(value, name) => [value, 'Sentiment Score']}
-                          labelFormatter={(label) => `Stock: ${label}`}
+                      <BarChart 
+                        data={getBarChartData()} 
+                        layout="vertical"
+                        margin={{ left: 10, right: 30, top: 5, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                        <XAxis 
+                          type="number" 
+                          domain={[-1, 1]} 
+                          tickFormatter={(v) => v.toFixed(1)}
+                          tick={{ fontSize: 12 }}
                         />
-                        <Bar dataKey="sentiment_score" fill="#3B82F6" />
+                        <YAxis 
+                          type="category" 
+                          dataKey="symbol" 
+                          width={50}
+                          tick={{ fontSize: 12, fontWeight: 500 }}
+                        />
+                        <Tooltip content={<CustomBarTooltip />} />
+                        <Bar 
+                          dataKey="sentiment_score" 
+                          radius={[0, 4, 4, 0]}
+                        >
+                          {getBarChartData().map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div className="h-80 flex items-center justify-center text-gray-500">
-                    No performance data available
+                  <div className="h-72 flex flex-col items-center justify-center text-gray-500">
+                    <Info className="h-12 w-12 text-gray-300 mb-3" />
+                    <p>No comparison data available</p>
+                    <p className="text-sm text-gray-400 mt-1">Add more stocks to your watchlist</p>
                   </div>
                 )}
               </CardContent>
@@ -320,60 +536,81 @@ const StockAnalysis = () => {
           </div>
         )}
 
-        {/* Watchlist Overview Table */}
+        {/* Watchlist Overview Table - Enhanced */}
         {!isLoadingAnalysis && stockAnalysis && (
           <Card>
             <CardHeader>
-              <CardTitle>Watchlist Overview</CardTitle>
-              <CardDescription>Complete view of all monitored technology stocks</CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <CardTitle>Watchlist Overview</CardTitle>
+                  <CardDescription>All monitored stocks with real-time metrics</CardDescription>
+                </div>
+                <Badge variant="outline" className="w-fit">
+                  {stockAnalysis.watchlist_overview.length} stocks
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent>
               {stockAnalysis.watchlist_overview.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-3 px-4 font-medium text-gray-900">Stock</th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-900">Company</th>
-                        <th className="text-right py-3 px-4 font-medium text-gray-900">Price</th>
-                        <th className="text-right py-3 px-4 font-medium text-gray-900">Change</th>
-                        <th className="text-center py-3 px-4 font-medium text-gray-900">Sentiment</th>
-                        <th className="text-center py-3 px-4 font-medium text-gray-900">Status</th>
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Symbol</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Company</th>
+                        <th className="text-right py-3 px-4 font-semibold text-gray-700 text-sm">Price</th>
+                        <th className="text-right py-3 px-4 font-semibold text-gray-700 text-sm">24h Change</th>
+                        <th className="text-center py-3 px-4 font-semibold text-gray-700 text-sm">Sentiment</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {stockAnalysis.watchlist_overview.map((stock, index) => (
-                        <tr key={stock.symbol} className={`border-b hover:bg-gray-50 ${stock.symbol === selectedStock ? 'bg-blue-50' : ''}`}>
+                      {stockAnalysis.watchlist_overview.map((stock: any) => (
+                        <tr 
+                          key={stock.symbol} 
+                          className={`border-b transition-colors cursor-pointer ${
+                            stock.symbol === selectedStock 
+                              ? 'bg-blue-50 hover:bg-blue-100' 
+                              : 'hover:bg-gray-50'
+                          }`}
+                          onClick={() => handleStockChange(stock.symbol)}
+                        >
                           <td className="py-3 px-4">
-                            <button
-                              onClick={() => handleStockChange(stock.symbol)}
-                              className="text-blue-600 hover:text-blue-800 font-medium"
-                            >
+                            <span className={`font-bold ${stock.symbol === selectedStock ? 'text-blue-600' : 'text-gray-900'}`}>
                               {stock.symbol}
-                            </button>
+                            </span>
                           </td>
-                          <td className="py-3 px-4 text-gray-900">{stock.company_name}</td>
-                          <td className="py-3 px-4 text-right font-medium">${stock.price}</td>
+                          <td className="py-3 px-4 text-gray-600 text-sm">{stock.company_name}</td>
+                          <td className="py-3 px-4 text-right font-medium text-gray-900">${stock.price}</td>
                           <td className={`py-3 px-4 text-right font-medium ${stock.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {stock.change >= 0 ? '+' : ''}{stock.change}%
+                            <span className="inline-flex items-center gap-1">
+                              {stock.change >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                              {stock.change >= 0 ? '+' : ''}{stock.change}%
+                            </span>
                           </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center">
-                              <div className={`w-16 h-2 rounded-full ${getSentimentColor(stock.sentiment)} bg-current opacity-20`}>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center justify-center gap-2">
+                              {/* Visual sentiment bar */}
+                              <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
                                 <div 
-                                  className={`h-full rounded-full ${getSentimentColor(stock.sentiment)} bg-current`}
-                                  style={{ width: `${Math.abs(stock.sentiment) * 100}%` }}
+                                  className={`h-full rounded-full transition-all ${
+                                    stock.sentiment > SENTIMENT_THRESHOLDS.POSITIVE ? 'bg-green-500' : 
+                                    stock.sentiment < SENTIMENT_THRESHOLDS.NEGATIVE ? 'bg-red-500' : 
+                                    'bg-gray-400'
+                                  }`}
+                                  style={{ 
+                                    width: `${((stock.sentiment + 1) / 2) * 100}%`,
+                                    marginLeft: stock.sentiment < 0 ? 'auto' : 0
+                                  }}
                                 />
                               </div>
-                              <span className={`ml-2 text-sm font-medium ${getSentimentColor(stock.sentiment)}`}>
-                                {stock.sentiment.toFixed(1)}
+                              <span className={`text-sm font-semibold min-w-[50px] text-right ${
+                                stock.sentiment > SENTIMENT_THRESHOLDS.POSITIVE ? 'text-green-600' : 
+                                stock.sentiment < SENTIMENT_THRESHOLDS.NEGATIVE ? 'text-red-600' : 
+                                'text-gray-500'
+                              }`}>
+                                {stock.sentiment >= 0 ? '+' : ''}{stock.sentiment.toFixed(2)}
                               </span>
                             </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <Badge variant="secondary" className="text-xs">
-                              {stock.status}
-                            </Badge>
                           </td>
                         </tr>
                       ))}
@@ -381,8 +618,9 @@ const StockAnalysis = () => {
                   </table>
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">
-                  No watchlist data available
+                <div className="text-center py-12 text-gray-500">
+                  <Info className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                  <p>No watchlist data available</p>
                 </div>
               )}
             </CardContent>
@@ -394,7 +632,8 @@ const StockAnalysis = () => {
           <Alert className="border-blue-200 bg-blue-50">
             <AlertCircle className="h-4 w-4 text-blue-600" />
             <AlertDescription className="text-blue-900">
-              <strong>No Data Available:</strong> No analysis data found for {selectedStock}. This typically means the data collection pipeline needs to run to gather sentiment analysis from news sources and social media. Please check back later or try a different stock.
+              <strong>No Data Available:</strong> No analysis data found for {selectedStock}. 
+              Run the data collection pipeline to gather sentiment analysis from news sources and social media.
             </AlertDescription>
           </Alert>
         )}

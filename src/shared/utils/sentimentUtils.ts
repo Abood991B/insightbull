@@ -6,11 +6,12 @@
 /**
  * Sentiment thresholds matching backend logic
  * These values determine how sentiment scores are classified into labels
+ * Updated to 0.05 to better capture weak sentiment signals
  */
 export const SENTIMENT_THRESHOLDS = {
-  POSITIVE: 0.1,    // Scores >= 0.1 are positive
-  NEGATIVE: -0.1,   // Scores < -0.1 are negative
-  // Between -0.1 and 0.1 is neutral
+  POSITIVE: 0.05,    // Scores > 0.05 are positive
+  NEGATIVE: -0.05,   // Scores < -0.05 are negative
+  // Between -0.05 and 0.05 is neutral
 } as const;
 
 /**

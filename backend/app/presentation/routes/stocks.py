@@ -331,17 +331,43 @@ def _calculate_standard_deviation(values: List[float]) -> float:
 async def _get_stock_overview(stock, sentiment_repo, price_repo, start_date):
     """Get stock overview metrics for the analysis dashboard"""
     
-    # Get latest price
-    latest_price = await price_repo.get_latest_price_for_stock(stock.symbol)
-    current_price = float(latest_price.close_price) if latest_price else 0.0
+    # Import Yahoo Finance for live data
+    import yfinance as yf
     
-    # Get 24h price change
-    yesterday = to_naive_utc(utc_now() - timedelta(days=1))
-    yesterday_price = await price_repo.get_price_at_time(stock.symbol, yesterday)
-    
+    current_price = 0.0
     price_change_24h = 0.0
-    if yesterday_price and latest_price:
-        price_change_24h = ((current_price - float(yesterday_price.close_price)) / float(yesterday_price.close_price)) * 100
+    
+    try:
+        # Fetch live data from Yahoo Finance
+        ticker = yf.Ticker(stock.symbol)
+        info = ticker.info
+        
+        # Get current/latest price
+        live_price = (
+            info.get('currentPrice') or
+            info.get('regularMarketPrice') or
+            info.get('previousClose')
+        )
+        
+        if live_price:
+            current_price = float(live_price)
+            
+            # Calculate 24-hour change
+            previous_close = float(info.get('previousClose', current_price))
+            if previous_close and previous_close > 0:
+                price_change_24h = ((current_price - previous_close) / previous_close) * 100
+                
+    except Exception as e:
+        # Fallback to database
+        latest_price = await price_repo.get_latest_price_for_stock(stock.symbol)
+        current_price = float(latest_price.close_price) if latest_price else 0.0
+        
+        # Get 24h price change
+        yesterday = to_naive_utc(utc_now() - timedelta(days=1))
+        yesterday_price = await price_repo.get_price_at_time(stock.symbol, yesterday)
+        
+        if yesterday_price and latest_price:
+            price_change_24h = ((current_price - float(yesterday_price.close_price)) / float(yesterday_price.close_price)) * 100
     
     # Get average sentiment score
     sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
@@ -400,9 +426,10 @@ async def _get_sentiment_distribution(sentiment_repo, symbol, start_date):
     
     for record in sentiment_records:
         score = float(record.sentiment_score)
-        if score > 0.1:
+        # Use 0.05 threshold for sentiment distribution
+        if score > 0.05:
             positive_count += 1
-        elif score < -0.1:
+        elif score < -0.05:
             negative_count += 1
         else:
             neutral_count += 1
@@ -436,7 +463,7 @@ async def _get_top_sentiment_performers(stock_repo, sentiment_repo, start_date):
     
     performers = []
     
-    for stock in active_stocks[:10]:  # Limit to top 10 for performance
+    for stock in active_stocks:  # Check all active stocks
         sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
             stock.symbol, start_date, to_naive_utc(utc_now())
         )
@@ -461,23 +488,49 @@ async def _get_top_sentiment_performers(stock_repo, sentiment_repo, start_date):
 async def _get_watchlist_overview(stock_repo, sentiment_repo, price_repo, start_date):
     """Get watchlist overview for table"""
     
+    # Import Yahoo Finance for live data
+    import yfinance as yf
+    
     # Get all active stocks
     active_stocks = await stock_repo.get_active_stocks()
     
     watchlist_data = []
     
     for stock in active_stocks:
-        # Get latest price
-        latest_price = await price_repo.get_latest_price_for_stock(stock.symbol)
-        current_price = float(latest_price.close_price) if latest_price else 0.0
-        
-        # Get 24h price change
-        yesterday = to_naive_utc(utc_now() - timedelta(days=1))
-        yesterday_price = await price_repo.get_price_at_time(stock.symbol, yesterday)
-        
+        current_price = 0.0
         price_change = 0.0
-        if yesterday_price and latest_price:
-            price_change = ((current_price - float(yesterday_price.close_price)) / float(yesterday_price.close_price)) * 100
+        
+        try:
+            # Fetch live data from Yahoo Finance
+            ticker = yf.Ticker(stock.symbol)
+            info = ticker.info
+            
+            # Get current/latest price
+            live_price = (
+                info.get('currentPrice') or
+                info.get('regularMarketPrice') or
+                info.get('previousClose')
+            )
+            
+            if live_price:
+                current_price = float(live_price)
+                
+                # Calculate 24-hour change
+                previous_close = float(info.get('previousClose', current_price))
+                if previous_close and previous_close > 0:
+                    price_change = ((current_price - previous_close) / previous_close) * 100
+                    
+        except Exception as e:
+            # Fallback to database
+            latest_price = await price_repo.get_latest_price_for_stock(stock.symbol)
+            current_price = float(latest_price.close_price) if latest_price else 0.0
+            
+            # Get 24h price change
+            yesterday = to_naive_utc(utc_now() - timedelta(days=1))
+            yesterday_price = await price_repo.get_price_at_time(stock.symbol, yesterday)
+            
+            if yesterday_price and latest_price:
+                price_change = ((current_price - float(yesterday_price.close_price)) / float(yesterday_price.close_price)) * 100
         
         # Get sentiment
         sentiment_records = await sentiment_repo.get_sentiment_by_date_range(
