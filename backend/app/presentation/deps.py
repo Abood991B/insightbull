@@ -77,7 +77,7 @@ def validate_timeframe(timeframe: str) -> str:
     Validate timeframe parameter
     
     Args:
-        timeframe: Timeframe string (1d, 7d, 14d)
+        timeframe: Timeframe string (1d, 7d, 14d, 30d)
         
     Returns:
         str: Validated timeframe
@@ -85,7 +85,7 @@ def validate_timeframe(timeframe: str) -> str:
     Raises:
         HTTPException: If timeframe is invalid
     """
-    valid_timeframes = ["1d", "7d", "14d"]
+    valid_timeframes = ["1d", "7d", "14d", "30d"]
     if timeframe not in valid_timeframes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -35,6 +35,9 @@ export const USER_TIMEZONE = getUserTimezone();
 
 /**
  * Format UTC timestamp for display in user's timezone
+ * 
+ * When custom options are provided, they REPLACE the defaults (not merge).
+ * This allows for clean chart labels without year/seconds/timezone clutter.
  */
 export const formatDateTime = (
   utcTimestamp: string | Date | null | undefined,
@@ -52,6 +55,16 @@ export const formatDateTime = (
       return 'Invalid Date';
     }
 
+    // If custom options provided, use them directly (only add timezone)
+    // This allows clean chart labels without year/seconds/timezone clutter
+    if (options) {
+      return date.toLocaleString('en-US', { 
+        ...options, 
+        timeZone: options.timeZone || USER_TIMEZONE 
+      });
+    }
+
+    // Default options for full datetime display
     const defaultOptions: Intl.DateTimeFormatOptions = {
       year: 'numeric',
       month: 'short',
@@ -63,7 +76,7 @@ export const formatDateTime = (
       timeZone: USER_TIMEZONE,
     };
 
-    return date.toLocaleString('en-US', { ...defaultOptions, ...options });
+    return date.toLocaleString('en-US', defaultOptions);
   } catch (error) {
     console.error('Error formatting datetime:', error, utcTimestamp);
     return 'Error formatting date';

@@ -373,7 +373,7 @@ export function calculateDataQualityScore(
  * Always allow navigation between timeframes - show warnings instead.
  */
 export interface TimeframeOption {
-  value: '1d' | '7d' | '14d';
+  value: '1d' | '7d' | '14d' | '30d';
   label: string;
   disabled: boolean;
   reason?: string;
@@ -387,19 +387,25 @@ export function getTimeframeOptions(availableDataPoints: number): TimeframeOptio
   return [
     {
       value: '1d',
-      label: '1 Day',
+      label: '1D',
       disabled: false,  // ✅ Always enabled - let users navigate
       reason: undefined
     },
     {
       value: '7d',
-      label: '7 Days',
+      label: '7D',
       disabled: false,  // ✅ Always enabled - let users navigate
       reason: undefined
     },
     {
       value: '14d',
-      label: '14 Days',
+      label: '14D',
+      disabled: false,  // ✅ Always enabled - let users navigate
+      reason: undefined
+    },
+    {
+      value: '30d',
+      label: '30D',
       disabled: false,  // ✅ Always enabled - let users navigate
       reason: undefined
     }

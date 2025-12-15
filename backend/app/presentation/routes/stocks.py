@@ -5,11 +5,14 @@ Implements U-FR2: Select Time Range and U-FR3: Filter by Stock
 Provides stock information with time-based filtering and individual stock details.
 """
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 import pytz
 from app.utils.timezone import utc_now, to_naive_utc, ensure_utc
+import yfinance as yf
+import pandas as pd
 
 from app.presentation.schemas import (
     StockDetail,
@@ -33,6 +36,10 @@ from app.data_access.repositories import (
 )
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
+
+# In-memory cache for YFinance price data (prevents rate limiting)
+# Format: {cache_key: (data, timestamp)}
+_price_cache: Dict[str, tuple] = {}
 
 
 @router.get("/{symbol}/analysis", response_model=Dict)
@@ -162,7 +169,7 @@ async def get_all_stocks(
 @router.get("/{symbol}", response_model=StockDetail)
 async def get_stock_detail(
     symbol: str = Path(..., description="Stock symbol (e.g., AAPL)"),
-    timeframe: str = Query("7d", pattern="^(1d|7d|14d)$", description="Data timeframe: 1d, 7d, or 14d"),
+    timeframe: str = Query("7d", pattern="^(1d|7d|14d|30d)$", description="Data timeframe: 1d, 7d, 14d, or 30d"),
     stock_repo: StockRepository = Depends(get_stock_repository),
     sentiment_repo: SentimentDataRepository = Depends(get_sentiment_repository),
     price_repo: StockPriceRepository = Depends(get_price_repository)
@@ -172,7 +179,7 @@ async def get_stock_detail(
     
     Args:
         symbol: Stock symbol to retrieve details for
-        timeframe: Time range for historical data (1d, 7d, 14d)
+        timeframe: Time range for historical data (1d, 7d, 14d, 30d)
         
     Returns:
         StockDetail: Comprehensive stock information including:
@@ -195,7 +202,7 @@ async def get_stock_detail(
             )
         
         # Calculate date range based on timeframe
-        days_map = {"1d": 1, "7d": 7, "14d": 14}
+        days_map = {"1d": 1, "7d": 7, "14d": 14, "30d": 30}
         days = days_map[timeframe]
         start_date = to_naive_utc(utc_now() - timedelta(days=days))
         
@@ -235,21 +242,78 @@ async def _get_price_history(
     symbol: str,
     days: int
 ) -> List[PriceDataPoint]:
-    """Get formatted price history for the stock"""
+    """
+    Get price history using YFinance as PRIMARY source.
     
+    YFinance provides clean, interval-based data that aligns well with charts.
+    Database (populated by RealTimeStockPriceService) is used as FALLBACK only
+    when YFinance fails (rate limits, network issues, etc.)
+    
+    Caching: 10-minute TTL to prevent rate limiting on page refresh.
+    """
+    
+    # Check cache first (10-minute TTL)
+    cache_key = f"{symbol}_{days}d"
+    if cache_key in _price_cache:
+        cached_data, cache_time = _price_cache[cache_key]
+        if (utc_now() - cache_time).total_seconds() < 600:  # 10-minute TTL
+            return cached_data
+    
+    # PRIMARY: YFinance API (clean interval-based data)
+    try:
+        import yfinance as yf
+        
+        # Interval selection based on timeframe
+        # 1-day: 30-min intervals to match pipeline schedule
+        # 7-day: 1-hour intervals for readability
+        # 14-day: 1-hour intervals
+        if days <= 1:
+            interval = "30m"  # Matches 30-min pipeline schedule
+        else:
+            interval = "1h"   # Hourly for multi-day views
+        
+        loop = asyncio.get_event_loop()
+        def fetch_yf():
+            return yf.Ticker(symbol).history(period=f"{days}d", interval=interval)
+            
+        hist = await loop.run_in_executor(None, fetch_yf)
+        
+        if not hist.empty:
+            price_points = []
+            for index, row in hist.iterrows():
+                price_points.append(PriceDataPoint(
+                    timestamp=index.isoformat(),
+                    open_price=row.get('Open'),
+                    close_price=row.get('Close'),
+                    high_price=row.get('High'),
+                    low_price=row.get('Low'),
+                    volume=int(row.get('Volume', 0))
+                ))
+            result = sorted(price_points, key=lambda x: x.timestamp)
+            
+            # Cache the result
+            _price_cache[cache_key] = (result, utc_now())
+            return result
+            
+    except Exception as e:
+        print(f"⚠️ YFinance fetch failed for {symbol}, falling back to DB: {e}")
+
+    # FALLBACK: Database (populated by RealTimeStockPriceService)
     price_records = await price_repo.get_price_history(symbol, days=days)
+    if price_records:
+        return [
+            PriceDataPoint(
+                timestamp=ensure_utc(record.price_timestamp),
+                open_price=record.open_price,
+                close_price=record.close_price if record.close_price else record.price,
+                high_price=record.high_price,
+                low_price=record.low_price,
+                volume=record.volume
+            )
+            for record in price_records
+        ]
     
-    return [
-        PriceDataPoint(
-            timestamp=ensure_utc(record.price_timestamp),  # Convert to aware UTC
-            open_price=record.open_price,
-            close_price=record.close_price,
-            high_price=record.high_price,
-            low_price=record.low_price,
-            volume=record.volume
-        )
-        for record in price_records
-    ]
+    return []
 
 
 async def _get_sentiment_history(

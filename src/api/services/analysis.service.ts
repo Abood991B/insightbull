@@ -24,7 +24,7 @@ class AnalysisService extends BaseService {
    * Get correlation analysis for a specific stock
    * 
    * @param symbol - Stock symbol (e.g., 'AAPL')
-   * @param timeframe - Time period ('1d', '7d', '14d')
+   * @param timeframe - Time period ('1d', '7d', '14d', '30d')
    * @returns Correlation analysis data including sentiment/price history and correlation coefficient
    * 
    * @example
@@ -36,7 +36,7 @@ class AnalysisService extends BaseService {
    */
   async getCorrelationAnalysis(
     symbol: string,
-    timeframe: '1d' | '7d' | '14d' = '7d'
+    timeframe: '1d' | '7d' | '14d' | '30d' = '7d'
   ): Promise<ApiResponse<CorrelationAnalysis>> {
     return this.get<CorrelationAnalysis>(
       `${this.ENDPOINTS.CORRELATION}/${symbol}/correlation?timeframe=${timeframe}`
@@ -47,7 +47,7 @@ class AnalysisService extends BaseService {
    * Get sentiment history for a specific stock
    * 
    * @param symbol - Stock symbol (e.g., 'AAPL')
-   * @param timeframe - Time period ('1d', '7d', '14d')
+   * @param timeframe - Time period ('1d', '7d', '14d', '30d')
    * @returns Sentiment history data with time series points
    * 
    * @example
@@ -59,7 +59,7 @@ class AnalysisService extends BaseService {
    */
   async getSentimentHistory(
     symbol: string,
-    timeframe: '1d' | '7d' | '14d' = '7d'
+    timeframe: '1d' | '7d' | '14d' | '30d' = '7d'
   ): Promise<ApiResponse<SentimentHistory>> {
     return this.get<SentimentHistory>(
       `${this.ENDPOINTS.SENTIMENT_HISTORY}/${symbol}/sentiment?timeframe=${timeframe}`

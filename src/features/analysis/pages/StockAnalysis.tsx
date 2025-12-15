@@ -116,7 +116,7 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
 
 // Timeframe options with labels
 const TIMEFRAME_OPTIONS = [
-  { value: '1d', label: '24H' },
+  { value: '1d', label: '1D' },
   { value: '7d', label: '7D' },
   { value: '14d', label: '14D' },
   { value: '30d', label: '30D' },
@@ -127,8 +127,14 @@ type TimeframeValue = typeof TIMEFRAME_OPTIONS[number]['value'];
 const StockAnalysis = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const symbolFromUrl = searchParams.get('symbol');
+  const timeframeFromUrl = searchParams.get('timeframe') as TimeframeValue | null;
+  
   const [selectedStock, setSelectedStock] = useState(symbolFromUrl || '');
-  const [timeframe, setTimeframe] = useState<TimeframeValue>('7d');
+  const [timeframe, setTimeframe] = useState<TimeframeValue>(
+    timeframeFromUrl && ['1d', '7d', '14d', '30d'].includes(timeframeFromUrl) 
+      ? timeframeFromUrl 
+      : '7d'
+  );
 
   // Listen for pipeline completion events and refetch data
   usePipelineNotifications(() => {
@@ -166,7 +172,15 @@ const StockAnalysis = () => {
   // Handle stock selection
   const handleStockChange = (symbol: string) => {
     setSelectedStock(symbol);
-    setSearchParams({ symbol });
+    setSearchParams({ symbol, timeframe });
+  };
+
+  // Handle timeframe change
+  const handleTimeframeChange = (value: TimeframeValue) => {
+    setTimeframe(value);
+    if (selectedStock) {
+      setSearchParams({ symbol: selectedStock, timeframe: value });
+    }
   };
 
   // Extract data
@@ -232,39 +246,16 @@ const StockAnalysis = () => {
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Stock Analysis</h1>
-            <p className="text-gray-600 mt-1">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Stock Analysis</h1>
+            <p className="text-slate-500 text-sm mt-1">
               Comprehensive sentiment analysis and performance metrics
             </p>
           </div>
           
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Timeframe Selector */}
-            <div className="inline-flex items-center gap-2">
-              <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
-                {TIMEFRAME_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => setTimeframe(option.value)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
-                      timeframe === option.value
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              {/* Loading indicator when fetching new timeframe data */}
-              {isFetching && !isLoadingAnalysis && (
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              )}
-            </div>
-            
+          <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
             {/* Stock Selector */}
             <Select value={selectedStock} onValueChange={handleStockChange}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-[140px] md:w-[200px] h-9">
                 <SelectValue placeholder="Select stock" />
               </SelectTrigger>
               <SelectContent>
@@ -275,6 +266,28 @@ const StockAnalysis = () => {
                 ))}
               </SelectContent>
             </Select>
+
+            {/* Timeframe Selector - Button Style */}
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              {TIMEFRAME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handleTimeframeChange(option.value)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    timeframe === option.value
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            
+            {/* Loading indicator */}
+            {isFetching && !isLoadingAnalysis && (
+              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            )}
           </div>
         </div>
 

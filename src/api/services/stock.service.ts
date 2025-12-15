@@ -68,7 +68,7 @@ class StockService extends BaseService {
    * }
    * ```
    */
-  async getStockDetail(symbol: string, timeframe: '1d' | '7d' | '14d' = '7d'): Promise<ApiResponse<StockDetail>> {
+  async getStockDetail(symbol: string, timeframe: '1d' | '7d' | '14d' | '30d' = '7d'): Promise<ApiResponse<StockDetail>> {
     return this.get<StockDetail>(`/api/stocks/${symbol}?timeframe=${timeframe}`);
   }
 

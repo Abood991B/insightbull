@@ -26,13 +26,27 @@ import { formatDate } from "@/shared/utils/timezone";
 // Import empty state components
 import { EmptyWatchlistState } from "@/shared/components/states";
 
+// --- Timeframe Options (Synchronized across all pages) ---
+const TIMEFRAME_OPTIONS = [
+  { value: '1d', label: '1D' },
+  { value: '7d', label: '7D' },
+  { value: '14d', label: '14D' },
+  { value: '30d', label: '30D' },
+] as const;
+
+type TimeframeValue = typeof TIMEFRAME_OPTIONS[number]['value'];
+
 const CorrelationAnalysis = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const symbolFromUrl = searchParams.get('symbol');
-  const timeframeFromUrl = searchParams.get('timeframe') as '1d' | '7d' | '14d' | null;
+  const timeframeFromUrl = searchParams.get('timeframe') as TimeframeValue | null;
   
   const [selectedStock, setSelectedStock] = useState(symbolFromUrl || '');
-  const [timeRange, setTimeRange] = useState<'1d' | '7d' | '14d'>(timeframeFromUrl || '7d');  // Default to 7d
+  const [timeRange, setTimeRange] = useState<TimeframeValue>(
+    timeframeFromUrl && ['1d', '7d', '14d', '30d'].includes(timeframeFromUrl) 
+      ? timeframeFromUrl 
+      : '7d'
+  );
 
   // Fetch stock options for dropdown
   const { data: stockOptionsResponse, isLoading: isLoadingStocks } = useQuery({
@@ -75,10 +89,10 @@ const CorrelationAnalysis = () => {
 
   const handleTimeRangeChange = (range: string) => {
     // Clean and validate the timeframe value to prevent format issues
-    const cleanRange = range.trim().split(':')[0] as '1d' | '7d' | '14d';
+    const cleanRange = range.trim().split(':')[0] as TimeframeValue;
     
     // Validate it's a valid timeframe
-    if (!['1d', '7d', '14d'].includes(cleanRange)) {
+    if (!['1d', '7d', '14d', '30d'].includes(cleanRange)) {
       console.warn(`Invalid timeframe value received: ${range}, defaulting to 7d`);
       setTimeRange('7d');
       setSearchParams({ symbol: selectedStock, timeframe: '7d' });
@@ -166,15 +180,15 @@ const CorrelationAnalysis = () => {
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Correlation Analysis</h1>
-            <p className="text-gray-600 mt-2">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Correlation Analysis</h1>
+            <p className="text-slate-500 text-sm mt-1">
               Statistical analysis of sentiment-price relationships from our real-time dashboard
             </p>
           </div>
           
-          <div className="flex gap-4">
+          <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-lg border shadow-sm">
             <Select value={selectedStock} onValueChange={handleStockChange}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-[140px] md:w-[160px] h-9">
                 <SelectValue placeholder="Select stock" />
               </SelectTrigger>
               <SelectContent>
@@ -186,28 +200,22 @@ const CorrelationAnalysis = () => {
               </SelectContent>
             </Select>
             
-            <Select value={timeRange} onValueChange={handleTimeRangeChange}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Time range" />
-              </SelectTrigger>
-              <SelectContent>
-                {timeframeOptions.map((option) => (
-                  <SelectItem 
-                    key={option.value} 
-                    value={option.value}
-                    disabled={option.disabled}
-                    title={option.reason || undefined}
-                  >
-                    {option.label}
-                    {option.disabled && option.reason && (
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({option.reason})
-                      </span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Timeframe Selector - Synchronized with other pages */}
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              {TIMEFRAME_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => handleTimeRangeChange(option.value)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    timeRange === option.value
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
