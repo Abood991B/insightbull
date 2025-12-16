@@ -224,48 +224,66 @@ const Index = () => {
         )}
 
         {/* Header */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-8 text-white shadow-2xl">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-transparent"></div>
-          <div className="relative z-10">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-              <div>
-                <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent">
+        <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl border border-blue-500/20 shadow-lg">
+          {/* Subtle background pattern */}
+          <div className="absolute inset-0 bg-grid-white/5 [mask-image:linear-gradient(0deg,transparent,rgba(255,255,255,0.1))]"></div>
+          
+          <div className="relative z-10 p-8">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+              {/* Left Content */}
+              <div className="flex-1">
+                <h1 className="text-3xl lg:text-4xl font-semibold text-white mb-2 tracking-tight">
                   Stock Market Sentiment Dashboard
                 </h1>
-                <p className="text-blue-100 text-lg leading-relaxed max-w-2xl">
+                <p className="text-blue-100 text-base leading-relaxed max-w-2xl mb-6">
                   Near-real-time sentiment analysis and comprehensive market overview for technology stocks
                 </p>
-                <div className="flex items-center gap-2 mt-4 text-blue-200">
-                  <Clock className="h-4 w-4" />
-                  <span className="text-sm">
-                    Last updated: {formatTimeAgo(system_status.last_collection)}
-                  </span>
+                
+                {/* Status Footer */}
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-2 text-blue-100">
+                    <Clock className="h-4 w-4" />
+                    <span>Last updated: {formatTimeAgo(system_status.last_collection)}</span>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => refetch()}
-                    className="ml-2 text-blue-200 hover:text-white hover:bg-white/20"
+                    className="h-8 px-3 text-blue-100 hover:text-white hover:bg-white/10 border border-white/20"
                     title="Refresh dashboard data"
                   >
-                    <RefreshCw className="h-4 w-4" />
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    Refresh
                   </Button>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <Badge className="bg-green-500/20 text-green-100 border-green-400/30 px-4 py-2">
-                  <Activity className="h-4 w-4 mr-2" />
-                  {market_overview.total_stocks} Active Stocks
-                </Badge>
-                <Badge className={`px-4 py-2 ${
+
+              {/* Right Status Badges */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+                  <Activity className="h-4 w-4 text-emerald-300" />
+                  <span className="text-sm font-medium text-white">
+                    {market_overview.total_stocks} Active Stocks
+                  </span>
+                </div>
+                <div className={`flex items-center gap-2 px-4 py-2 backdrop-blur-sm rounded-lg border ${
                   system_status.pipeline_status === 'operational' 
-                    ? 'bg-green-500/20 text-green-100 border-green-400/30'
+                    ? 'bg-emerald-500/20 border-emerald-400/30 text-emerald-100'
                     : system_status.pipeline_status === 'no_data'
-                    ? 'bg-gray-500/20 text-gray-100 border-gray-400/30'
-                    : 'bg-yellow-500/20 text-yellow-100 border-yellow-400/30'
+                    ? 'bg-gray-500/20 border-gray-400/30 text-gray-100'
+                    : 'bg-amber-500/20 border-amber-400/30 text-amber-100'
                 }`}>
-                  <TrendingUp className="h-4 w-4 mr-2" />
-                  {getPipelineStatusDisplay(system_status.pipeline_status).text.toUpperCase()}
-                </Badge>
+                  <div className={`h-2 w-2 rounded-full ${
+                    system_status.pipeline_status === 'operational' 
+                      ? 'bg-emerald-400 animate-pulse'
+                      : system_status.pipeline_status === 'no_data'
+                      ? 'bg-gray-400'
+                      : 'bg-amber-400 animate-pulse'
+                  }`}></div>
+                  <span className="text-sm font-medium">
+                    {getPipelineStatusDisplay(system_status.pipeline_status).text}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

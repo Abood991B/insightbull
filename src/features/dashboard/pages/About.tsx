@@ -217,7 +217,7 @@ const About = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <ol className="list-decimal list-inside space-y-2 text-gray-700">
                   <li>Select your preferred stock from our 20-stock technology watchlist</li>
-                  <li>Choose your analysis timeframe (1, 7, or 14 days)</li>
+                  <li>Choose your analysis timeframe (1, 7, 14, or 30 days)</li>
                   <li>Explore sentiment vs price correlations and statistical significance</li>
                   <li>Analyze trend patterns and momentum indicators</li>
                 </ol>
