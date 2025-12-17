@@ -164,17 +164,17 @@ const SentimentVsPrice = () => {
   // This is CORRECT - different articles have different sentiments.
   // 
   // SOLUTION: Aggregate all articles from each pipeline run into a single sentiment value.
-  // - Pipeline runs every 30 minutes during market hours
-  // - Use 30-minute buckets for 1-day view (matches pipeline schedule)
+  // - Pipeline runs every 45 minutes during market hours (optimized for Gemma 3 27B 30 RPM limit)
+  // - Use 45-minute buckets for 1-day view (matches pipeline schedule)
   // - Use 1-hour buckets for multi-day views
   const chartData = useMemo(() => {
     if (!stockDetail?.price_history) return [];
 
     // Bucket size matches pipeline schedule and YFinance intervals
-    // 1-day: 30-min buckets (matches 30-min pipeline runs and YFinance 30m interval)
+    // 1-day: 45-min buckets (matches 45-min pipeline runs)
     // 7d/14d: 1-hour buckets (matches YFinance 1h interval)
     const bucketMs = timeRange === '1d' 
-      ? 30 * 60 * 1000  // 30-minute buckets for 1-day
+      ? 45 * 60 * 1000  // 45-minute buckets for 1-day
       : 60 * 60 * 1000; // 1-hour buckets for 7d/14d
 
     // Create a map of time buckets using PRICE data as the authoritative timeline
@@ -355,7 +355,7 @@ const SentimentVsPrice = () => {
               Price & Sentiment Timeline
             </CardTitle>
             <CardDescription>
-              Blue line: Stock Price • Bars: Aggregated Sentiment ({timeRange === '1d' ? '30-min' : 'hourly'} intervals)
+              Blue line: Stock Price • Bars: Aggregated Sentiment ({timeRange === '1d' ? '45-min' : 'hourly'} intervals)
             </CardDescription>
           </CardHeader>
           <CardContent className="p-4">

@@ -15,7 +15,6 @@ Following FYP security requirements.
 """
 
 from typing import Optional, Annotated
-import logging
 
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -23,8 +22,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.security.auth_service import AuthService, AdminUser
 
-
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer(auto_error=False)

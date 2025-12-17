@@ -197,10 +197,10 @@ const SentimentTrends = () => {
     const dataPoints = sentimentData.data_points;
     
     // Bucket size matches pipeline schedule
-    // 1-day: 30-min buckets (matches 30-min pipeline runs)
+    // 1-day: 45-min buckets (matches 45-min pipeline runs)
     // 7d/14d/30d: 1-hour buckets for cleaner visualization
     const bucketMs = timeRange === '1d' 
-      ? 30 * 60 * 1000  // 30-minute buckets
+      ? 45 * 60 * 1000  // 45-minute buckets
       : 60 * 60 * 1000; // 1-hour buckets
 
     const bucketMap = new Map<number, {

@@ -48,8 +48,9 @@ class RunType(Enum):
     """
     Run type determines which data sources to use.
     
-    FREQUENT: High-frequency runs (every 30 min during market hours)
+    FREQUENT: High-frequency runs (every 45 min during market hours)
               Uses only FREE sources (HackerNews, GDELT) to conserve quota
+              Optimized for Gemma 3 27B rate limits (30 RPM, 14.4k RPD)
               
     STRATEGIC: Strategic runs (pre-market, after-hours)
                Uses ALL sources including quota-limited ones
@@ -341,14 +342,14 @@ class Scheduler:
         """
         Simple missed job catchup on startup.
         
-        Rule: For each job, if a scheduled run was missed within the last 30 minutes,
+        Rule: For each job, if a scheduled run was missed within the last 45 minutes,
         run it ONCE now. This prevents:
         - Running stale catchups (if down for hours, data is outdated anyway)
         - Running multiple catchups back-to-back (pointless, same data)
         
-        The 30-minute window is chosen because:
-        - Active Trading runs every 30 min, so we catch the most recent missed slot
-        - Other jobs run hourly+, so 30 min is reasonable catchup window
+        The 45-minute window is chosen because:
+        - Active Trading runs every 45 min, so we catch the most recent missed slot
+        - Other jobs run hourly+, so 45 min is reasonable catchup window
         """
         try:
             now = utc_now()
@@ -365,7 +366,7 @@ class Scheduler:
                 # Skip if job ran recently (within minimum interval)
                 if job.last_run:
                     minutes_since = (now - job.last_run).total_seconds() / 60
-                    min_interval = 25 if "Active Trading" in job.name else 30
+                    min_interval = 40 if "Active Trading" in job.name else 30
                     if minutes_since < min_interval:
                         self.logger.debug(f"{job.name}: ran {minutes_since:.0f}m ago, no catchup needed")
                         continue
@@ -386,16 +387,16 @@ class Scheduler:
                 minute_part = parts[0] if len(parts) > 0 else "0"
                 
                 # Determine interval
-                if "," in minute_part:  # "0,30" = 30 min
-                    interval_minutes = 30
+                if "," in minute_part:  # "0,45" = 45 min
+                    interval_minutes = 45
                 else:
                     interval_minutes = 60  # hourly or less frequent
                 
                 # Calculate when previous run should have been
                 prev_scheduled = next_run - timedelta(minutes=interval_minutes)
                 
-                # Check if we missed it (within 30-min catchup window)
-                if prev_scheduled <= now <= prev_scheduled + timedelta(minutes=30):
+                # Check if we missed it (within 45-min catchup window)
+                if prev_scheduled <= now <= prev_scheduled + timedelta(minutes=45):
                     jobs_to_catchup.append((job_id, job.name, prev_scheduled))
             
             # Run catchup jobs (one at a time, with small delay between)
@@ -645,12 +646,13 @@ class Scheduler:
         # These sources have NO daily quota - only per-minute rate limits
         # =========================================================================
         
-        # Active Trading Updates: Every 30 minutes during market hours
+        # Active Trading Updates: Every 45 minutes during market hours
         # 14:30 - 21:00 UTC = 10:30 PM - 5:00 AM GMT+8 = 9:30 AM - 4:00 PM ET
         # Near real-time sentiment tracking using FREE sources only
+        # 45-min interval ensures pipeline completes before next run (Gemma 3 27B: 30 RPM limit)
         await self.schedule_smart_pipeline(
             name="Active Trading Updates",
-            cron_expression="0,30 14-20 * * 0-4",  # Every 30 min, 2-8:59 PM UTC Mon-Fri
+            cron_expression="0,45 14-20 * * 0-4",  # Every 45 min, 2-8:59 PM UTC Mon-Fri
             symbols=current_symbols,
             lookback_days=1,
             run_type=RunType.FREQUENT  # FREE SOURCES ONLY (HN, GDELT, Finnhub, YFinance)

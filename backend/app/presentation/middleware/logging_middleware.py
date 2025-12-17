@@ -20,16 +20,22 @@ logger = structlog.get_logger()
 # These are polled frequently by the frontend and create excessive log noise
 QUIET_ENDPOINTS: Set[str] = {
     "/api/admin/scheduler/events",      # Polled every 5 seconds
-    "/api/admin/scheduler/jobs",        # Polled every 30 seconds
+    "/api/admin/scheduler/jobs",        # Polled every 30 seconds  
+    "/api/admin/market/status",         # Polled every 10 seconds
     "/api/stocks/market/status",        # Polled every 10 seconds
     "/api/dashboard/overview",          # Auto-refresh
     "/health",                          # Health checks
+    "/api/admin/scheduler/history",     # History polling
+    "/api/admin/collectors/health",     # Health polling
 }
 
 # Only log these endpoints if they return an error status code
 QUIET_SUCCESS_ONLY_ENDPOINTS: Set[str] = {
     "/api/stocks/prices/latest",        # Price updates
 }
+
+# Skip OPTIONS requests entirely (CORS preflight)
+SKIP_METHODS: Set[str] = {"OPTIONS"}
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -46,6 +52,11 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         """Process request and log details."""
         start_time = time.time()
         path = request.url.path
+        method = request.method
+        
+        # Skip OPTIONS requests entirely (CORS preflight - very noisy)
+        if method in SKIP_METHODS:
+            return await call_next(request)
         
         # Determine logging behavior for this endpoint
         should_skip_logging = path in QUIET_ENDPOINTS

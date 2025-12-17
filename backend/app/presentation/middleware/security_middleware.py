@@ -12,7 +12,6 @@ Following FYP security requirements and best practices.
 """
 
 import time
-import logging
 from typing import Dict, Any, Optional
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
@@ -25,8 +24,9 @@ from starlette.middleware.cors import CORSMiddleware
 from app.infrastructure.config.settings import Settings
 from app.infrastructure.security.security_utils import SecurityUtils
 
-
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -297,8 +297,8 @@ def setup_security_middleware(app, settings: Settings):
     """
     # Add middleware in reverse order (they execute in LIFO order)
     
-    # Request logging (outermost)
-    app.add_middleware(RequestLoggingMiddleware, settings=settings)
+    # NOTE: Request logging handled by LoggingMiddleware in main.py
+    # Removed RequestLoggingMiddleware to avoid duplicate HTTP logs
     
     # Security headers
     app.add_middleware(SecurityHeadersMiddleware, settings=settings)

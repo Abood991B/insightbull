@@ -175,13 +175,13 @@ const PRESET_SCHEDULES: PresetSchedule[] = [
     name: 'Active Trading Updates',
     description: 'Frequent updates during market hours',
     icon: <Activity className="h-5 w-5" />,
-    schedule: `Every 30 minutes (10 PM - 5 AM ${timezoneName}, Mon-Fri)`,
-    cronExpression: '0,30 14-20 * * 0-4', // Every 30 min, 2-8:59 PM UTC Mon-Fri
+    schedule: `Every 45 minutes (10 PM - 5 AM ${timezoneName}, Mon-Fri)`,
+    cronExpression: '0,45 14-20 * * 0-4', // Every 45 min, 2-8:59 PM UTC Mon-Fri
     jobType: 'full_pipeline',
     enabled: true,
     color: 'bg-green-500',
     marketContext: 'market-hours',
-    rationale: 'Monitor real-time sentiment shifts during active trading (9:30 AM - 4 PM ET). Catches breaking news immediately.'
+    rationale: 'Monitor real-time sentiment shifts during active trading (9:30 AM - 4 PM ET). Catches breaking news while respecting Gemma 3 27B rate limits.'
   },
   {
     id: 'after-hours-evening',

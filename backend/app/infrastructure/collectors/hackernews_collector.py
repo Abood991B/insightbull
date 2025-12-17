@@ -23,7 +23,6 @@ import re
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional, Set
 import asyncio
-import logging
 import aiohttp
 from app.utils.timezone import utc_now
 from app.infrastructure.log_system import get_logger
@@ -37,9 +36,8 @@ from .base_collector import (
     CollectionError
 )
 
-# Use structured logging system for consistent log management
-logger = logging.getLogger(__name__)
-structured_logger = get_logger()
+# Use centralized logging system
+logger = get_logger()
 
 
 class HackerNewsCollector(BaseCollector):
@@ -116,20 +114,20 @@ class HackerNewsCollector(BaseCollector):
             ) as response:
                 is_valid = response.status == 200
                 if is_valid:
-                    structured_logger.info(
+                    logger.info(
                         "HackerNews API connection validated successfully",
                         component="hackernews_collector",
                         api_endpoint=self.BASE_URL
                     )
                 else:
-                    structured_logger.warning(
+                    logger.warning(
                         f"HackerNews API returned non-200 status: {response.status}",
                         component="hackernews_collector",
                         status_code=response.status
                     )
                 return is_valid
         except Exception as e:
-            structured_logger.error(
+            logger.error(
                 f"HackerNews connection validation failed: {str(e)}",
                 component="hackernews_collector",
                 error_type=type(e).__name__
@@ -152,7 +150,7 @@ class HackerNewsCollector(BaseCollector):
         collected_data = []
         
         # Log collection start with structured logging
-        structured_logger.info(
+        logger.info(
             f"Starting HackerNews data collection for {len(config.symbols)} symbols",
             component="hackernews_collector",
             symbols=config.symbols,
@@ -179,7 +177,7 @@ class HackerNewsCollector(BaseCollector):
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     error_count += 1
-                    structured_logger.error(
+                    logger.error(
                         f"HackerNews collection failed for symbol: {config.symbols[i]}",
                         component="hackernews_collector",
                         symbol=config.symbols[i],
@@ -192,7 +190,7 @@ class HackerNewsCollector(BaseCollector):
             execution_time = (utc_now() - start_time).total_seconds()
             
             # Log collection completion with stats
-            structured_logger.info(
+            logger.info(
                 f"HackerNews collection complete: {len(collected_data)} items collected",
                 component="hackernews_collector",
                 items_collected=len(collected_data),
@@ -212,7 +210,7 @@ class HackerNewsCollector(BaseCollector):
             execution_time = (utc_now() - start_time).total_seconds()
             error_msg = f"HackerNews collection failed: {str(e)}"
             
-            structured_logger.error(
+            logger.error(
                 error_msg,
                 component="hackernews_collector",
                 symbols=config.symbols,
@@ -260,7 +258,7 @@ class HackerNewsCollector(BaseCollector):
             
             # Log per-symbol collection stats
             if collected_data:
-                structured_logger.debug(
+                logger.debug(
                     f"HackerNews collected {len(collected_data)} items for {symbol}",
                     component="hackernews_collector",
                     symbol=symbol,
@@ -272,7 +270,7 @@ class HackerNewsCollector(BaseCollector):
             await asyncio.sleep(0.1)
             
         except Exception as e:
-            structured_logger.warning(
+            logger.warning(
                 f"Error collecting HackerNews data for symbol: {symbol}",
                 component="hackernews_collector",
                 symbol=symbol,
@@ -321,7 +319,7 @@ class HackerNewsCollector(BaseCollector):
                 params=params
             ) as response:
                 if response.status != 200:
-                    structured_logger.warning(
+                    logger.warning(
                         f"HackerNews API returned non-200 status for stories search",
                         component="hackernews_collector",
                         symbol=symbol,
@@ -354,7 +352,7 @@ class HackerNewsCollector(BaseCollector):
                     
                     # Skip non-financial content
                     if self._is_non_financial_content(full_text):
-                        structured_logger.debug(
+                        logger.debug(
                             f"Skipping non-financial HN story: {title[:50]}",
                             component="hackernews_collector"
                         )
@@ -390,7 +388,7 @@ class HackerNewsCollector(BaseCollector):
                     collected_data.append(raw_data)
                 
         except Exception as e:
-            structured_logger.warning(
+            logger.warning(
                 f"Error searching HackerNews stories for symbol: {symbol}",
                 component="hackernews_collector",
                 symbol=symbol,
@@ -438,7 +436,7 @@ class HackerNewsCollector(BaseCollector):
                 params=params
             ) as response:
                 if response.status != 200:
-                    structured_logger.warning(
+                    logger.warning(
                         f"HackerNews API returned non-200 status for comments search",
                         component="hackernews_collector",
                         symbol=symbol,
@@ -493,7 +491,7 @@ class HackerNewsCollector(BaseCollector):
                     collected_data.append(raw_data)
                 
         except Exception as e:
-            structured_logger.warning(
+            logger.warning(
                 f"Error searching HackerNews comments for symbol: {symbol}",
                 component="hackernews_collector",
                 symbol=symbol,

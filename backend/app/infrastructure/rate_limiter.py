@@ -197,12 +197,13 @@ class RateLimitHandler:
     
     # Concurrency limits per source
     # Higher for free APIs, lower for rate-limited ones
+    # Optimized for 20 stocks scaling
     SEMAPHORE_LIMITS = {
-        "hackernews": 5,    # 5 concurrent requests (generous API)
-        "gdelt": 3,         # 3 concurrent (be courteous)
-        "finnhub": 3,       # 3 concurrent (moderate limit)
-        "newsapi": 1,       # 1 concurrent (very limited)
-        "yfinance": 3       # 3 concurrent (unlimited but polite)
+        "hackernews": 7,    # 7 concurrent requests (generous API, increased for 20 stocks)
+        "gdelt": 5,         # 5 concurrent (increased for parallel symbol processing)
+        "finnhub": 5,       # 5 concurrent (increased from 3 for better throughput)
+        "newsapi": 1,       # 1 concurrent (keep low - strict 100/day limit)
+        "yfinance": 5       # 5 concurrent (unlimited API, safe to increase)
     }
     
     # Optimal items per symbol for each source

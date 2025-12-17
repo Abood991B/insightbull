@@ -19,7 +19,6 @@ import re
 import torch
 from typing import List, Dict, Any, Optional, Tuple
 import asyncio
-import logging
 
 # Transformers imports
 try:
@@ -42,7 +41,9 @@ from .sentiment_model import (
     AnalysisError
 )
 
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 
 class FinBERTModel(SentimentModel):
@@ -707,7 +708,8 @@ class ConfidenceCalibrator:
                         Default 1.5 for financial models which tend to be overconfident
         """
         self.temperature = temperature
-        logger.info(f"ConfidenceCalibrator initialized with temperature={temperature}")
+        # Log at debug level to reduce startup noise
+        logger.debug(f"ConfidenceCalibrator initialized with temperature={temperature}")
     
     def calibrate_scores(self, logits: torch.Tensor) -> torch.Tensor:
         """

@@ -19,7 +19,6 @@ Model: mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis
 import time
 import torch
 from typing import List, Dict, Any, Optional
-import logging
 
 try:
     from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
@@ -37,7 +36,9 @@ from .sentiment_model import (
     AnalysisError
 )
 
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 
 class DistilBERTFinancialModel(SentimentModel):

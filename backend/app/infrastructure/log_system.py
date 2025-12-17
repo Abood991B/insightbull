@@ -120,6 +120,49 @@ class LogSystem:
         for handler in root_logger.handlers[:]:
             root_logger.removeHandler(handler)
         
+        # Suppress noisy external library loggers
+        noisy_loggers = [
+            "httpx", "httpcore", "urllib3", "transformers", "torch",
+            "filelock", "huggingface_hub", "asyncio", "aiosqlite",
+            "sqlalchemy.engine", "sqlalchemy.pool", "charset_normalizer",
+            "google.auth", "google.api_core"
+        ]
+        for noisy_logger in noisy_loggers:
+            logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+        
+        # Smart JSON formatter that handles both plain text and pre-formatted JSON
+        class SmartJSONFormatter(logging.Formatter):
+            """
+            Smart formatter that:
+            - Passes through already-formatted JSON from structlog unchanged
+            - Formats plain text messages from standard logging as JSON
+            """
+            def format(self, record):
+                message = record.getMessage()
+                
+                # Check if message is already valid JSON (from structlog)
+                if message.startswith('{') and message.endswith('}'):
+                    try:
+                        # Validate it's actual JSON and return as-is
+                        json.loads(message)
+                        return message
+                    except (json.JSONDecodeError, ValueError):
+                        pass  # Not valid JSON, format it
+                
+                # Format plain text messages as JSON
+                log_data = {
+                    "event": message,
+                    "logger": record.name,
+                    "level": record.levelname.lower(),
+                    "timestamp": utc_now().isoformat() + "Z"
+                }
+                # Add exception info if present
+                if record.exc_info:
+                    log_data["exception"] = self.formatException(record.exc_info)
+                return json.dumps(log_data)
+        
+        json_formatter = SmartJSONFormatter()
+        
         # Rotating file handler for all logs (daily rotation, keep 30 days)
         file_handler = TimedRotatingFileHandler(
             log_dir / "application.log",
@@ -131,10 +174,12 @@ class LogSystem:
         )
         file_handler.setLevel(logging.INFO)
         file_handler.suffix = "%Y-%m-%d"  # Add date suffix to rotated files
+        file_handler.setFormatter(json_formatter)
         
-        # Console handler for development
+        # Console handler for development - also uses JSON formatter for consistency
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(json_formatter)
         
         # Rotating error file handler (daily rotation, keep 90 days for debugging)
         error_handler = TimedRotatingFileHandler(
@@ -147,6 +192,7 @@ class LogSystem:
         )
         error_handler.setLevel(logging.ERROR)
         error_handler.suffix = "%Y-%m-%d"
+        error_handler.setFormatter(json_formatter)
         
         root_logger.addHandler(file_handler)
         root_logger.addHandler(console_handler)
@@ -242,8 +288,9 @@ class LogSystem:
                 self._last_cleanup = current_time
                 
                 # Log cleanup stats occasionally (but avoid infinite recursion)
+                # Note: Using internal logger to avoid recursion
                 if old_size > len(self._log_cache) and old_size > 100:
-                    print(f"LogSystem: Cleaned cache from {old_size} to {len(self._log_cache)} entries")
+                    pass  # Silent cleanup - stats logged to file only
             
             # Check if we've logged this recently
             last_logged = self._log_cache.get(message_hash, 0)

@@ -14,7 +14,6 @@ Following FYP Report specification:
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import asyncio
-import logging
 from app.utils.timezone import utc_now
 
 try:
@@ -35,7 +34,9 @@ from .base_collector import (
     CollectionError
 )
 
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 
 class FinHubCollector(BaseCollector):
@@ -253,7 +254,8 @@ class FinHubCollector(BaseCollector):
                         self.logger.warning(f"Error parsing news item for {symbol}: {str(e)}")
                         continue
             
-            self.logger.info(f"Collected {len(collected_data)} news items for {symbol}")
+            # Log at debug level to reduce noise (summary logged at end of collection)
+            self.logger.debug(f"Collected {len(collected_data)} news items for {symbol}")
             
         except Exception as e:
             self.logger.error(f"Error collecting company news for {symbol}: {str(e)}")

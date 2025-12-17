@@ -61,24 +61,44 @@ class SourceQuota:
         return self.usage_percent >= self.auto_disable_threshold
 
 
-# Default quota configurations
+# Default quota configurations for all 5 data sources + Gemini AI
 DEFAULT_QUOTAS: Dict[str, Dict[str, Any]] = {
+    # HackerNews Algolia API - Very generous, no auth required
+    "hackernews": {
+        "daily_limit": 7200,           # 2 req/sec * 3600 = 7200/hr, very generous
+        "warning_threshold": 0.85,
+        "auto_disable_threshold": 0.95
+    },
+    # GDELT DOC 2.0 API - Free, no auth required
+    "gdelt": {
+        "daily_limit": 3600,           # 1 req/sec courteous limit
+        "warning_threshold": 0.85,
+        "auto_disable_threshold": 0.95
+    },
+    # Finnhub API - Free tier: 60 calls/minute
+    "finnhub": {
+        "daily_limit": 3600,           # 60/min realistic daily usage
+        "warning_threshold": 0.8,
+        "auto_disable_threshold": 0.95
+    },
+    # NewsAPI - Free tier: 100 requests/day (very limited)
     "newsapi": {
         "daily_limit": 100,
-        "warning_threshold": 0.7,      # Warn at 70%
-        "auto_disable_threshold": 0.9   # Disable at 90%
+        "warning_threshold": 0.7,      # Warn early at 70%
+        "auto_disable_threshold": 0.9  # Disable at 90%
     },
-    # Free APIs with high limits - track but don't auto-disable
-    "finnhub": {
-        "daily_limit": 3600,  # 60/min * 60 min = 3600/hr, but realistically ~2000/day
-        "warning_threshold": 0.8,
-        "auto_disable_threshold": 0.95  # Higher threshold, rarely hit
-    },
-    # YFinance - unlimited but track for monitoring
+    # YFinance - Unlimited but track for monitoring
     "yfinance": {
-        "daily_limit": 10000,  # Soft limit for monitoring
+        "daily_limit": 10000,          # Soft limit for monitoring
         "warning_threshold": 0.9,
         "auto_disable_threshold": 0.99
+    },
+    # Gemma 3 27B - Google AI Studio (actual limits)
+    # 30 RPM, 15k TPM, 14,400 RPD (requests per day)
+    "gemini": {
+        "daily_limit": 14400,          # Actual RPD limit
+        "warning_threshold": 0.8,      # Warn at 80% (11,520 requests)
+        "auto_disable_threshold": 0.95 # Disable at 95% (13,680 requests)
     }
 }
 

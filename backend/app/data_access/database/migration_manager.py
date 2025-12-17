@@ -6,7 +6,6 @@ Unified migration management using the data_access database system.
 Provides CLI interface for database migrations and schema management.
 """
 
-import logging
 from typing import Optional, List
 from pathlib import Path
 import asyncio
@@ -14,7 +13,9 @@ import asyncio
 from app.data_access.database.connection import init_database, get_db_session
 from app.data_access.database.base import Base
 
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 
 class MigrationManager:

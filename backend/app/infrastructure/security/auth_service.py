@@ -15,15 +15,15 @@ Following FYP security requirements for admin authentication.
 
 from typing import Optional, Dict, Any
 from datetime import datetime
-import logging
 from app.utils.timezone import utc_now
 
 from .jwt_handler import JWTHandler
 from .security_utils import SecurityUtils
 from app.infrastructure.config.settings import Settings
 
-
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 
 class AdminUser:

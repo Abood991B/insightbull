@@ -264,11 +264,11 @@ async def _get_price_history(
         import yfinance as yf
         
         # Interval selection based on timeframe
-        # 1-day: 30-min intervals to match pipeline schedule
-        # 7-day: 1-hour intervals for readability
-        # 14-day: 1-hour intervals
+        # 1-day: 1-hour intervals (YFinance doesn't support 45m, closest to 45-min pipeline)
+        # 7-day/14-day: 1-hour intervals for readability
+        # Note: Pipeline runs every 45 minutes but YFinance only supports 1m,2m,5m,15m,30m,60m,90m,1h,1d
         if days <= 1:
-            interval = "30m"  # Matches 30-min pipeline schedule
+            interval = "1h"   # Closest YFinance interval to 45-min pipeline schedule
         else:
             interval = "1h"   # Hourly for multi-day views
         

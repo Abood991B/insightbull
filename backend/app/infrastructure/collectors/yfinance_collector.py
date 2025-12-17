@@ -21,7 +21,6 @@ import re
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import asyncio
-import logging
 from app.utils.timezone import utc_now
 from app.infrastructure.log_system import get_logger
 
@@ -41,9 +40,8 @@ from .base_collector import (
     CollectionError
 )
 
-# Use structured logging system for consistent log management
-logger = logging.getLogger(__name__)
-structured_logger = get_logger()
+# Use centralized logging system
+logger = get_logger()
 
 
 class YFinanceCollector(BaseCollector):
@@ -108,20 +106,20 @@ class YFinanceCollector(BaseCollector):
             is_valid = await loop.run_in_executor(None, _test_connection)
             
             if is_valid:
-                structured_logger.info(
+                logger.info(
                     "YFinance connection validated successfully",
                     component="yfinance_collector",
                     api_endpoint="Yahoo Finance"
                 )
             else:
-                structured_logger.warning(
+                logger.warning(
                     "YFinance connection test returned no data",
                     component="yfinance_collector"
                 )
             return is_valid
             
         except Exception as e:
-            structured_logger.error(
+            logger.error(
                 f"YFinance connection validation failed: {str(e)}",
                 component="yfinance_collector",
                 error_type=type(e).__name__
@@ -142,7 +140,7 @@ class YFinanceCollector(BaseCollector):
         collected_data = []
         
         # Log collection start with structured logging
-        structured_logger.info(
+        logger.info(
             f"Starting YFinance data collection for {len(config.symbols)} symbols",
             component="yfinance_collector",
             symbols=config.symbols,
@@ -169,7 +167,7 @@ class YFinanceCollector(BaseCollector):
                     
                 except Exception as e:
                     error_count += 1
-                    structured_logger.warning(
+                    logger.warning(
                         f"Error collecting YFinance data for symbol: {symbol}",
                         component="yfinance_collector",
                         symbol=symbol,
@@ -181,7 +179,7 @@ class YFinanceCollector(BaseCollector):
             execution_time = (utc_now() - start_time).total_seconds()
             
             # Log collection completion with stats
-            structured_logger.info(
+            logger.info(
                 f"YFinance collection complete: {len(collected_data)} items collected",
                 component="yfinance_collector",
                 items_collected=len(collected_data),
@@ -201,7 +199,7 @@ class YFinanceCollector(BaseCollector):
             execution_time = (utc_now() - start_time).total_seconds()
             error_msg = f"YFinance collection failed: {str(e)}"
             
-            structured_logger.error(
+            logger.error(
                 error_msg,
                 component="yfinance_collector",
                 symbols=config.symbols,
@@ -246,7 +244,7 @@ class YFinanceCollector(BaseCollector):
             news_items = await loop.run_in_executor(None, _get_news)
             
             if not news_items:
-                structured_logger.debug(
+                logger.debug(
                     f"No news found for symbol: {symbol}",
                     component="yfinance_collector",
                     symbol=symbol
@@ -260,14 +258,14 @@ class YFinanceCollector(BaseCollector):
                     if raw_data:
                         collected_data.append(raw_data)
                 except Exception as e:
-                    structured_logger.debug(
+                    logger.debug(
                         f"Error parsing news item for {symbol}: {str(e)}",
                         component="yfinance_collector",
                         symbol=symbol
                     )
                     continue
             
-            structured_logger.debug(
+            logger.debug(
                 f"Collected {len(collected_data)} news items for {symbol}",
                 component="yfinance_collector",
                 symbol=symbol,
@@ -275,7 +273,7 @@ class YFinanceCollector(BaseCollector):
             )
             
         except Exception as e:
-            structured_logger.error(
+            logger.error(
                 f"Error collecting news for {symbol}: {str(e)}",
                 component="yfinance_collector",
                 symbol=symbol,
@@ -396,7 +394,7 @@ class YFinanceCollector(BaseCollector):
             )
             
         except Exception as e:
-            structured_logger.debug(
+            logger.debug(
                 f"Failed to parse news item: {str(e)}",
                 component="yfinance_collector",
                 error_type=type(e).__name__

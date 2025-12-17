@@ -1376,95 +1376,104 @@ class DataPipeline:
                 {"total_results": len(processing_results), "correlation_id": correlation_id}
             )
             
-            # Process each result using async repositories with proper session lifecycle
+            # Bulk insert optimization: Prepare all records first, then insert in single transaction
             from ..data_access.database.connection import get_db_session
+            
+            # Phase 1: Prepare all sentiment records (deduplication, validation)
+            records_to_insert = []
+            stock_cache = {}  # Cache stocks to avoid repeated DB lookups
             
             for result in processing_results:
                 try:
-                    # Use proper async session context manager for each record
-                    async with get_db_session() as session:
-                        # Create repositories with the managed session
-                        sentiment_repository = SentimentDataRepository(session)
-                        stock_repository = StockRepository(session)
-                        
-                        # Get or create stock record using repository
-                        stock = await stock_repository.get_by_symbol(result.stock_symbol)
-                        if not stock:
-                            stock_data = {
-                                "symbol": result.stock_symbol,
-                                "name": f"{result.stock_symbol} Corp"  # Default name
-                            }
-                            stock = await stock_repository.create(stock_data)
-                        
-                        # Determine sentiment label based on score
-                        def get_sentiment_label(score: float) -> str:
-                            if score >= 0.1:
-                                return "Positive"
-                            elif score <= -0.1:
-                                return "Negative"
-                            else:
-                                return "Neutral"
-                        
-                        # Clean and truncate raw_text for storage
-                        # Only store the cleaned, essential text (max 1000 chars)
-                        cleaned_text = None
-                        if result.raw_text:
-                            cleaned_text = self.text_processor.process_text(result.raw_text)
-                            cleaned_text = cleaned_text[:1000] if cleaned_text else None
-                        
-                        # --- Quality Control & Deduplication ---
-                        if not cleaned_text:
-                            continue
-                            
-                        # 1. Filter out short HackerNews comments (often noise/technical queries)
-                        # Keep headlines/titles (usually > 30 chars) but filter very short comments
-                        if result.source == DataSource.HACKERNEWS and len(cleaned_text) < 40:
-                            continue
-                            
-                        # 2. Deduplication (Batch Level)
-                        # Create a hash of the text to check for duplicates in this run
-                        text_hash = hashlib.md5(cleaned_text.encode('utf-8')).hexdigest()
-                        if text_hash in seen_texts:
-                            continue
-                        seen_texts.add(text_hash)
-                        
-                        # Build minimal metadata - only what's actually used
-                        # Remove: processor_version (unused), correlation_id (debug only), label (redundant)
-                        essential_metadata = {}
-                        
-                        # Only include content_type if present (story/comment for HN)
-                        content_type = getattr(result, 'content_type', None)
-                        if content_type:
-                            essential_metadata["content_type"] = content_type
-                        
-                        # Only include original_timestamp if different from created_at
-                        orig_ts = getattr(result, 'original_timestamp', None)
-                        if orig_ts:
-                            essential_metadata["original_timestamp"] = orig_ts
-                        
-                        # Create sentiment record using repository
-                        sentiment_data = {
-                            "stock_id": stock.id,
-                            "source": result.source.lower(),
-                            "sentiment_score": result.sentiment_score,
-                            "confidence": result.confidence,
-                            "sentiment_label": get_sentiment_label(result.sentiment_score),
-                            "model_used": getattr(result, 'model_used', 'unknown'),
-                            "raw_text": cleaned_text,  # Cleaned and limited to 1000 chars
-                            "created_at": datetime.now(timezone.utc),
-                            "additional_metadata": essential_metadata if essential_metadata else None
-                        }
-                        
-                        await sentiment_repository.create(sentiment_data)
-                        stored_count += 1
-                        # Session automatically commits and closes due to context manager
-                        
+                    # Clean and validate text
+                    cleaned_text = None
+                    if result.raw_text:
+                        cleaned_text = self.text_processor.process_text(result.raw_text)
+                        cleaned_text = cleaned_text[:1000] if cleaned_text else None
+                    
+                    if not cleaned_text:
+                        continue
+                    
+                    # Filter short HackerNews comments
+                    if result.source == DataSource.HACKERNEWS and len(cleaned_text) < 40:
+                        continue
+                    
+                    # Deduplication
+                    text_hash = hashlib.md5(cleaned_text.encode('utf-8')).hexdigest()
+                    if text_hash in seen_texts:
+                        continue
+                    seen_texts.add(text_hash)
+                    
+                    # Determine sentiment label
+                    def get_sentiment_label(score: float) -> str:
+                        if score >= 0.1:
+                            return "Positive"
+                        elif score <= -0.1:
+                            return "Negative"
+                        else:
+                            return "Neutral"
+                    
+                    # Build metadata
+                    essential_metadata = {}
+                    content_type = getattr(result, 'content_type', None)
+                    if content_type:
+                        essential_metadata["content_type"] = content_type
+                    orig_ts = getattr(result, 'original_timestamp', None)
+                    if orig_ts:
+                        essential_metadata["original_timestamp"] = orig_ts
+                    
+                    records_to_insert.append({
+                        "stock_symbol": result.stock_symbol,
+                        "source": result.source.lower(),
+                        "sentiment_score": result.sentiment_score,
+                        "confidence": result.confidence,
+                        "sentiment_label": get_sentiment_label(result.sentiment_score),
+                        "model_used": getattr(result, 'model_used', 'unknown'),
+                        "raw_text": cleaned_text,
+                        "created_at": datetime.now(timezone.utc),
+                        "additional_metadata": essential_metadata if essential_metadata else None
+                    })
                 except Exception as e:
                     self.logger.log_error(
-                        "sentiment_record_storage_error",
+                        "record_preparation_error",
                         {"stock_symbol": result.stock_symbol, "error": str(e)}
                     )
                     continue
+            
+            # Phase 2: Bulk insert all records in single transaction
+            if records_to_insert:
+                async with get_db_session() as session:
+                    sentiment_repository = SentimentDataRepository(session)
+                    stock_repository = StockRepository(session)
+                    
+                    # Get or create all unique stocks first
+                    unique_symbols = set(r["stock_symbol"] for r in records_to_insert)
+                    for symbol in unique_symbols:
+                        stock = await stock_repository.get_by_symbol(symbol)
+                        if not stock:
+                            stock_data = {"symbol": symbol, "name": f"{symbol} Corp"}
+                            stock = await stock_repository.create(stock_data)
+                        stock_cache[symbol] = stock
+                    
+                    # Bulk insert sentiment records
+                    for record in records_to_insert:
+                        stock = stock_cache[record["stock_symbol"]]
+                        sentiment_data = {
+                            "stock_id": stock.id,
+                            "source": record["source"],
+                            "sentiment_score": record["sentiment_score"],
+                            "confidence": record["confidence"],
+                            "sentiment_label": record["sentiment_label"],
+                            "model_used": record["model_used"],
+                            "raw_text": record["raw_text"],
+                            "created_at": record["created_at"],
+                            "additional_metadata": record["additional_metadata"]
+                        }
+                        await sentiment_repository.create(sentiment_data)
+                        stored_count += 1
+                    
+                    # Single commit for all records
+                    await session.commit()
             
             # Log success metrics
             self.logger.log_pipeline_operation(
@@ -2480,25 +2489,130 @@ class DataPipeline:
                                     )
                                 )
                             
-                            # Create sentiment data record
-                            from app.utils.timezone import malaysia_now
-                            sentiment_data = SentimentData(
-                                stock_id=metadata["stock_id"],
-                                source=result.source.value.lower(),
-                                sentiment_score=result.score,
-                                confidence=result.confidence,
-                                sentiment_label=result.label,
-                                model_used=result.model_name,
-                                raw_text=result.text[:1000],  # Store truncated text
-                                stock_mentions=metadata.get("stock_mentions"),  # Copy stock mentions from source
-                                content_hash=SentimentData.generate_content_hash(
-                                    result.text, result.source.value, ""
-                                ),
-                                created_at=utc_now()  # Use UTC timezone
+                            # Check if this is a multi-entity result (per-entity sentiment extraction)
+                            is_multi_entity = (
+                                result.model_name and 
+                                "multi_entity" in result.model_name.lower() or 
+                                result.label == "multi_entity"
                             )
-                            db.add(sentiment_data)
-                            sentiment_records += 1
-                            processed_count += 1
+                            
+                            if is_multi_entity and result.raw_scores and result.raw_scores.get('ai_reasoning'):
+                                # Per-entity sentiment extraction - create multiple records
+                                try:
+                                    import json
+                                    entities = json.loads(result.raw_scores['ai_reasoning'])
+                                    
+                                    self.logger.info(
+                                        f"Processing multi-entity result with {len(entities)} entities",
+                                        extra={"entities": [e.get('entity') for e in entities]}
+                                    )
+                                    
+                                    for entity_data in entities:
+                                        entity_symbol = entity_data.get('entity', '')
+                                        entity_sentiment = entity_data.get('sentiment', 'neutral')
+                                        entity_confidence = entity_data.get('confidence', 0.75)
+                                        entity_reasoning = entity_data.get('reasoning', '')
+                                        
+                                        # Map sentiment to score
+                                        if entity_sentiment == 'positive':
+                                            entity_score = entity_confidence
+                                        elif entity_sentiment == 'negative':
+                                            entity_score = -entity_confidence
+                                        else:
+                                            entity_score = 0.0
+                                        
+                                        # Find stock ID for this entity (may be different from original metadata)
+                                        from sqlalchemy import select
+                                        from app.data_access.models import Stock
+                                        stock_query = select(Stock.id).where(Stock.symbol == entity_symbol)
+                                        stock_result = await db.execute(stock_query)
+                                        entity_stock_id = stock_result.scalar_one_or_none()
+                                        
+                                        if not entity_stock_id:
+                                            self.logger.warning(
+                                                f"Stock not found for entity {entity_symbol}, skipping",
+                                                extra={"entity": entity_symbol}
+                                            )
+                                            continue
+                                        
+                                        # Create SentimentData for this entity
+                                        from app.utils.timezone import malaysia_now
+                                        sentiment_data = SentimentData(
+                                            stock_id=entity_stock_id,
+                                            source=result.source.value.lower(),
+                                            sentiment_score=entity_score,
+                                            confidence=entity_confidence,
+                                            sentiment_label=entity_sentiment,
+                                            model_used="Gemini AI (per-entity)",
+                                            sentiment_nuance="per_entity",  # Multi-entity extraction
+                                            raw_text=result.text[:1000],  # Same text for all entities
+                                            stock_mentions=metadata.get("stock_mentions", []),
+                                            content_hash=SentimentData.generate_content_hash(
+                                                result.text + entity_symbol,  # Add entity to hash for uniqueness
+                                                result.source.value,
+                                                ""
+                                            ),
+                                            created_at=utc_now()
+                                        )
+                                        db.add(sentiment_data)
+                                        sentiment_records += 1
+                                        
+                                        self.logger.debug(
+                                            f"Created sentiment record for entity {entity_symbol}: {entity_sentiment} ({entity_confidence:.2f})",
+                                            extra={"entity": entity_symbol, "sentiment": entity_sentiment}
+                                        )
+                                    
+                                    processed_count += 1
+                                    
+                                except json.JSONDecodeError as e:
+                                    self.logger.error(f"Failed to parse multi-entity JSON: {e}")
+                                    # Fall back to single-entity processing
+                                    is_multi_entity = False
+                            
+                            if not is_multi_entity:
+                                # Detect sentiment nuance from AI reasoning
+                                sentiment_nuance = None
+                                ai_reasoning = result.ai_reasoning or ''  # Get reasoning directly from SentimentResult
+                                text_lower = result.text.lower()
+                                
+                                if ai_reasoning:
+                                    # Check for advanced rule triggers in reasoning or text
+                                    if any(phrase in ai_reasoning.lower() for phrase in ['buying opportunity', 'future outlook', 'long-term upside', 'undervalued']):
+                                        if any(neg in text_lower for neg in ['fell', 'drop', 'decline', 'crash', 'sell-off']):
+                                            sentiment_nuance = 'temporal_weighting'
+                                    elif 'short squeeze' in text_lower:
+                                        sentiment_nuance = 'short_squeeze'
+                                    elif any(phrase in text_lower for phrase in ['ceo sells', 'insider sell', 'executive sells']):
+                                        if result.label == 'neutral':
+                                            sentiment_nuance = 'insider_neutral'
+                                    elif 'hackernews' in result.source.value.lower():
+                                        sentiment_nuance = 'hackernews_comment'
+                                    elif any(phrase in text_lower for phrase in ['trending stock', 'what to know', 'interview with']):
+                                        sentiment_nuance = 'informational'
+                                
+                                if not sentiment_nuance:
+                                    sentiment_nuance = 'standard'  # Default
+                                
+                                # Standard single-entity sentiment record
+                                from app.utils.timezone import malaysia_now
+                                sentiment_data = SentimentData(
+                                    stock_id=metadata["stock_id"],
+                                    source=result.source.value.lower(),
+                                    sentiment_score=result.score,
+                                    confidence=result.confidence,
+                                    sentiment_label=result.label,
+                                    model_used=result.model_name,
+                                    sentiment_nuance=sentiment_nuance,
+                                    raw_text=result.text[:1000],  # Store truncated text
+                                    stock_mentions=metadata.get("stock_mentions"),  # Copy stock mentions from source
+                                    content_hash=SentimentData.generate_content_hash(
+                                        result.text, result.source.value, ""
+                                    ),
+                                    created_at=utc_now()  # Use UTC timezone
+                                )
+                                db.add(sentiment_data)
+                                sentiment_records += 1
+                                processed_count += 1
                             
                         except Exception as e:
                             self.logger.error(f"Error updating sentiment for item: {e}")

@@ -282,8 +282,13 @@ class SentimentEngine:
                         # Get the corresponding input for metadata
                         input_obj = inputs[i] if i < len(inputs) else None
                         
+                        # Check if this is a multi-entity result
+                        is_multi_entity = (ai_result.label == "multi_entity" or ai_result.method == "multi_entity_ai")
+                        
                         # Determine clear model name based on what actually happened
-                        if ai_result.ai_verified:
+                        if is_multi_entity:
+                            model_display = "multi_entity_ai"  # Special marker for pipeline
+                        elif ai_result.ai_verified:
                             if ai_result.ai_label != ai_result.ml_label:
                                 # AI changed the prediction
                                 model_display = "Gemini AI"
@@ -294,22 +299,42 @@ class SentimentEngine:
                             # ML-only (no AI verification)
                             model_display = "FinBERT"
                         
-                        result = SentimentResult(
-                            label=label_map.get(ai_result.label, SentimentLabel.NEUTRAL),
-                            score=ai_result.score,
-                            confidence=ai_result.confidence,
-                            raw_scores={
-                                'ml_label': ai_result.ml_label,
-                                'ml_confidence': ai_result.ml_confidence,
-                                'ai_label': ai_result.ai_label,
-                                'ai_reasoning': ai_result.ai_reasoning
-                            },
-                            processing_time=0.0,
-                            model_name=model_display,
-                            text=input_obj.text if input_obj else "",  # Preserve text from input
-                            source=input_obj.source if input_obj else None,  # Preserve source from input
-                            metadata=input_obj.metadata if input_obj else {}  # Preserve metadata from input
-                        )
+                        # For multi-entity, use special handling
+                        if is_multi_entity:
+                            result = SentimentResult(
+                                label=SentimentLabel.NEUTRAL,  # Placeholder, pipeline will expand
+                                score=0.0,
+                                confidence=ai_result.confidence,
+                                raw_scores={
+                                    'ml_label': ai_result.ml_label,
+                                    'ml_confidence': ai_result.ml_confidence,
+                                    'ai_label': ai_result.ai_label,
+                                    'ai_reasoning': ai_result.ai_reasoning  # JSON string with entities
+                                },
+                                processing_time=0.0,
+                                model_name=model_display,
+                                text=input_obj.text if input_obj else "",
+                                source=input_obj.source if input_obj else None,
+                                metadata=input_obj.metadata if input_obj else {}
+                            )
+                        else:
+                            # Standard single-entity result
+                            result = SentimentResult(
+                                label=label_map.get(ai_result.label, SentimentLabel.NEUTRAL),
+                                score=ai_result.score,
+                                confidence=ai_result.confidence,
+                                raw_scores={
+                                    'ml_label': ai_result.ml_label,
+                                    'ml_confidence': ai_result.ml_confidence,
+                                    'ai_label': ai_result.ai_label,
+                                    'ai_reasoning': ai_result.ai_reasoning
+                                },
+                                processing_time=0.0,
+                                model_name=model_display,
+                                text=input_obj.text if input_obj else "",  # Preserve text from input
+                                source=input_obj.source if input_obj else None,  # Preserve source from input
+                                metadata=input_obj.metadata if input_obj else {}  # Preserve metadata from input
+                            )
                         results.append(result)
                     except Exception as e:
                         logger.warning(f"Error converting AI result, using fallback: {e}")

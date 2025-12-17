@@ -14,7 +14,6 @@ Following FYP Report specification:
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import asyncio
-import logging
 from app.utils.timezone import utc_now
 
 try:
@@ -35,7 +34,9 @@ from .base_collector import (
     CollectionError
 )
 
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 
 class NewsAPICollector(BaseCollector):

@@ -24,6 +24,7 @@ Integration:
 import os
 import json
 import re
+import time
 import torch
 import asyncio
 from typing import Dict, List, Tuple, Optional
@@ -68,6 +69,26 @@ AI_MODEL_DISPLAY_NAME = "Gemma 3 27B"  # Human-readable name for UI
 
 # Minimum text length for reliable sentiment analysis
 MIN_TEXT_LENGTH = 20  # Very short texts often get low confidence
+
+
+# ============================================================================
+# Enums - Must be defined before functions that use them
+# ============================================================================
+
+class VerificationMode(Enum):
+    """Modes for AI verification."""
+    NONE = "none"                    # No AI verification (ML only)
+    LOW_CONFIDENCE = "low_confidence"  # Verify only low-confidence predictions
+    LOW_CONFIDENCE_AND_NEUTRAL = "low_confidence_and_neutral"  # Verify low-confidence + all neutrals
+    ALL = "all"                       # Verify all predictions (highest accuracy)
+
+
+class ContentType(Enum):
+    """Content type classification for routing."""
+    STANDARD_ARTICLE = "standard_article"      # Regular financial news
+    HACKERNEWS_COMMENT = "hackernews_comment"  # HackerNews comment
+    MIXED_SENTIMENT = "mixed_sentiment"        # Article with conflicting signals
+    INFORMATIONAL = "informational"            # Analytical/informational content
 
 
 def preprocess_text_for_sentiment(text: str) -> str:
@@ -141,12 +162,61 @@ def is_text_analyzable(text: str) -> Tuple[bool, str]:
     return True, "OK"
 
 
-class VerificationMode(Enum):
-    """Modes for AI verification."""
-    NONE = "none"                    # No AI verification (ML only)
-    LOW_CONFIDENCE = "low_confidence"  # Verify only low-confidence predictions
-    LOW_CONFIDENCE_AND_NEUTRAL = "low_confidence_and_neutral"  # Verify low-confidence + all neutrals
-    ALL = "all"                       # Verify all predictions (highest accuracy)
+def classify_content_type(text: str, source: Optional[str] = None, metadata: Optional[Dict] = None) -> ContentType:
+    """
+    Classify content type for intelligent routing to appropriate model.
+    
+    Args:
+        text: Content text
+        source: Source of content (e.g., 'hackernews', 'yfinance')
+        metadata: Additional metadata dict
+        
+    Returns:
+        ContentType enum for routing decision
+    """
+    text_lower = text.lower()
+    
+    # 1. HackerNews comment detection
+    if source and "hackernews" in source.lower():
+        return ContentType.HACKERNEWS_COMMENT
+    
+    if metadata and metadata.get("content_type") == "comment":
+        return ContentType.HACKERNEWS_COMMENT
+    
+    # 2. Mixed sentiment detection (multiple stocks with different signals)
+    # Look for patterns like "X rises while Y falls"
+    mixed_patterns = [
+        r"(rises?|surges?|jumps?|gains?).*while.*(falls?|drops?|declines?|tumbles?)",
+        r"(falls?|drops?|declines?).*while.*(rises?|surges?|jumps?|gains?)",
+        r"(positive|good|beats?).*but.*(negative|bad|misses?|concerns?)",
+        r"(negative|bad|misses?).*but.*(positive|good|beats?)",
+        r"despite.*(good|positive|growth|gains?)",
+        r"despite.*(bad|negative|decline|losses?)",
+        r"unveils.*why.*falling",  # "Nvidia unveils... why Zillow falling"
+        r"announces.*while.*plunges",
+    ]
+    
+    for pattern in mixed_patterns:
+        if re.search(pattern, text_lower):
+            return ContentType.MIXED_SENTIMENT
+    
+    # 3. Informational/Analytical content patterns
+    # These often get misclassified as Positive when they're actually Neutral
+    informational_patterns = [
+        r"(trending stock|is a trending)",
+        r"(what to know|here is what|here's what)",
+        r"(\d+\s+questions? for|interview with|q&a with)",
+        r"(path to|road to|journey to)\s+(profitability|growth)",
+        r"(is it (still )?worth|is .* a buy|should you)",
+        r"(facts to know|things to know)",
+        r"(analysis|outlook|forecast|preview)\s+for",
+    ]
+    
+    for pattern in informational_patterns:
+        if re.search(pattern, text_lower):
+            return ContentType.INFORMATIONAL
+    
+    return ContentType.STANDARD_ARTICLE
 
 
 @dataclass
@@ -160,8 +230,27 @@ class SentimentResult:
     ml_confidence: float          # Original ML confidence
     ai_verified: bool             # Whether AI verification was used
     ai_label: Optional[str]       # AI's prediction (if verified)
-    ai_reasoning: Optional[str]   # AI's explanation (if verified)
-    method: str                   # How final label was determined
+    ai_confidence: Optional[float] = None  # AI's confidence score (if verified)
+    ai_reasoning: Optional[str] = None   # AI's explanation (if verified)
+    method: str = "ml"            # How final label was determined
+
+
+@dataclass
+class EntitySentiment:
+    """Sentiment for a specific entity (stock) in multi-entity articles."""
+    entity: str  # Stock symbol or company name
+    sentiment: str  # positive, negative, neutral
+    confidence: float  # 0.0 to 1.0
+    reasoning: str  # Why this sentiment for this entity
+
+
+@dataclass
+class MultiEntityResult:
+    """Result from per-entity sentiment analysis for mixed sentiment articles."""
+    text: str
+    entities: List[EntitySentiment]  # List of entity-specific sentiments
+    primary_entity: Optional[str] = None  # Main entity if applicable
+    method: str = "multi_entity_ai"  # How this was analyzed
 
 
 @dataclass
@@ -213,30 +302,102 @@ TEXT: "{text}"
 
 Classify the sentiment as exactly one of: positive, negative, or neutral
 
-Rules:
-- POSITIVE: Good news, growth, gains, upgrades, beats expectations, expansion, partnership success.
-- NEGATIVE: Bad news, losses, decline, downgrades, misses expectations, layoffs, scandals, warnings.
-- NEUTRAL: ONLY for purely factual data (e.g., "Earnings release date is X") or questions without any implied view.
+Core Rules:
+- POSITIVE: Good news, growth, gains, upgrades, beats expectations, expansion, partnership success, stock price increases.
+- NEGATIVE: Bad news, losses, decline, downgrades, misses expectations, layoffs, scandals, warnings, stock price decreases.
+- NEUTRAL: Factual data, interviews, analytical pieces WITHOUT inherent bias, informational "what to know" articles, "trending stock" mentions (trending ≠ good/bad).
 
 CRITICAL INSTRUCTIONS:
-1. AVOID NEUTRAL if there is ANY positive or negative inclination. If the text leans even slightly, choose POSITIVE or NEGATIVE.
-2. BE DECISIVE. Do not hedge.
-3. HIGH CONFIDENCE: If the sentiment is clear (e.g., "stock surges", "revenue down"), assign confidence > 0.92.
-4. TARGET CONFIDENCE: Aim for 0.92-0.98 for clear cases. Only use < 0.85 for truly ambiguous text.
-5. DEFAULT MINIMUM: Most predictions should be 0.88+ unless genuinely unclear.
+1. BE DECISIVE for clear price movements and earnings. AVOID NEUTRAL if sentiment is obvious.
+2. USE NEUTRAL for informational/analytical content:
+   - "Trending stock" / "Is a trending stock" = NEUTRAL (no inherent sentiment)
+   - "Questions for CEO" / "Interview with" = NEUTRAL (informational)
+   - "What to know" / "Facts to know" = NEUTRAL (educational)
+   - "Path to profitability" / "Road to growth" = NEUTRAL (analytical)
+   - "Is it worth buying" / "Should you buy" = NEUTRAL (question-based)
+3. For MIXED SENTIMENT (e.g., "X rises while Y falls"), determine which part is MORE PROMINENT:
+   - If both equal → NEUTRAL
+   - If one dominates → Choose that sentiment with confidence 0.65-0.75
+4. For HACKERNEWS COMMENTS:
+   - Consider sarcasm and technical jargon
+   - Complaints/criticism = NEGATIVE
+   - Enthusiasm/praise = POSITIVE
+   - Technical discussion = NEUTRAL
+
+ADVANCED CONTEXTUAL RULES (OVERRIDE LEXICAL SENTIMENT):
+5. TEMPORAL WEIGHTING (Future Outlook Dominance):
+   - If text mentions PAST negative event (crash, decline, sell-off, drop)
+   - BUT frames it as FUTURE opportunity ("buying opportunity", "undervalued", "long-term upside", "recovery play")
+   - → Classify based on FUTURE outlook (likely POSITIVE), NOT past event
+   - Example: "Stock fell 10% but analysts call it a buying opportunity" → POSITIVE (0.85-0.92)
+
+6. INSIDER TRANSACTIONS (Default Neutrality):
+   - Routine insider selling = NEUTRAL by default (tax planning, compensation, portfolio rebalancing)
+   - ONLY classify as NEGATIVE if explicitly alarming with terms:
+     * "dumping shares", "exiting position", "unexpected/unplanned selling", "loss of confidence", "fire sale"
+   - Examples:
+     * "CEO sells $5M worth of shares" → NEUTRAL (0.85-0.90)
+     * "CEO unexpectedly dumps entire stake" → NEGATIVE (0.88-0.94)
+
+7. DERIVATIVE MECHANICS (Short Squeeze = Bullish):
+   - If text contains "short squeeze" → Interpret as POSITIVE sentiment
+   - Reason: Short squeeze = forced buying pressure = bullish price action
+   - Ignore the word "short" in isolation for this pattern
+   - Example: "Short squeeze imminent for stock" → POSITIVE (0.88-0.93)
+
+8. HIGH CONFIDENCE (0.92+): Clear price movements, earnings beats/misses, explicit good/bad news
+9. MEDIUM CONFIDENCE (0.75-0.88): Mixed signals, ambiguous language, analytical content, temporal weighting cases
+10. LOW CONFIDENCE (0.60-0.74): Truly ambiguous, informational with subtle bias
 
 Confidence Guidelines:
-- Headlines with "plunges", "crashes", "slides", "tumbles" = NEGATIVE (Confidence 0.96-0.99)
-- Headlines with "surges", "jumps", "beats", "raises PT" = POSITIVE (Confidence 0.96-0.99)
-- Earnings beats/misses, upgrades/downgrades = 0.92-0.95
-- "Mixed signals" -> Determine DOMINANT sentiment (0.88-0.92)
-- Warnings, downgrades, "get out before" = NEGATIVE (0.92-0.96)
-- Sarcasm and implicit sentiment in informal text = Lower confidence only if truly ambiguous
+- "plunges", "crashes", "slides", "tumbles" = NEGATIVE (0.96-0.99)
+- "surges", "jumps", "beats", "raises PT" = POSITIVE (0.96-0.99)
+- "trending", "what to know", "interview" = NEUTRAL (0.85-0.92)
+- "buying opportunity after drop" = POSITIVE (0.85-0.92) [temporal weighting]
+- "short squeeze" = POSITIVE (0.88-0.93) [derivative mechanics]
+- "CEO sells shares" = NEUTRAL (0.85-0.90) [insider transaction default]
+- Mixed sentiment articles = Lower sentiment with confidence 0.65-0.75
+- Earnings beats/misses = 0.92-0.95
 
 Respond ONLY in this exact JSON format, nothing else:
 {{"sentiment": "positive", "confidence": 0.95, "reasoning": "brief explanation"}}
 
 Replace the values with your analysis. sentiment must be one of: positive, negative, neutral"""
+
+    # Per-entity sentiment extraction prompt for mixed sentiment articles
+    PER_ENTITY_PROMPT = """You are an expert financial sentiment analyst. This text mentions multiple stocks/companies. Extract ALL stock tickers or company names mentioned and analyze sentiment FOR EACH ENTITY SEPARATELY.
+
+TEXT: "{text}"
+
+INSTRUCTIONS:
+1. Identify ALL stock tickers (e.g., AAPL, TSLA, NVDA) and company names (e.g., Apple, Tesla, Nvidia)
+2. For EACH entity, determine its SPECIFIC sentiment based on what the text says about THAT entity
+3. Same article can have different sentiments for different entities:
+   - "Nvidia surges 15% while AMD falls 8%" → Nvidia: POSITIVE, AMD: NEGATIVE
+   - "Tesla beats earnings but Ford misses" → Tesla: POSITIVE, Ford: NEGATIVE
+4. Be precise about which sentiment applies to which entity
+5. If an entity is only mentioned neutrally (e.g., "Tesla announced"), mark as NEUTRAL
+
+SENTIMENT RULES:
+- POSITIVE: Growth, gains, beats expectations, good news, stock price increases FOR THIS ENTITY
+- NEGATIVE: Decline, losses, misses expectations, bad news, stock price decreases FOR THIS ENTITY
+- NEUTRAL: Factual mention without clear positive/negative impact FOR THIS ENTITY
+
+CONFIDENCE:
+- 0.90-0.98: Clear explicit sentiment for this entity ("X surges", "Y crashes")
+- 0.75-0.89: Implied sentiment from context
+- 0.60-0.74: Ambiguous or weak signal
+
+Respond ONLY with a JSON object containing an array of entities:
+{{
+  "entities": [
+    {{"symbol": "NVDA", "sentiment": "positive", "confidence": 0.95, "reasoning": "surges 15% on AI demand"}},
+    {{"symbol": "AMD", "sentiment": "negative", "confidence": 0.92, "reasoning": "falls 8% on competition concerns"}}
+  ],
+  "primary_entity": "NVDA"
+}}
+
+primary_entity should be the most prominent entity mentioned (usually first or most discussed). If unclear, set to null."""
 
     def __init__(
         self,
@@ -267,6 +428,14 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
         self.ai_enabled = ai_enabled
         self.ensemble_enabled = ensemble_enabled
         self._stats = AIVerificationStats()
+        
+        # Gemma 3 27B Rate Limiting (actual limits from Google AI Studio)
+        # 30 RPM, 15,000 TPM, 14,400 RPD
+        self._gemma_rpm_limit = 30  # Peak requests per minute
+        self._gemma_tpm_limit = 15000  # Peak TOKENS per minute (CRITICAL)
+        self._gemma_requests_this_minute: List[float] = []  # Timestamps of requests
+        self._gemma_tokens_this_minute: List[Tuple[float, int]] = []  # (timestamp, token_count)
+        self._gemma_rpm_lock = asyncio.Lock()  # Thread-safe access
         
         # Load primary ML model (FinBERT)
         logger.info(
@@ -499,8 +668,217 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
             logger.warning(f"Ensemble prediction failed: {e}")
             return None
     
+    async def _check_rpm_limit(self) -> float:
+        """
+        Check Gemma RPM limit and return wait time if needed.
+        
+        Returns:
+            Wait time in seconds (0 if no wait needed)
+        """
+        current_time = time.time()
+        
+        async with self._gemma_rpm_lock:
+            # Remove timestamps older than 60 seconds
+            cutoff = current_time - 60
+            self._gemma_requests_this_minute = [
+                ts for ts in self._gemma_requests_this_minute if ts > cutoff
+            ]
+            
+            # Check if at RPM limit (30 requests/minute)
+            if len(self._gemma_requests_this_minute) >= self._gemma_rpm_limit:
+                oldest = min(self._gemma_requests_this_minute)
+                wait_time = (oldest + 60) - current_time + 0.1
+                return max(0, wait_time)
+            
+            return 0
+    
+    async def _record_request(self):
+        """Record a Gemma request timestamp."""
+        async with self._gemma_rpm_lock:
+            self._gemma_requests_this_minute.append(time.time())
+    
+    def _estimate_tokens(self, text: str) -> int:
+        """
+        Estimate token count for a SINGLE text Gemini API call.
+        
+        For individual calls: ~750 (prompt) + text_tokens + 50 (output)
+        For batch calls: Use batch-specific calculation (600 + sum of texts + 200)
+        
+        This method is for individual calls. Batch calls calculate separately.
+        """
+        prompt_template_tokens = 750  # VERIFICATION_PROMPT is ~700 tokens + buffer
+        text_tokens = len(text) // 4  # ~1 token per 4 characters
+        output_overhead = 50  # Response tokens
+        
+        total = prompt_template_tokens + text_tokens + output_overhead
+        return total
+    
+    def _estimate_batch_tokens(self, texts: List[str]) -> int:
+        """
+        Estimate token count for a BATCH API call (multiple texts in one request).
+        
+        Batch calls are MUCH more efficient:
+        - Prompt: ~600 tokens (BATCH_VERIFICATION_PROMPT is shorter)
+        - Texts: ~120 tokens per text (truncated to 500 chars each)
+        - Output: ~30 tokens per text (just sentiment + confidence)
+        
+        10 texts batch: 600 + 1200 + 300 = 2,100 tokens
+        vs 10 individual: 10 × 950 = 9,500 tokens (77% savings!)
+        """
+        prompt_tokens = 600  # BATCH_VERIFICATION_PROMPT
+        text_tokens = sum(min(len(t), 500) // 4 for t in texts)  # Texts truncated to 500 chars
+        output_tokens = len(texts) * 30  # ~30 tokens per result
+        
+        return prompt_tokens + text_tokens + output_tokens
+    
+    async def _check_tpm_limit(self, estimated_tokens: int) -> float:
+        """
+        Check Gemma TPM (Tokens Per Minute) limit and return wait time if needed.
+        
+        Uses 80% of limit (12,000 tokens) as safety threshold to prevent hitting
+        the hard 15,000 TPM limit which causes 429 errors.
+        
+        Args:
+            estimated_tokens: Estimated tokens for the upcoming request
+            
+        Returns:
+            Wait time in seconds (0 if no wait needed)
+        """
+        current_time = time.time()
+        # Use 80% of TPM limit as safety threshold (12,000 instead of 15,000)
+        tpm_safety_limit = int(self._gemma_tpm_limit * 0.80)
+        
+        async with self._gemma_rpm_lock:
+            # Remove token records older than 60 seconds
+            cutoff = current_time - 60
+            self._gemma_tokens_this_minute = [
+                (ts, count) for ts, count in self._gemma_tokens_this_minute if ts > cutoff
+            ]
+            
+            # Calculate current token usage in this minute
+            current_token_usage = sum(count for _, count in self._gemma_tokens_this_minute)
+            
+            # Log current TPM usage periodically (every 10th check)
+            if len(self._gemma_tokens_this_minute) % 10 == 0:
+                logger.info(
+                    f"TPM usage: {current_token_usage:,}/{self._gemma_tpm_limit:,} "
+                    f"({current_token_usage/self._gemma_tpm_limit*100:.1f}%) - "
+                    f"{len(self._gemma_tokens_this_minute)} requests in window"
+                )
+            
+            # Check if adding this request would exceed SAFETY limit (80% of 15k = 12k)
+            if current_token_usage + estimated_tokens > tpm_safety_limit:
+                # Find oldest token record to calculate wait time
+                if self._gemma_tokens_this_minute:
+                    oldest_ts, _ = min(self._gemma_tokens_this_minute, key=lambda x: x[0])
+                    wait_time = (oldest_ts + 60) - current_time + 1.0  # Extra 1s buffer
+                    logger.warning(
+                        f"TPM safety limit reached ({current_token_usage:,}/{tpm_safety_limit:,}), "
+                        f"waiting {wait_time:.1f}s"
+                    )
+                    return max(0, wait_time)
+                return 2.0  # Default 2 second wait if no records
+            
+            return 0
+    
+    async def _record_tokens(self, token_count: int):
+        """Record token usage for TPM tracking."""
+        async with self._gemma_rpm_lock:
+            self._gemma_tokens_this_minute.append((time.time(), token_count))
+    
+    async def _batch_verify_with_gemini_parallel(
+        self, 
+        texts: List[str], 
+        max_concurrency: int = 2  # CRITICAL: Reduced to 2 for strict TPM control
+    ) -> List[Tuple[Optional[str], Optional[float]]]:
+        """
+        Verify sentiments with STRICT TPM-aware throttling.
+        
+        Rate Limits: 30 RPM, 15,000 TPM (CRITICAL BOTTLENECK), 14,400 RPD
+        
+        TPM MATH (why concurrency=2):
+        - Each request: ~750 tokens (prompt) + ~150 (text) + 50 (output) = ~950 tokens
+        - 15,000 TPM / 950 tokens = ~15 requests/minute MAX
+        - With safety margin: 12 requests/minute = 1 request every 5 seconds
+        - 2 concurrent × 5-second spacing = safe throughput
+        
+        Args:
+            texts: Batch of texts to verify
+            max_concurrency: Max concurrent requests (default: 2 for TPM safety)
+            
+        Returns:
+            List of (sentiment, confidence) tuples
+        """
+        if not texts:
+            return []
+        
+        # Log batch start with TPM info
+        total_estimated_tokens = sum(self._estimate_tokens(t) for t in texts)
+        logger.info(
+            f"Starting Gemini batch: {len(texts)} texts, ~{total_estimated_tokens:,} estimated tokens",
+            extra={"batch_size": len(texts), "estimated_tokens": total_estimated_tokens}
+        )
+        
+        semaphore = asyncio.Semaphore(max_concurrency)
+        
+        # Minimum delay between requests to spread TPM usage
+        # 15,000 TPM / 950 tokens per request = 15.8 requests/minute
+        # 60s / 15.8 = 3.8 seconds between requests (use 4s for safety)
+        min_request_delay = 4.0
+        last_request_time = [0.0]  # Mutable container for closure
+        delay_lock = asyncio.Lock()
+        
+        async def verify_with_throttle(text: str) -> Tuple[Optional[str], Optional[float]]:
+            async with semaphore:
+                # Estimate tokens for this request
+                estimated_tokens = self._estimate_tokens(text)
+                
+                # Enforce minimum delay between requests (TPM spreading)
+                async with delay_lock:
+                    now = time.time()
+                    time_since_last = now - last_request_time[0]
+                    if time_since_last < min_request_delay:
+                        delay_needed = min_request_delay - time_since_last
+                        logger.debug(f"TPM spreading: waiting {delay_needed:.1f}s")
+                        await asyncio.sleep(delay_needed)
+                    last_request_time[0] = time.time()
+                
+                # Pre-emptive TPM check (CRITICAL - 15k tokens/minute limit)
+                tpm_wait = await self._check_tpm_limit(estimated_tokens)
+                if tpm_wait > 0:
+                    logger.warning(f"TPM limit reached, waiting {tpm_wait:.1f}s")
+                    await asyncio.sleep(tpm_wait)
+                
+                # Pre-emptive RPM check
+                rpm_wait = await self._check_rpm_limit()
+                if rpm_wait > 0:
+                    logger.debug(f"RPM limit approaching, waiting {rpm_wait:.1f}s")
+                    await asyncio.sleep(rpm_wait)
+                
+                # Record request and tokens before making it
+                await self._record_request()
+                await self._record_tokens(estimated_tokens)
+                
+                sentiment, confidence, _ = await self._verify_with_gemini(text)
+                return (sentiment, confidence)
+        
+        # Execute all in parallel (throttled by semaphore + RPM limit)
+        tasks = [verify_with_throttle(text) for text in texts]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Handle exceptions
+        final_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning(f"Verification failed: {result}")
+                final_results.append((None, None))
+            else:
+                final_results.append(result)
+        
+        return final_results
+    
     async def _verify_with_gemini(self, text: str) -> Tuple[Optional[str], Optional[float], Optional[str]]:
-        """Verify sentiment using Google Gemini with comprehensive error handling."""
+        """Verify sentiment using Gemma 3 27B with comprehensive error handling."""
         try:
             prompt = self.VERIFICATION_PROMPT.format(text=text)
             
@@ -886,10 +1264,81 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
             (self._stats.avg_ml_confidence * (n - 1) + ml_confidence) / n
         )
         
-        # Step 2: Decide if AI verification is needed
+        # Step 1.6: Classify content type for smart routing
+        content_type = classify_content_type(text, source=stock_symbol, metadata=None)
+        
+        # Step 2: Decide if AI verification is needed with SMART ROUTING
         needs_verification = False
+        force_ai_reason = None
+        
         if self.ai_enabled and self.gemini_model:
-            if self.verification_mode == VerificationMode.ALL:
+            # 🎯 PRIORITY 1: Always use Gemini AI for HackerNews comments
+            if content_type == ContentType.HACKERNEWS_COMMENT:
+                needs_verification = True
+                force_ai_reason = "HackerNews comment - requires contextual understanding"
+                logger.debug(
+                    "Routing HackerNews comment to Gemini AI",
+                    extra={"text_preview": text[:50]}
+                )
+            
+            # 🎯 PRIORITY 2: Use Gemini AI for PER-ENTITY extraction (mixed sentiment)
+            elif content_type == ContentType.MIXED_SENTIMENT:
+                # For mixed sentiment, extract per-entity sentiments
+                logger.debug(
+                    "Detected mixed sentiment - extracting per-entity sentiments",
+                    extra={"text_preview": text[:50]}
+                )
+                
+                multi_entity_result = await self._extract_per_entity_sentiment(text)
+                
+                if multi_entity_result and len(multi_entity_result.entities) > 1:
+                    # Successfully extracted multiple entities - return special marker
+                    # Collectors will handle creating multiple SentimentData records
+                    logger.info(
+                        f"Per-entity extraction successful: {len(multi_entity_result.entities)} entities",
+                        extra={"entities": [e.entity for e in multi_entity_result.entities]}
+                    )
+                    
+                    # Return a SentimentResult with special metadata indicating multi-entity
+                    # The collector will detect this and create multiple records
+                    return SentimentResult(
+                        text=text,
+                        label="multi_entity",  # Special marker
+                        score=0.0,
+                        confidence=0.95,  # High confidence in per-entity extraction
+                        ml_label="mixed",
+                        ml_confidence=0.0,
+                        ai_verified=True,
+                        ai_label="multi_entity",
+                        ai_confidence=0.95,
+                        ai_reasoning=json.dumps([{
+                            "entity": e.entity,
+                            "sentiment": e.sentiment,
+                            "confidence": e.confidence,
+                            "reasoning": e.reasoning
+                        } for e in multi_entity_result.entities]),
+                        method="multi_entity_ai"
+                    )
+                else:
+                    # Per-entity extraction failed or only 1 entity - fallback to standard verification
+                    logger.warning(
+                        "Per-entity extraction failed or insufficient entities, using standard verification",
+                        extra={"text_preview": text[:50]}
+                    )
+                    needs_verification = True
+                    force_ai_reason = "Mixed sentiment detected - requires contextual analysis"
+            
+            # 🎯 PRIORITY 3: Route informational content to Gemini for better neutral detection
+            elif content_type == ContentType.INFORMATIONAL:
+                needs_verification = True
+                force_ai_reason = "Informational content - likely neutral"
+                logger.debug(
+                    "Routing informational content to Gemini AI",
+                    extra={"text_preview": text[:50]}
+                )
+            
+            # STANDARD ROUTING: Based on verification mode
+            elif self.verification_mode == VerificationMode.ALL:
                 needs_verification = True
             elif self.verification_mode == VerificationMode.LOW_CONFIDENCE:
                 needs_verification = ml_confidence < self.confidence_threshold
@@ -986,6 +1435,102 @@ Replace the values with your analysis. sentiment must be one of: positive, negat
             method=method
         )
     
+    async def _extract_per_entity_sentiment(self, text: str) -> Optional[MultiEntityResult]:
+        """
+        Extract per-entity sentiment for mixed sentiment articles.
+        
+        Args:
+            text: Article text with multiple stock mentions
+            
+        Returns:
+            MultiEntityResult with entity-specific sentiments, or None if extraction fails
+        """
+        if not self.gemini_model:
+            logger.warning("Cannot extract per-entity sentiment: Gemini AI not available")
+            return None
+        
+        try:
+            prompt = self.PER_ENTITY_PROMPT.format(text=text[:2000])  # Limit to 2000 chars
+            
+            # Run in executor since genai is synchronous
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.gemini_model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.1,  # Low temperature for consistent extraction
+                        max_output_tokens=1000,
+                    )
+                )
+            )
+            
+            content = response.text.strip()
+            
+            # Clean JSON from markdown code blocks
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            content = content.strip()
+            
+            # Parse JSON response
+            data = json.loads(content)
+            entities_data = data.get("entities", [])
+            primary_entity = data.get("primary_entity")
+            
+            if not entities_data:
+                logger.warning("No entities extracted from text", extra={"text_preview": text[:100]})
+                return None
+            
+            # Build EntitySentiment objects
+            entities = []
+            for entity_data in entities_data:
+                symbol = entity_data.get("symbol", "UNKNOWN")
+                sentiment = entity_data.get("sentiment", "neutral").lower()
+                if sentiment not in ["positive", "negative", "neutral"]:
+                    sentiment = "neutral"
+                confidence = entity_data.get("confidence", 0.75)
+                reasoning = entity_data.get("reasoning", "No reasoning provided")
+                
+                entities.append(EntitySentiment(
+                    entity=symbol,
+                    sentiment=sentiment,
+                    confidence=confidence,
+                    reasoning=reasoning
+                ))
+            
+            logger.info(
+                "Per-entity sentiment extraction completed",
+                extra={
+                    "entity_count": len(entities),
+                    "entities": [e.entity for e in entities],
+                    "text_preview": text[:100]
+                }
+            )
+            
+            return MultiEntityResult(
+                text=text,
+                entities=entities,
+                primary_entity=primary_entity,
+                method="multi_entity_ai"
+            )
+            
+        except json.JSONDecodeError as e:
+            logger.error(
+                "Failed to parse per-entity sentiment JSON",
+                extra={"error": str(e), "response": content[:500], "text_preview": text[:100]}
+            )
+            self._stats.ai_errors += 1
+            return None
+        except Exception as e:
+            logger.error(
+                "Per-entity sentiment extraction failed",
+                extra={"error": str(e), "text_preview": text[:100]}
+            )
+            self._stats.ai_errors += 1
+            return None
+    
     # Batch verification prompt template
     BATCH_VERIFICATION_PROMPT = """You are an expert financial sentiment analyst. Analyze the sentiment of each text about stocks, companies, or financial markets.
 
@@ -1013,11 +1558,15 @@ Confidence Guidelines:
 - Sarcasm and implicit sentiment in informal text = Lower confidence only if truly ambiguous
 
 Respond ONLY with a JSON array containing exactly {count} objects in the same order as the input texts:
-[{{"id": 0, "sentiment": "positive", "confidence": 0.95}}, {{"id": 1, "sentiment": "negative", "confidence": 0.92}}, ...]
+[{{"id": 0, "sentiment": "positive", "confidence": 0.95, "reasoning": "stock surges on earnings beat"}}, {{"id": 1, "sentiment": "negative", "confidence": 0.92, "reasoning": "revenue declines"}}, ...]
 
-Each object must have: id (matching input index), sentiment (positive/negative/neutral), confidence (0.0-1.0)"""
+Each object must have: 
+- id (matching input index)
+- sentiment (positive/negative/neutral)
+- confidence (0.0-1.0)
+- reasoning (brief 3-5 word explanation mentioning key signals like 'buying opportunity', 'short squeeze', 'temporal weighting', 'insider sell', etc.)"""
 
-    async def _batch_verify_with_gemini(self, texts: List[str], max_retries: int = 3) -> List[Tuple[Optional[str], Optional[float]]]:
+    async def _batch_verify_with_gemini(self, texts: List[str], max_retries: int = 3) -> List[Tuple[Optional[str], Optional[float], Optional[str]]]:
         """
         Verify multiple texts in a single Gemini API call with retry logic.
         
@@ -1026,10 +1575,10 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
             max_retries: Maximum number of retries on rate limit errors
             
         Returns:
-            List of (sentiment, confidence) tuples for each text
+            List of (sentiment, confidence, reasoning) tuples for each text
         """
         if not self.gemini_model or not texts:
-            return [(None, None)] * len(texts)
+            return [(None, None, None)] * len(texts)
         
         for attempt in range(max_retries):
             try:
@@ -1069,12 +1618,13 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
                     if sentiment not in ["positive", "negative", "neutral"]:
                         sentiment = "neutral"
                     confidence = item.get("confidence", 0.8)
-                    results_dict[idx] = (sentiment, confidence)
+                    reasoning = item.get("reasoning", "")  # Extract reasoning for sentiment_nuance
+                    results_dict[idx] = (sentiment, confidence, reasoning)
                 
                 # Return in original order
                 results = []
                 for i in range(len(texts)):
-                    results.append(results_dict.get(i, (None, None)))
+                    results.append(results_dict.get(i, (None, None, None)))
                 
                 logger.info(
                     "Batch Gemini verification completed",
@@ -1100,14 +1650,14 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
                         extra={"error": error_str, "batch_size": len(texts)}
                     )
                     self._stats.ai_errors += 1
-                    return [(None, None)] * len(texts)
+                    return [(None, None, None)] * len(texts)
         
         # Max retries exceeded
         logger.error(
             "Batch Gemini verification failed after max retries",
             extra={"batch_size": len(texts), "max_retries": max_retries}
         )
-        return [(None, None)] * len(texts)
+        return [(None, None, None)] * len(texts)
     
     async def analyze_batch(
         self, 
@@ -1185,24 +1735,50 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
         # Step 3: Batch AI verification (if any texts need it)
         ai_results = {}
         if needs_verification and use_batch_ai:
-            # Process in batches of 30 to avoid token limits
-            batch_size = 30
+            # PRODUCTION OPTIMIZATION: Multi-text batching
+            # Instead of 1 API call per text (950 tokens each), batch 10 texts into 1 call
+            # Token savings: 10 individual = 9,500 tokens vs 1 batch = ~2,100 tokens (77% reduction!)
+            # 
+            # Math: 15,000 TPM / 2,100 tokens per batch = 7 batches/minute = 70 texts/minute
+            # 370 texts = ~5.3 minutes total (PRODUCTION READY)
+            batch_size = 10  # 10 texts per API call (optimal for token efficiency)
             total_batches = (len(needs_verification) + batch_size - 1) // batch_size
+            
+            logger.info(
+                f"AI verification: {len(needs_verification)} texts in {total_batches} multi-text batches"
+            )
             
             for batch_num, batch_start in enumerate(range(0, len(needs_verification), batch_size)):
                 batch_texts = needs_verification[batch_start:batch_start + batch_size]
                 batch_indices = verification_indices[batch_start:batch_start + batch_size]
                 
-                # Add delay between batches to avoid rate limits (skip first batch)
-                if batch_num > 0:
-                    logger.debug(f"Waiting 5s before batch {batch_num + 1}/{total_batches} to avoid rate limits")
-                    await asyncio.sleep(5)
+                # Pre-emptive RPM check (30 requests/minute)
+                rpm_wait = await self._check_rpm_limit()
+                if rpm_wait > 0:
+                    logger.debug(f"RPM limit approaching, waiting {rpm_wait:.1f}s")
+                    await asyncio.sleep(rpm_wait)
                 
+                # Estimate tokens for this batch using efficient batch calculation
+                batch_token_estimate = self._estimate_batch_tokens(batch_texts)
+                
+                # Pre-emptive TPM check
+                tpm_wait = await self._check_tpm_limit(batch_token_estimate)
+                if tpm_wait > 0:
+                    logger.info(f"TPM limit reached, waiting {tpm_wait:.1f}s before batch {batch_num+1}")
+                    await asyncio.sleep(tpm_wait)
+                
+                # Record tokens before the request
+                await self._record_request()
+                await self._record_tokens(batch_token_estimate)
+                
+                logger.info(f"Processing batch {batch_num+1}/{total_batches} ({len(batch_texts)} texts, ~{batch_token_estimate} tokens)")
+                
+                # Use TRUE batch API call (multiple texts in ONE request)
                 batch_results = await self._batch_verify_with_gemini(batch_texts)
                 
-                for idx, (sentiment, confidence) in zip(batch_indices, batch_results):
+                for idx, (sentiment, confidence, reasoning) in zip(batch_indices, batch_results):
                     if sentiment:
-                        ai_results[idx] = (sentiment, confidence)
+                        ai_results[idx] = (sentiment, confidence, reasoning)
                         self._stats.ai_verified_count += 1
         elif needs_verification and not use_batch_ai:
             # Fallback to individual verification
@@ -1215,7 +1791,7 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
         # Step 4: Build final results for non-filtered texts
         for i, (text, ml_label, ml_confidence, scores) in ml_results.items():
             if i in ai_results:
-                ai_label, ai_confidence = ai_results[i]
+                ai_label, ai_confidence, ai_reasoning = ai_results[i]
                 final_label = ai_label
                 ai_verified = True
                 
@@ -1234,6 +1810,7 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
                 method = f"ml ({ml_confidence:.0%})"
                 ai_verified = False
                 ai_label = None
+                ai_reasoning = None
             
             # Calculate score - must align with final_label
             # If AI overrode ML, generate score based on AI's decision + confidence
@@ -1264,7 +1841,7 @@ Each object must have: id (matching input index), sentiment (positive/negative/n
                 ml_confidence=ml_confidence,
                 ai_verified=ai_verified,
                 ai_label=ai_label,
-                ai_reasoning=None,
+                ai_reasoning=ai_reasoning if ai_verified else None,
                 method=method
             )
         

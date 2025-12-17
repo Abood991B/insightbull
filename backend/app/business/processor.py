@@ -20,7 +20,9 @@ from ..infrastructure.log_system import get_logger
 from ..utils.timezone import utc_now
 
 try:
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
+    import warnings
+    warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
     BS4_AVAILABLE = True
 except ImportError:
     BS4_AVAILABLE = False

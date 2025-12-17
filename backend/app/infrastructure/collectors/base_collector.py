@@ -16,10 +16,11 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 import asyncio
-import logging
 from app.utils.timezone import utc_now
 
-logger = logging.getLogger(__name__)
+# Use centralized logging system
+from app.infrastructure.log_system import get_logger
+logger = get_logger()
 
 
 class DataSource(Enum):
@@ -125,7 +126,7 @@ class BaseCollector(ABC):
         """
         self.api_key = api_key
         self.rate_limiter = rate_limiter
-        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.logger = logger  # Use centralized logger
         
     @property
     @abstractmethod
@@ -206,6 +207,38 @@ class BaseCollector(ABC):
         """Apply rate limiting if configured"""
         if self.rate_limiter:
             await self.rate_limiter.acquire(self.source.value)
+    
+    def _is_english_text(self, text: str) -> bool:
+        """
+        Check if text is likely English using character-based heuristics.
+        Rejects text with excessive non-ASCII characters (foreign languages).
+        
+        🔴 CRITICAL: Language filter - ONLY English content allowed
+        
+        Args:
+            text: Text to check
+            
+        Returns:
+            True if text appears to be English, False otherwise
+        """
+        if not text:
+            return False
+        
+        # Count ASCII alphabetic characters
+        ascii_alpha = sum(1 for c in text if c.isascii() and c.isalpha())
+        total_alpha = sum(1 for c in text if c.isalpha())
+        
+        if total_alpha == 0:
+            return False
+        
+        # If more than 10% of alphabetic characters are non-ASCII, likely foreign
+        ascii_ratio = ascii_alpha / total_alpha
+        
+        # Common foreign characters that shouldn't appear in English financial news
+        foreign_chars = set('äöüßàâçéèêëîïôûùÿæœåøÅÄÖæøåäöñáéíóúü')
+        has_foreign = any(c in foreign_chars for c in text)
+        
+        return ascii_ratio >= 0.90 and not has_foreign
     
     def _create_raw_data(
         self,

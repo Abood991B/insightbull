@@ -34,6 +34,10 @@ from app.data_access.database.connection import init_database
 from app.business.scheduler import Scheduler
 from app.utils.timezone import utc_now
 
+# Initialize the centralized logging system early (includes external lib suppression)
+from app.infrastructure.log_system import get_logger
+_log_system = get_logger()  # Ensures LogSystem singleton is initialized
+
 
 # Configure structured logging
 structlog.configure(

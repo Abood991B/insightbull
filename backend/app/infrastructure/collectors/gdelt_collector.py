@@ -30,7 +30,6 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional, Set
 from urllib.parse import urlencode, quote
 import asyncio
-import logging
 import aiohttp
 from app.utils.timezone import utc_now
 from app.infrastructure.log_system import get_logger
@@ -44,9 +43,8 @@ from .base_collector import (
     CollectionError
 )
 
-# Use structured logging system for consistent log management
-logger = logging.getLogger(__name__)
-structured_logger = get_logger()
+# Use centralized logging system
+logger = get_logger()
 
 
 class GDELTCollector(BaseCollector):
@@ -146,14 +144,14 @@ class GDELTCollector(BaseCollector):
                     data = await response.json()
                     is_valid = "articles" in data or isinstance(data, dict)
                     if is_valid:
-                        structured_logger.info(
+                        logger.info(
                             "GDELT API connection validated successfully",
                             component="gdelt_collector",
                             api_endpoint=self.BASE_URL
                         )
                     return is_valid
                 else:
-                    structured_logger.warning(
+                    logger.warning(
                         f"GDELT API returned non-200 status: {response.status}",
                         component="gdelt_collector",
                         status_code=response.status
@@ -161,7 +159,7 @@ class GDELTCollector(BaseCollector):
                     return False
                 
         except Exception as e:
-            structured_logger.error(
+            logger.error(
                 f"GDELT connection validation failed: {str(e)}",
                 component="gdelt_collector",
                 error_type=type(e).__name__
@@ -185,7 +183,7 @@ class GDELTCollector(BaseCollector):
         collected_data = []
         
         # Log collection start with structured logging
-        structured_logger.info(
+        logger.info(
             f"Starting GDELT data collection for {len(config.symbols)} symbols",
             component="gdelt_collector",
             symbols=config.symbols,
@@ -213,7 +211,7 @@ class GDELTCollector(BaseCollector):
                     
                 except Exception as e:
                     error_count += 1
-                    structured_logger.warning(
+                    logger.warning(
                         f"Error collecting GDELT data for symbol: {symbol}",
                         component="gdelt_collector",
                         symbol=symbol,
@@ -225,7 +223,7 @@ class GDELTCollector(BaseCollector):
             execution_time = (utc_now() - start_time).total_seconds()
             
             # Log collection completion with stats
-            structured_logger.info(
+            logger.info(
                 f"GDELT collection complete: {len(collected_data)} items collected",
                 component="gdelt_collector",
                 items_collected=len(collected_data),
@@ -245,7 +243,7 @@ class GDELTCollector(BaseCollector):
             execution_time = (utc_now() - start_time).total_seconds()
             error_msg = f"GDELT collection failed: {str(e)}"
             
-            structured_logger.error(
+            logger.error(
                 error_msg,
                 component="gdelt_collector",
                 symbols=config.symbols,
@@ -311,7 +309,7 @@ class GDELTCollector(BaseCollector):
             
             async with session.get(url) as response:
                 if response.status != 200:
-                    structured_logger.warning(
+                    logger.warning(
                         f"GDELT API returned non-200 status for symbol: {symbol}",
                         component="gdelt_collector",
                         symbol=symbol,
@@ -349,6 +347,29 @@ class GDELTCollector(BaseCollector):
                     source_country = article.get("sourcecountry", "")
                     language = article.get("language", "English")
                     
+                    # 🔴 CRITICAL: Strict language validation - English only
+                    # Reject any non-English content (Finnish, German, etc.)
+                    if language.lower() not in ["english", "eng", "en"]:
+                        logger.debug(
+                            f"Rejecting non-English article: {language}",
+                            component="gdelt_collector",
+                            symbol=symbol,
+                            title_preview=title[:50],
+                            language=language
+                        )
+                        continue
+                    
+                    # Additional text-based language check using simple heuristics
+                    # Check for non-ASCII characters which indicate foreign language
+                    if not self._is_english_text(title):
+                        logger.debug(
+                            f"Rejecting non-English text (character check)",
+                            component="gdelt_collector",
+                            symbol=symbol,
+                            title_preview=title[:50]
+                        )
+                        continue
+                    
                     # Determine if from trusted financial source
                     is_trusted_source = any(
                         trusted in domain.lower() 
@@ -384,7 +405,7 @@ class GDELTCollector(BaseCollector):
                 
                 # Log per-symbol collection stats
                 if collected_data:
-                    structured_logger.debug(
+                    logger.debug(
                         f"GDELT collected {len(collected_data)} articles for {symbol}",
                         component="gdelt_collector",
                         symbol=symbol,
@@ -392,7 +413,7 @@ class GDELTCollector(BaseCollector):
                     )
                 
         except aiohttp.ClientError as e:
-            structured_logger.warning(
+            logger.warning(
                 f"HTTP error collecting GDELT data for symbol: {symbol}",
                 component="gdelt_collector",
                 symbol=symbol,
@@ -400,7 +421,7 @@ class GDELTCollector(BaseCollector):
                 error_type="ClientError"
             )
         except Exception as e:
-            structured_logger.warning(
+            logger.warning(
                 f"Error collecting GDELT data for symbol: {symbol}",
                 component="gdelt_collector",
                 symbol=symbol,
@@ -409,6 +430,36 @@ class GDELTCollector(BaseCollector):
             )
         
         return collected_data[:max_items]
+    
+    def _is_english_text(self, text: str) -> bool:
+        """
+        Check if text is likely English using character-based heuristics.
+        Rejects text with excessive non-ASCII characters (foreign languages).
+        
+        Args:
+            text: Text to check
+            
+        Returns:
+            True if text appears to be English, False otherwise
+        """
+        if not text:
+            return False
+        
+        # Count ASCII alphabetic characters
+        ascii_alpha = sum(1 for c in text if c.isascii() and c.isalpha())
+        total_alpha = sum(1 for c in text if c.isalpha())
+        
+        if total_alpha == 0:
+            return False
+        
+        # If more than 10% of alphabetic characters are non-ASCII, likely foreign
+        ascii_ratio = ascii_alpha / total_alpha
+        
+        # Common foreign characters that shouldn't appear in English financial news
+        foreign_chars = set('äöüßàâçéèêëîïôûùÿæœåøÅÄÖæøåäöñáéíóúü')
+        has_foreign = any(c in foreign_chars for c in text)
+        
+        return ascii_ratio >= 0.90 and not has_foreign
     
     def _parse_gdelt_date(self, date_str: str) -> Optional[datetime]:
         """
