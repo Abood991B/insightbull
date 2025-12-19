@@ -160,6 +160,9 @@ class NewsAPICollector(BaseCollector):
         """
         Collect financial news from NewsAPI with parallel symbol processing.
         
+        NOTE: NewsAPI free tier has strict rate limits (~58s between requests).
+        To keep collection time reasonable, we limit to max 5 symbols per run.
+        
         Args:
             config: Collection configuration
             
@@ -172,10 +175,27 @@ class NewsAPICollector(BaseCollector):
         try:
             self._validate_config(config)
             
+            # CRITICAL: Limit NewsAPI to max 5 symbols to avoid excessive wait times
+            # NewsAPI free tier: ~58s rate limit = 5 symbols ≈ 5 minutes (reasonable)
+            # For 15 symbols it would take 15 minutes which is unacceptable
+            max_symbols_for_newsapi = 5
+            symbols_to_collect = config.symbols[:max_symbols_for_newsapi]
+            
+            if len(config.symbols) > max_symbols_for_newsapi:
+                self.logger.warning(
+                    f"NewsAPI rate limit protection: Processing only {max_symbols_for_newsapi} of {len(config.symbols)} symbols",
+                    extra={
+                        "total_symbols": len(config.symbols),
+                        "processing_symbols": max_symbols_for_newsapi,
+                        "skipped_symbols": len(config.symbols) - max_symbols_for_newsapi,
+                        "reason": "NewsAPI free tier rate limit (~58s between requests)"
+                    }
+                )
+            
             # Parallelize collection across symbols (rate limiter handles concurrency)
             tasks = [
                 self._collect_symbol_with_limit(symbol, config)
-                for symbol in config.symbols
+                for symbol in symbols_to_collect
             ]
             
             # Execute all symbol collections in parallel

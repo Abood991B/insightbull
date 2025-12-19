@@ -1618,7 +1618,7 @@ Each object must have:
                     if sentiment not in ["positive", "negative", "neutral"]:
                         sentiment = "neutral"
                     confidence = item.get("confidence", 0.8)
-                    reasoning = item.get("reasoning", "")  # Extract reasoning for sentiment_nuance
+                    reasoning = item.get("reasoning", "")  # Extract reasoning for analysis
                     results_dict[idx] = (sentiment, confidence, reasoning)
                 
                 # Return in original order

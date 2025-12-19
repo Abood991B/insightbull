@@ -19,25 +19,6 @@ from dataclasses import dataclass
 from ..infrastructure.log_system import get_logger
 from ..utils.timezone import utc_now
 
-try:
-    from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
-    import warnings
-    warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
-    BS4_AVAILABLE = True
-except ImportError:
-    BS4_AVAILABLE = False
-    BeautifulSoup = None
-
-try:
-    import nltk
-    from nltk.corpus import stopwords
-    from nltk.tokenize import word_tokenize
-    from nltk.stem import WordNetLemmatizer
-    NLTK_AVAILABLE = True
-except ImportError:
-    NLTK_AVAILABLE = False
-    nltk = None
-
 from ..infrastructure.collectors.base_collector import RawData, DataSource
 
 logger = get_logger()
@@ -56,9 +37,6 @@ class ProcessingConfig:
     max_length: int = 5000  # Maximum text length
     language: str = "en"
     
-    # Advanced processing options
-    remove_stopwords: bool = False  # Usually not needed for sentiment analysis
-    lemmatize: bool = False  # Can be expensive and not always helpful
     expand_contractions: bool = True
 
 
@@ -118,9 +96,6 @@ class TextProcessor:
         
         # Compile regex patterns for efficiency
         self._compile_patterns()
-        
-        # Initialize NLTK components if available
-        self._init_nltk()
     
     def _compile_patterns(self):
         """Compile frequently used regex patterns"""
@@ -148,41 +123,6 @@ class TextProcessor:
         
         # Stock ticker cleanup (preserve but normalize)
         self.ticker_pattern = re.compile(r'\$([A-Z]{1,5})\b')
-    
-    def _init_nltk(self):
-        """Initialize NLTK components if available"""
-        if not NLTK_AVAILABLE:
-            self.logger.warning("NLTK not available. Advanced text processing disabled.")
-            return
-        
-        try:
-            # Download required NLTK data if not present
-            nltk.data.find('tokenizers/punkt')
-        except LookupError:
-            self.logger.info("Downloading NLTK punkt tokenizer...")
-            nltk.download('punkt', quiet=True)
-        
-        try:
-            nltk.data.find('corpora/stopwords')
-        except LookupError:
-            self.logger.info("Downloading NLTK stopwords...")
-            nltk.download('stopwords', quiet=True)
-        
-        if self.config.lemmatize:
-            try:
-                nltk.data.find('corpora/wordnet')
-                self.lemmatizer = WordNetLemmatizer()
-            except LookupError:
-                self.logger.info("Downloading NLTK WordNet...")
-                nltk.download('wordnet', quiet=True)
-                self.lemmatizer = WordNetLemmatizer()
-        
-        if self.config.remove_stopwords:
-            try:
-                self.stop_words = set(stopwords.words(self.config.language))
-            except:
-                self.logger.warning("Could not load stopwords. Skipping stopword removal.")
-                self.stop_words = set()
     
     def process_raw_data(self, raw_data: RawData) -> ProcessingResult:
         """
@@ -313,15 +253,7 @@ class TextProcessor:
         if self.config.convert_to_lowercase:
             processed = processed.lower()
         
-        # 9. Advanced NLTK processing (if enabled and available)
-        if NLTK_AVAILABLE:
-            if self.config.remove_stopwords:
-                processed = self._remove_stopwords(processed)
-            
-            if self.config.lemmatize:
-                processed = self._lemmatize_text(processed)
-        
-        # 10. Final validation and trimming
+        # 9. Final validation and trimming
         processed = processed.strip()
         
         # Validate length constraints
@@ -348,17 +280,8 @@ class TextProcessor:
         # HTML entity decoding
         text = html.unescape(text)
         
-        # BeautifulSoup cleanup if available
-        if BS4_AVAILABLE:
-            try:
-                soup = BeautifulSoup(text, 'html.parser')
-                text = soup.get_text(separator=' ')
-            except:
-                # Fallback to regex if BeautifulSoup fails
-                text = re.sub(r'<[^>]+>', ' ', text)
-        else:
-            # Simple HTML tag removal
-            text = re.sub(r'<[^>]+>', ' ', text)
+        # Simple HTML tag removal using regex
+        text = re.sub(r'<[^>]+>', ' ', text)
         
         return text
     
@@ -423,30 +346,6 @@ class TextProcessor:
         text = re.sub(r'[^\w\s.,!?;:()\-\'\"$%#@/]', ' ', text)
         
         return text
-    
-    def _remove_stopwords(self, text: str) -> str:
-        """Remove stopwords (use carefully for sentiment analysis)"""
-        if not hasattr(self, 'stop_words'):
-            return text
-        
-        try:
-            tokens = word_tokenize(text)
-            filtered_tokens = [word for word in tokens if word.lower() not in self.stop_words]
-            return ' '.join(filtered_tokens)
-        except:
-            return text
-    
-    def _lemmatize_text(self, text: str) -> str:
-        """Lemmatize text (use carefully for sentiment analysis)"""
-        if not hasattr(self, 'lemmatizer'):
-            return text
-        
-        try:
-            tokens = word_tokenize(text)
-            lemmatized_tokens = [self.lemmatizer.lemmatize(word) for word in tokens]
-            return ' '.join(lemmatized_tokens)
-        except:
-            return text
     
     def process_batch(self, raw_data_list: List[RawData]) -> List[ProcessingResult]:
         """

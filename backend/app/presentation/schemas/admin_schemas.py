@@ -251,6 +251,11 @@ class ManualDataCollectionRequest(BaseModel):
     stock_symbols: Optional[List[str]] = Field(None, description="Specific stocks to collect (all if empty)")
     include_sentiment: bool = Field(True, description="Whether to include sentiment analysis")
     force_refresh: bool = Field(False, description="Whether to force refresh even if recent data exists")
+    days_back: Optional[int] = Field(1, ge=1, le=30, description="Number of days to look back for data collection")
+    data_sources: Optional[List[str]] = Field(
+        None, 
+        description="Specific data sources to use. Options: hackernews, finnhub, newsapi, gdelt, yfinance. If empty, all sources are used."
+    )
 
 
 class ManualDataCollectionResponse(BaseModel):

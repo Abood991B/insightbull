@@ -76,6 +76,7 @@ async def trigger_manual_collection(
     """
     Trigger manual FULL PIPELINE execution for specified symbols.
     This runs: Collection → Preprocessing → Sentiment Analysis → Storage
+    Supports data source selection via data_sources parameter.
     """
     try:
         from app.business.pipeline import DataPipeline, PipelineConfig, DateRange
@@ -110,17 +111,38 @@ async def trigger_manual_collection(
             except (ValueError, TypeError):
                 days_back = 1
 
-        # Create pipeline config for FULL PIPELINE execution
+        # Parse data sources from request (default to all if not specified)
+        available_sources = ["hackernews", "finnhub", "newsapi", "gdelt", "yfinance"]
+        selected_sources = available_sources  # Default to all
+        
+        if request_data and request_data.get("data_sources"):
+            selected_sources = [s.lower() for s in request_data["data_sources"]]
+            # Validate selected sources
+            invalid = [s for s in selected_sources if s not in available_sources]
+            if invalid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid data sources: {invalid}. Available: {available_sources}"
+                )
+        
+        logger.info(
+            f"Pipeline config: {len(symbols)} symbols, {days_back} days, sources: {selected_sources}",
+            admin_user=current_admin.email
+        )
+
+        # Create pipeline config for FULL PIPELINE execution with selected sources
         config = PipelineConfig(
             symbols=symbols,
             date_range=DateRange(
                 start_date=to_naive_utc(utc_now() - timedelta(days=days_back)),
                 end_date=to_naive_utc(utc_now())
             ),
-            max_items_per_symbol=50,  # Increased for more comprehensive data collection
-            include_hackernews=True,
-            include_finnhub=True,
-            include_newsapi=True,
+            max_items_per_symbol=50,
+            include_hackernews="hackernews" in selected_sources,
+            include_finnhub="finnhub" in selected_sources,
+            include_newsapi="newsapi" in selected_sources,
+            include_gdelt="gdelt" in selected_sources,
+            include_yfinance="yfinance" in selected_sources,
             parallel_collectors=True
         )
         

@@ -24,7 +24,7 @@ from app.business.watchlist_observer import (
 )
 
 if TYPE_CHECKING:
-    from app.business.pipeline import DataPipeline
+    from app.business.pipeline import DataPipeline, PipelineConfig
 
 
 logger = get_logger()
@@ -944,12 +944,13 @@ class AdminService(WatchlistSubject):
         Trigger manual data collection process.
         
         Implements U-FR9: Trigger Manual Data Collection
+        Supports data source selection and configurable time range.
         """
         try:
             self.logger.info("Triggering manual data collection", request=request.dict())
             
             # Import pipeline components
-            from app.business.pipeline import DataPipeline
+            from app.business.pipeline import DataPipeline, PipelineConfig, DateRange
             
             # Determine target symbols - use dynamic watchlist or provided symbols
             if request.stock_symbols:
@@ -959,25 +960,54 @@ class AdminService(WatchlistSubject):
                 current_watchlist = await get_current_stock_symbols(self.db)
                 symbols = current_watchlist  # Use all symbols in watchlist
             
-            # Initialize pipeline
-            pipeline = DataPipeline()
+            # Parse data source options
+            available_sources = ["hackernews", "finnhub", "newsapi", "gdelt", "yfinance"]
+            selected_sources = request.data_sources if request.data_sources else available_sources
+            selected_sources = [s.lower() for s in selected_sources]
+            
+            # Calculate date range
+            days_back = request.days_back if request.days_back else 1
+            
+            # Initialize pipeline with data source configuration
+            pipeline = DataPipeline(auto_configure_collectors=True)
+            
+            # Create pipeline configuration with selected sources
+            config = PipelineConfig(
+                symbols=symbols,
+                date_range=DateRange(
+                    start_date=to_naive_utc(utc_now() - timedelta(days=days_back)),
+                    end_date=to_naive_utc(utc_now())
+                ),
+                max_items_per_symbol=50,
+                include_hackernews="hackernews" in selected_sources,
+                include_finnhub="finnhub" in selected_sources,
+                include_newsapi="newsapi" in selected_sources,
+                include_gdelt="gdelt" in selected_sources,
+                include_yfinance="yfinance" in selected_sources,
+                include_comments=True
+            )
             
             # Create job ID for tracking
             job_id = f"manual_job_{int(utc_now().timestamp())}"
             
             # Start pipeline execution as background task
             asyncio.create_task(
-                self._execute_manual_collection(pipeline, symbols, job_id)
+                self._execute_manual_collection(pipeline, symbols, job_id, config)
             )
             
-            self.logger.info(f"Manual data collection job {job_id} started for {len(symbols)} symbols")
+            self.logger.info(
+                f"Manual data collection job {job_id} started",
+                symbols_count=len(symbols),
+                sources=selected_sources,
+                days_back=days_back
+            )
             
             return ManualDataCollectionResponse(
                 success=True,
                 job_id=job_id,
                 estimated_completion="5-10 minutes",
                 symbols_targeted=symbols,
-                message=f"Manual data collection initiated for {len(symbols)} symbols"
+                message=f"Manual data collection initiated for {len(symbols)} symbols using {len(selected_sources)} sources"
             )
             
         except Exception as e:
@@ -1233,18 +1263,35 @@ class AdminService(WatchlistSubject):
             self.logger.error(f"Error calculating per-source metrics", extra={"error": str(e)})
             return {}
     
-    async def _execute_manual_collection(self, pipeline: 'DataPipeline', symbols: List[str], job_id: str):
+    async def _execute_manual_collection(
+        self, 
+        pipeline: 'DataPipeline', 
+        symbols: List[str], 
+        job_id: str,
+        config: Optional['PipelineConfig'] = None
+    ):
         """
         Execute manual data collection in background.
+        
+        Args:
+            pipeline: DataPipeline instance
+            symbols: List of stock symbols to process
+            job_id: Unique job identifier
+            config: Optional PipelineConfig with source selections
         """
         try:
             self.logger.info(f"Starting manual collection job {job_id}")
             
-            # Execute pipeline for each symbol
-            results = await pipeline.process_stock_batch(symbols)
+            # Execute pipeline for each symbol with config
+            if config:
+                # Use run method with config for source filtering
+                results = await pipeline.run(config)
+            else:
+                # Fallback to batch processing without config
+                results = await pipeline.process_stock_batch(symbols)
             
             self.logger.info(f"Manual collection job {job_id} completed successfully", 
-                           results={"processed_stocks": len(results), "job_id": job_id})
+                           results={"processed_stocks": len(symbols), "job_id": job_id})
             
         except Exception as e:
             self.logger.error(f"Manual collection job {job_id} failed", extra={"error": str(e), "job_id": job_id})

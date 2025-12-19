@@ -77,6 +77,18 @@ const AdminDashboard: React.FC = () => {
   const [collectionDays, setCollectionDays] = useState<string>("1");
   const [isRunDialogOpen, setIsRunDialogOpen] = useState(false);
   
+  // Data source selection for manual pipeline
+  const availableDataSources = [
+    { id: 'hackernews', name: 'Hacker News', description: 'Tech community discussions' },
+    { id: 'finnhub', name: 'Finnhub', description: 'Financial news and filings' },
+    { id: 'newsapi', name: 'NewsAPI', description: 'General news sources' },
+    { id: 'gdelt', name: 'GDELT', description: 'Global event database' },
+    { id: 'yfinance', name: 'Yahoo Finance', description: 'Stock prices and news' },
+  ];
+  const [selectedDataSources, setSelectedDataSources] = useState<string[]>(
+    availableDataSources.map(s => s.id)
+  );
+  
   // Pipeline status tracking
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
@@ -227,19 +239,31 @@ const AdminDashboard: React.FC = () => {
 
   // Manual full pipeline execution (non-blocking)
   const triggerDataCollection = () => {
+    if (selectedDataSources.length === 0) {
+      toast({
+        title: "No Sources Selected",
+        description: "Please select at least one data source.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setCollectingData(true);
     setIsRunDialogOpen(false);
     
     toast({
       title: "Pipeline Started",
-      description: "Data collection pipeline is running. Progress will be shown below.",
+      description: `Running pipeline with ${selectedDataSources.length} source(s): ${selectedDataSources.join(', ')}`,
     });
 
     // Start polling for status updates
     startPipelinePolling();
 
     // Fire and forget - don't await, let polling handle status updates
-    adminAPI.triggerManualCollection({ days_back: parseInt(collectionDays) })
+    adminAPI.triggerManualCollection({ 
+      days_back: parseInt(collectionDays),
+      data_sources: selectedDataSources 
+    })
       .catch(error => {
         console.error('Pipeline failed:', error);
         stopPipelinePolling();
@@ -491,12 +515,12 @@ const AdminDashboard: React.FC = () => {
                   {collectingData ? 'Running...' : 'Run Pipeline'}
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
+              <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                   <DialogTitle>Run Data Pipeline</DialogTitle>
                   <DialogDescription>
                     Manually trigger the data collection and analysis pipeline.
-                    Choose a timeframe to look back for news and data.
+                    Choose a timeframe and select which data sources to use.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
@@ -518,6 +542,60 @@ const AdminDashboard: React.FC = () => {
                         <SelectItem value="30">Last 30 Days</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  
+                  {/* Data Sources Selection */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">Data Sources</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          if (selectedDataSources.length === availableDataSources.length) {
+                            setSelectedDataSources([]);
+                          } else {
+                            setSelectedDataSources(availableDataSources.map(s => s.id));
+                          }
+                        }}
+                      >
+                        {selectedDataSources.length === availableDataSources.length ? 'Deselect All' : 'Select All'}
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {availableDataSources.map((source) => (
+                        <label
+                          key={source.id}
+                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            selectedDataSources.includes(source.id)
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                              : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedDataSources.includes(source.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedDataSources([...selectedDataSources, source.id]);
+                              } else {
+                                setSelectedDataSources(selectedDataSources.filter(s => s !== source.id));
+                              }
+                            }}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{source.name}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{source.description}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {selectedDataSources.length} of {availableDataSources.length} sources selected
+                    </p>
                   </div>
                 </div>
                 <DialogFooter>

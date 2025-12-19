@@ -679,6 +679,7 @@ async def trigger_manual_data_collection(
     Manually trigger data collection process.
     
     Enhanced version of existing trigger endpoint with more options.
+    Allows selecting specific data sources and time range.
     """
     try:
         logger.info("Triggering manual data collection", admin_user=admin_user.email, request=request.dict())
@@ -698,45 +699,42 @@ async def trigger_manual_data_collection(
                 from app.service.watchlist_service import get_current_stock_symbols
                 symbols = await get_current_stock_symbols(db)
         
-        # Create pipeline instance and trigger collection
-        from app.business.pipeline import DataPipeline, PipelineConfig, DateRange
+        # Parse data sources from request (default to all if not specified)
+        available_sources = ["hackernews", "finnhub", "newsapi", "gdelt", "yfinance"]
+        selected_sources = request.data_sources if request.data_sources else available_sources
         
-        pipeline = DataPipeline(auto_configure_collectors=True)
+        # Validate selected sources
+        invalid_sources = [s for s in selected_sources if s.lower() not in available_sources]
+        if invalid_sources:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid data sources: {invalid_sources}. Available: {available_sources}"
+            )
         
-        # Create configuration for data collection
-        config = PipelineConfig(
-            symbols=symbols,
-            date_range=DateRange(
-                start_date=to_naive_utc(utc_now() - timedelta(hours=24)),  # Last 24 hours
-                end_date=to_naive_utc(utc_now())
-            ),
-            max_items_per_symbol=50,
-            include_hackernews=True,
-            include_finnhub=True,
-            include_newsapi=True,
-            include_comments=True
-        )
+        # Normalize to lowercase
+        selected_sources = [s.lower() for s in selected_sources]
         
-        # Generate job ID
-        job_id = f"manual_collection_{int(utc_now().timestamp())}"
+        # Calculate date range based on days_back (default to 1 day)
+        days_back = request.days_back if request.days_back else 1
         
-        # Use AdminService for background execution
+        # Use AdminService for background execution - pass the sources and days_back
         admin_service = AdminService(db)
-        collection_request = ManualDataCollectionRequest(stock_symbols=symbols)
+        collection_request = ManualDataCollectionRequest(
+            stock_symbols=symbols,
+            data_sources=selected_sources,
+            days_back=days_back
+        )
         result = await admin_service.trigger_manual_data_collection(collection_request)
         
-        logger.info(f"Created manual data collection job {job_id}", symbols=symbols)
-        
-        # Estimate completion time based on number of symbols
-        estimated_minutes = max(5, len(symbols) * 2)  # At least 5 minutes, 2 minutes per symbol
-        
-        return ManualDataCollectionResponse(
-            success=True,
-            job_id=job_id,
-            estimated_completion=f"{estimated_minutes} minutes",
-            symbols_targeted=symbols,
-            message=f"Manual data collection initiated for {len(symbols)} symbols. Job ID: {job_id}"
+        logger.info(
+            f"Created manual data collection job",
+            symbols=symbols,
+            sources=selected_sources,
+            days_back=days_back
         )
+        
+        # Return the result from the service
+        return result
         
     except Exception as e:
         logger.error("Error triggering manual data collection", error=str(e), exc_info=True)

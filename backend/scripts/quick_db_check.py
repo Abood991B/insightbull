@@ -60,11 +60,6 @@ try:
         for row in c.execute("SELECT COALESCE(model_used, 'NULL') as model, COUNT(*) FROM sentiment_data GROUP BY model_used").fetchall():
             print(f"      {row[0]}: {row[1]}")
         
-        # By nuance
-        print("\n   By Sentiment Nuance:")
-        for row in c.execute("SELECT COALESCE(sentiment_nuance, 'NULL') as nuance, COUNT(*) FROM sentiment_data GROUP BY sentiment_nuance").fetchall():
-            print(f"      {row[0]}: {row[1]}")
-        
         # Confidence stats
         print("\n   Confidence Statistics:")
         row = c.execute("SELECT ROUND(AVG(confidence), 3), ROUND(MIN(confidence), 3), ROUND(MAX(confidence), 3) FROM sentiment_data").fetchone()

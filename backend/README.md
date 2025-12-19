@@ -1,177 +1,277 @@
-# Insight Stock Dashboard Backend
+# Insight Stock Dashboard - Backend
 
-## Overview
-
-Backend API for the Insight Stock Dashboard - a sentiment analysis and stock market insights platform. Built with FastAPI following a 5-layer architecture pattern as specified in the FYP report.
-
-## Architecture
-
-The backend implements a clean 5-layer architecture:
-
-- **Presentation Layer**: FastAPI controllers, middleware, and request/response schemas
-- **Business Layer**: Use cases and domain entities containing business logic
-- **Infrastructure Layer**: External APIs, sentiment analysis models, and configuration
-- **Service Layer**: Application services for data collection and sentiment processing  
-- **Data Access Layer**: Database models, repositories, and data persistence
-
-## Features
-
-- Real-time sentiment analysis using FinBERT and VADER models
-- Multi-source data collection (HackerNews, FinHub, NewsAPI, GDELT)
-- RESTful API with automatic OpenAPI documentation
-- Async/await support for high performance
-- Structured logging with correlation IDs
-- Database migrations with Alembic
-- Comprehensive error handling and validation
-
-## Technology Stack
-
-- **Framework**: FastAPI 0.115.0
-- **Database**: PostgreSQL with SQLAlchemy 2.0.36 (async)
-- **Sentiment Analysis**: Transformers (FinBERT), VADER
-- **Task Queue**: Celery with Redis
-- **Migration**: Alembic 1.13.3
-- **Testing**: Pytest with async support
-- **Code Quality**: Black, isort, flake8
+> FastAPI backend for the Insight Stock Dashboard. For full project documentation, see the [main README](../README.md).
 
 ## Quick Start
 
 ### Prerequisites
-
 - Python 3.10+
-- PostgreSQL 12+
-- Redis (for background tasks)
+- 4GB+ RAM (for ML models)
 
 ### Setup
 
-1. **Clone and navigate to backend directory**
-   ```bash
-   cd backend
-   ```
+```powershell
+# Navigate to backend
+cd backend
 
-2. **Create virtual environment**
-   ```bash
-   # Windows
-   setup_env.bat
-   
-   # Linux/Mac
-   chmod +x setup_env.sh
-   ./setup_env.sh
-   ```
+# Create virtual environment
+python -m venv venv
 
-3. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+# Activate (Windows)
+.\venv\Scripts\activate
 
-4. **Setup database**
-   ```bash
-   # Activate virtual environment first
-   # Windows: venv\Scripts\activate.bat
-   # Linux/Mac: source venv/bin/activate
-   
-   alembic upgrade head
-   ```
+# Install dependencies
+pip install -r requirements.txt
 
-5. **Run the application**
-   ```bash
-   python main.py
-   ```
+# Configure environment
+cp .env.example .env
+# Edit .env with your API keys
 
-The API will be available at `http://localhost:8000` with documentation at `http://localhost:8000/api/docs`.
+# Initialize database
+alembic upgrade head
 
-## API Endpoints
+# Start server
+python main.py
+```
 
-### Dashboard
-- `GET /api/v1/dashboard/overview` - Get dashboard overview data
-- `GET /api/v1/dashboard/health` - Dashboard service health check
+**Server runs at:** `http://localhost:8000`  
+**API Docs:** `http://localhost:8000/api/docs`
 
-### Sentiment Analysis  
-- `GET /api/v1/sentiment/trends` - Get sentiment trends for stocks
-- `GET /api/v1/sentiment/analysis/{stock_symbol}` - Get detailed sentiment analysis
+---
 
-### Admin
-- `GET /api/v1/admin/system-status` - Get system status
-- `GET /api/v1/admin/logs` - Get system logs
-- `POST /api/v1/admin/data-collection/trigger` - Trigger data collection
+## Environment Variables
 
-### Health
-- `GET /health` - Application health check
+Create `.env` file with these variables:
+
+```bash
+# Application
+ENVIRONMENT=development
+DATABASE_URL=sqlite+aiosqlite:///./data/insight_stock.db
+
+# AI/ML (Required)
+GEMINI_API_KEY=your_gemini_api_key
+
+# Data Sources
+FINNHUB_API_KEY=your_finnhub_key
+NEWS_API_KEY=your_newsapi_key
+YFINANCE_ENABLED=true
+GDELT_ENABLED=true
+HACKERNEWS_ENABLED=true
+
+# Security
+SECRET_KEY=your_32_char_secret
+ADMIN_EMAILS=admin@example.com
+
+# Sentiment Analysis
+VERIFICATION_MODE=low_confidence_and_neutral
+ML_CONFIDENCE_THRESHOLD=0.90
+MIN_CONFIDENCE_THRESHOLD=0.80
+
+# Scheduler (cron: every 45 min, Mon-Fri 2-9 PM EST)
+SCHEDULER_CRON=0,45 14-20 * * 0-4
+SCHEDULER_TIMEZONE=America/New_York
+```
+
+---
 
 ## Development
 
 ### Running Tests
+
 ```bash
-pytest tests/
+# All tests
+pytest tests/ -v
+
+# Specific phase
+pytest tests/test_05_sentiment_analysis.py -v
+
+# With coverage
+pytest tests/ --cov=app --cov-report=html
 ```
 
-### Code Formatting
+**Test Phases:**
+1. Security & Authentication
+2. API Key Encryption
+3. Collector Encryption
+4. Data Collection
+5. Sentiment Analysis
+6. Pipeline Orchestration
+7. Admin Panel
+8. Integration Tests
+9. Cross-Phase Tests
+
+### Code Quality
+
 ```bash
-black app/
-isort app/
-flake8 app/
+black app/ tests/ --line-length 100
+isort app/ tests/
+flake8 app/ tests/ --max-line-length 100
 ```
 
 ### Database Migrations
+
 ```bash
 # Create migration
 alembic revision --autogenerate -m "Description"
 
-# Apply migration
+# Apply
 alembic upgrade head
 
-# Rollback migration
+# Rollback
 alembic downgrade -1
 ```
 
-## Configuration
-
-Key environment variables:
-
-- `DATABASE_URL`: PostgreSQL connection string
-- `FINNHUB_API_KEY`: FinHub API key for stock data
-- `NEWS_API_KEY`: NewsAPI key for news articles
-- `REDDIT_CLIENT_ID`: Reddit API client ID
-- `REDDIT_CLIENT_SECRET`: Reddit API client secret
-- `REDIS_URL`: Redis connection string
-- `SECRET_KEY`: JWT secret key
+---
 
 ## Project Structure
 
 ```
 backend/
 ├── app/
-│   ├── presentation/          # FastAPI controllers, middleware, schemas
-│   ├── business/              # Use cases and domain entities  
-│   ├── infrastructure/        # External APIs, config, sentiment models
-│   ├── service/              # Application services
-│   └── data_access/          # Database models and repositories
-├── migrations/               # Database migrations
-├── tests/                   # Unit and integration tests
-├── main.py                 # Application entry point
-├── requirements.txt        # Python dependencies
-└── alembic.ini            # Alembic configuration
+│   ├── presentation/           # API routes, schemas, middleware
+│   │   ├── routes/            # FastAPI routers
+│   │   ├── schemas/           # Pydantic models
+│   │   ├── middleware/        # Logging, security middleware
+│   │   └── dependencies/      # Auth dependencies
+│   │
+│   ├── business/              # Core business logic
+│   │   ├── pipeline.py        # Data collection facade
+│   │   ├── scheduler.py       # APScheduler management
+│   │   └── watchlist_observer.py
+│   │
+│   ├── service/               # Application services
+│   │   ├── sentiment_processing/
+│   │   │   ├── hybrid_sentiment_analyzer.py
+│   │   │   ├── sentiment_engine.py
+│   │   │   └── models/        # FinBERT, DistilBERT
+│   │   ├── admin_service.py
+│   │   ├── dashboard_service.py
+│   │   └── watchlist_service.py
+│   │
+│   ├── infrastructure/        # External integrations
+│   │   ├── collectors/        # HN, FinHub, NewsAPI, GDELT, YFinance
+│   │   ├── security/          # Auth, API key encryption
+│   │   ├── config/settings.py
+│   │   ├── log_system.py
+│   │   └── rate_limiter.py
+│   │
+│   ├── data_access/           # Database layer
+│   │   ├── models/            # SQLAlchemy models
+│   │   ├── repositories/      # Repository pattern
+│   │   └── database/          # Connection, migrations, retry
+│   │
+│   └── utils/                 # Utilities
+│       └── timezone.py
+│
+├── alembic/                   # Database migrations
+├── scripts/                   # Utility scripts
+├── tests/                     # 9-phase test suite
+├── data/                      # Runtime data, secure keys
+├── logs/                      # Application logs
+├── main.py                    # Entry point
+└── requirements.txt
 ```
 
-## Design Patterns
+---
 
-The backend implements several design patterns from the FYP specification:
+## Debugging
 
-- **Facade Pattern**: `SentimentAnalysisPipeline` provides unified interface
-- **Strategy Pattern**: `SentimentModel` with FinBERT/VADER implementations  
-- **Singleton Pattern**: `LogSystem` for centralized logging
-- **Observer Pattern**: Real-time dashboard updates
-- **Adapter Pattern**: External API data source adapters
+### Test Sentiment Analysis
 
-## Contributing
+```python
+python -c "
+from app.service.sentiment_processing.hybrid_sentiment_analyzer import HybridSentimentAnalyzer
+import asyncio
 
-1. Follow the 5-layer architecture
-2. Write tests for new features
-3. Use structured logging
-4. Update documentation
-5. Follow code style guidelines
+analyzer = HybridSentimentAnalyzer()
+text = 'NVIDIA stock surges 15% on AI chip demand'
+result = asyncio.run(analyzer.analyze(text))
+print(f'{result.label}: {result.confidence:.2%}')
+print(f'AI Verified: {result.ai_verified}')
+"
+```
 
-## License
+### Test Pipeline
 
-This project is part of an FYP (Final Year Project) submission.
+```python
+python -c "
+from app.business.pipeline import SentimentAnalysisPipeline
+import asyncio
+
+pipeline = SentimentAnalysisPipeline()
+result = asyncio.run(pipeline.run_pipeline())
+print(f'Processed: {result.summary.analyzed} texts')
+"
+```
+
+### Check Database Health
+
+```bash
+python scripts/db_health_check.py
+```
+
+### Verify TPM Optimization
+
+```bash
+python scripts/verify_tpm_fix.py
+```
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `ModuleNotFoundError: No module named 'app'` | Ensure you're in `backend/` with venv activated |
+| Database migration failed | `alembic downgrade base && alembic upgrade head` |
+| 429 errors from Gemini | Run `python scripts/verify_tpm_fix.py` - should be fixed in v1.3.0 |
+| Low sentiment confidence | Set `VERIFICATION_MODE=all` in .env |
+| Pipeline not running | Check scheduler: `curl http://localhost:8000/api/v1/admin/scheduler/status` |
+
+### Enable Debug Logging
+
+```bash
+# In .env
+LOG_LEVEL=DEBUG
+```
+
+---
+
+## API Endpoints
+
+See full API documentation at `http://localhost:8000/api/docs` when running.
+
+### Key Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/dashboard/summary` | Market overview |
+| `GET /api/stocks/` | All tracked stocks |
+| `GET /api/analysis/stocks/{symbol}/sentiment` | Stock sentiment |
+| `POST /api/admin/pipeline/trigger` | Trigger pipeline (auth required) |
+| `GET /api/admin/scheduler/status` | Scheduler status (auth required) |
+
+---
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `db_health_check.py` | Verify database state |
+| `verify_tpm_fix.py` | Validate TPM optimization |
+| `clear_tables.py` | Reset data (dev only) |
+| `reprocess_sentiment_data.py` | Reprocess with updated model |
+| `backfill_stock_mentions.py` | Backfill missing data |
+
+---
+
+## More Documentation
+
+- **Full Project Docs**: [../README.md](../README.md)
+- **Backend Reference**: [../docs/BACKEND_REFERENCE.md](../docs/BACKEND_REFERENCE.md)
+- **Security Setup**: [../docs/SECURITY_IMPLEMENTATION.md](../docs/SECURITY_IMPLEMENTATION.md)
+- **FYP Report**: [../FYP-Report.md](../FYP-Report.md)
+
+---
+
+**Version**: 1.3.0 | **Status**: Production Ready

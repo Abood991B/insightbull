@@ -62,7 +62,6 @@ class SentimentData(Base):
     confidence = Column(Numeric(precision=5, scale=4), nullable=False)  # Range 0.0000 to 1.0000
     sentiment_label = Column(String(20), nullable=False, index=True, default="Neutral")  # Positive, Negative, Neutral
     model_used = Column(String(50), nullable=True)  # FinBERT (ProsusAI/finbert) - nullable for migration compatibility
-    sentiment_nuance = Column(String(50), nullable=True)  # Rule/context that determined sentiment (temporal_weighting, short_squeeze, insider_neutral, standard, per_entity)
     raw_text = Column(Text)
     additional_metadata = Column(JSON)  # Additional metadata: source_url, content_type, original_timestamp, label
     content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection

@@ -712,10 +712,10 @@ if __name__ == "__main__":
         # Test inputs from different sources
         test_inputs = [
             TextInput("I love this stock! Great investment!", DataSource.HACKERNEWS, stock_symbol="AAPL"),
-            TextInput("Apple Inc. reported strong quarterly earnings today.", DataSource.NEWS, stock_symbol="AAPL"),
-            TextInput("Market conditions are uncertain...", DataSource.TWITTER),
+            TextInput("Apple Inc. reported strong quarterly earnings today.", DataSource.NEWSAPI, stock_symbol="AAPL"),
+            TextInput("Market conditions are uncertain...", DataSource.GDELT),
             TextInput("Tesla announces breakthrough in battery technology.", DataSource.FINNHUB, stock_symbol="TSLA"),
-            TextInput("Banking sector faces regulatory challenges.", DataSource.NEWSAPI),
+            TextInput("Banking sector faces regulatory challenges.", DataSource.YFINANCE),
         ]
         
         try:

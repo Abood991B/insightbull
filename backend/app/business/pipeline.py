@@ -1180,9 +1180,27 @@ class DataPipeline:
         name: str, 
         collector: BaseCollector, 
         config: CollectionConfig,
-        timeout: int = 300  # 5 minutes
+        timeout: int = None  # Will be calculated based on collector
     ) -> CollectionResult:
-        """Run a collector with timeout protection"""
+        """
+        Run a collector with timeout protection.
+        
+        Timeout is calculated based on:
+        - NewsAPI: 400 seconds (5 symbols × 60s each + buffer) - collector internally limits to 5 symbols
+        - Other collectors: 20 seconds per symbol
+        - Minimum: 300 seconds (5 minutes)
+        """
+        if timeout is None:
+            # Calculate timeout based on collector type and number of symbols
+            symbols_count = len(config.symbols) if config.symbols else 15
+            
+            if name.lower() == 'newsapi':
+                # NewsAPI limits itself to 5 symbols max (60s each + buffer)
+                timeout = 400  # ~6.5 minutes for safety
+            else:
+                # Other collectors: 20 seconds per symbol, minimum 5 minutes
+                timeout = max(300, symbols_count * 20)
+        
         try:
             return await asyncio.wait_for(
                 collector.collect_data(config), 
@@ -1970,8 +1988,6 @@ class DataPipeline:
         # Default fallback
         return DataSource.NEWS
     
-
-    
     async def _store_sentiment_data(self, sentiment_results: List['SentimentAnalysisResult'], config: PipelineConfig) -> int:
         """
         Store sentiment analysis results in the database using proper session management.
@@ -2544,7 +2560,6 @@ class DataPipeline:
                                             confidence=entity_confidence,
                                             sentiment_label=entity_sentiment,
                                             model_used="Gemini AI (per-entity)",
-                                            sentiment_nuance="per_entity",  # Multi-entity extraction
                                             raw_text=result.text[:1000],  # Same text for all entities
                                             stock_mentions=metadata.get("stock_mentions", []),
                                             content_hash=SentimentData.generate_content_hash(
@@ -2570,29 +2585,6 @@ class DataPipeline:
                                     is_multi_entity = False
                             
                             if not is_multi_entity:
-                                # Detect sentiment nuance from AI reasoning
-                                sentiment_nuance = None
-                                ai_reasoning = result.ai_reasoning or ''  # Get reasoning directly from SentimentResult
-                                text_lower = result.text.lower()
-                                
-                                if ai_reasoning:
-                                    # Check for advanced rule triggers in reasoning or text
-                                    if any(phrase in ai_reasoning.lower() for phrase in ['buying opportunity', 'future outlook', 'long-term upside', 'undervalued']):
-                                        if any(neg in text_lower for neg in ['fell', 'drop', 'decline', 'crash', 'sell-off']):
-                                            sentiment_nuance = 'temporal_weighting'
-                                    elif 'short squeeze' in text_lower:
-                                        sentiment_nuance = 'short_squeeze'
-                                    elif any(phrase in text_lower for phrase in ['ceo sells', 'insider sell', 'executive sells']):
-                                        if result.label == 'neutral':
-                                            sentiment_nuance = 'insider_neutral'
-                                    elif 'hackernews' in result.source.value.lower():
-                                        sentiment_nuance = 'hackernews_comment'
-                                    elif any(phrase in text_lower for phrase in ['trending stock', 'what to know', 'interview with']):
-                                        sentiment_nuance = 'informational'
-                                
-                                if not sentiment_nuance:
-                                    sentiment_nuance = 'standard'  # Default
-                                
                                 # Standard single-entity sentiment record
                                 from app.utils.timezone import malaysia_now
                                 sentiment_data = SentimentData(
@@ -2602,7 +2594,6 @@ class DataPipeline:
                                     confidence=result.confidence,
                                     sentiment_label=result.label,
                                     model_used=result.model_name,
-                                    sentiment_nuance=sentiment_nuance,
                                     raw_text=result.text[:1000],  # Store truncated text
                                     stock_mentions=metadata.get("stock_mentions"),  # Copy stock mentions from source
                                     content_hash=SentimentData.generate_content_hash(

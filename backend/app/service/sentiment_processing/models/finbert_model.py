@@ -1102,9 +1102,9 @@ if __name__ == "__main__":
         from .sentiment_model import TextInput
         
         test_texts = [
-            TextInput("Apple Inc. reported record quarterly earnings beating all analyst expectations.", DataSource.NEWS),
-            TextInput("The company faces significant headwinds due to supply chain disruptions.", DataSource.NEWS),
-            TextInput("Market conditions remain stable with moderate growth expected.", DataSource.NEWS),
+            TextInput("Apple Inc. reported record quarterly earnings beating all analyst expectations.", DataSource.NEWSAPI),
+            TextInput("The company faces significant headwinds due to supply chain disruptions.", DataSource.FINNHUB),
+            TextInput("Market conditions remain stable with moderate growth expected.", DataSource.GDELT),
             TextInput("Tesla stock surged after announcing breakthrough in battery technology.", DataSource.FINNHUB),
             TextInput("Banking sector struggles amid rising interest rates and regulatory pressure.", DataSource.NEWSAPI)
         ]
