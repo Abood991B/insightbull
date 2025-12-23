@@ -1,20 +1,16 @@
 """
 Database Retry Utilities
-=========================
 
-Utility functions for handling database operations with retry logic.
-Specifically handles SQLite database lock errors with exponential backoff.
+Handles database operations with retry logic for SQLite lock errors.
 """
 
 import asyncio
 import structlog
-from typing import Callable, TypeVar, Any
+from typing import Callable, Any
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger()
-
-T = TypeVar('T')
 
 
 async def retry_on_db_lock(
@@ -59,7 +55,6 @@ async def retry_on_db_lock(
                 )
                 await asyncio.sleep(retry_delay)
             else:
-                # Max retries reached or different error
                 logger.error(
                     f"{operation_name} failed after retries",
                     error=str(e),
@@ -90,28 +85,4 @@ async def commit_with_retry(
         max_retries=max_retries,
         base_delay=base_delay,
         operation_name="commit"
-    )
-
-
-async def flush_with_retry(
-    session: AsyncSession,
-    max_retries: int = 3,
-    base_delay: float = 0.5
-) -> None:
-    """
-    Flush database session with retry logic for lock errors.
-    
-    Args:
-        session: SQLAlchemy async session to flush
-        max_retries: Maximum number of retry attempts
-        base_delay: Base delay in seconds for exponential backoff
-        
-    Raises:
-        OperationalError: If flush fails after all retries
-    """
-    await retry_on_db_lock(
-        operation=lambda: session.flush(),
-        max_retries=max_retries,
-        base_delay=base_delay,
-        operation_name="flush"
     )

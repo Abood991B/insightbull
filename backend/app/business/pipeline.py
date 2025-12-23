@@ -18,8 +18,8 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 
 from .processor import TextProcessor, ProcessingConfig, ProcessingResult
 from ..infrastructure.collectors.base_collector import (
@@ -33,25 +33,16 @@ from ..infrastructure.collectors.yfinance_collector import YFinanceCollector
 from ..infrastructure.rate_limiter import RateLimitHandler, RequestPriority
 from ..data_access.repositories.sentiment_repository import SentimentDataRepository
 from ..data_access.repositories.stock_repository import StockRepository
-from ..infrastructure.security.security_utils import SecurityUtils
 from ..infrastructure.log_system import get_logger
 # Sentiment Analysis Integration
 from ..service.sentiment_processing import get_sentiment_engine, EngineConfig
 from ..service.sentiment_processing import TextInput, DataSource, SentimentResult
 # Database Models for Storage
-from ..data_access.models import SentimentData, Stock, NewsArticle, HackerNewsPost
-from sqlalchemy.orm import Session
-from ..data_access.database.connection import get_db
+from ..data_access.models import SentimentData, NewsArticle, HackerNewsPost, StocksWatchlist
 from ..data_access.database.connection import get_db_session
-from ..data_access.models import StocksWatchlist, SentimentData
-from sqlalchemy import select, func
 from ..utils.timezone import utc_now, ensure_utc, to_iso_string, to_naive_utc
 
 logger = get_logger()
-
-
-# Note: TARGET_STOCKS are now managed dynamically via WatchlistService
-# The static list has been replaced with database-driven watchlist management
 
 
 class PipelineStatus(Enum):
@@ -214,10 +205,9 @@ class DataPipeline:
         self.rate_limiter = rate_limiter or RateLimitHandler()
         self.use_enhanced_collection = use_enhanced_collection
         self.text_processor = TextProcessor()
-        self.logger = get_logger()  # Use LogSystem singleton logger
+        self.logger = get_logger()
         
-        # Note: Repositories will be initialized later during async execution
-        # since they require async sessions
+        # Repositories will be initialized later during async execution since they require async sessions
         self.sentiment_repository = sentiment_repository
         self.stock_repository = stock_repository
         self._repository_initialized = False
@@ -349,8 +339,8 @@ class DataPipeline:
             from ..data_access.database.connection import init_database, get_db_session
             await init_database()
             
-            # Note: Repository initialization will be done per operation to ensure proper session management
-            # This prevents the SQLAlchemy connection pool warnings about unclosed connections
+            # Repository initialization will be done per operation to ensure proper session management
+            # This prevents SQLAlchemy connection pool warnings about unclosed connections
             self.sentiment_repository = "INITIALIZED"  # Marker to show it will be created per operation
             self.stock_repository = "INITIALIZED"  # Marker to show it will be created per operation
             self.logger.info("Repository initialization configured for per-operation session management")
@@ -419,7 +409,7 @@ class DataPipeline:
                 pass  # dotenv is optional
             
             # Load decrypted API keys securely using the same method as DataCollector
-            self.logger.info("🔐 Loading and decrypting API keys...")
+            self.logger.info("Loading and decrypting API keys...")
             from ..infrastructure.security.api_key_manager import SecureAPIKeyLoader
             secure_loader = SecureAPIKeyLoader()
             
@@ -1902,7 +1892,7 @@ class DataPipeline:
                 self.logger.debug(f"Skipping duplicate content: {title[:50]}...")
                 continue
             
-            # FIXED: raw_data.source is already a DataSource enum, no mapping needed!
+            # raw_data.source is already a DataSource enum
             data_source = proc_result.raw_data.source
             
             text_input = TextInput(
@@ -1967,26 +1957,6 @@ class DataPipeline:
                 sentiment_results.append(sentiment_result)
         
         return sentiment_results
-    
-    def _map_collector_to_data_source(self, collector_source) -> DataSource:
-        """Map collector source to DataSource enum."""
-        # If it's already a DataSource enum, return it directly
-        if isinstance(collector_source, DataSource):
-            return collector_source
-            
-        # If it's a string, map it to DataSource enum
-        if isinstance(collector_source, str):
-            collector_mapping = {
-                'hackernews': DataSource.HACKERNEWS,
-                'finnhub': DataSource.FINNHUB,
-                'newsapi': DataSource.NEWSAPI,
-                'gdelt': DataSource.GDELT,
-                'yfinance': DataSource.YFINANCE
-            }
-            return collector_mapping.get(collector_source.lower(), DataSource.NEWSAPI)
-        
-        # Default fallback
-        return DataSource.NEWS
     
     async def _store_sentiment_data(self, sentiment_results: List['SentimentAnalysisResult'], config: PipelineConfig) -> int:
         """

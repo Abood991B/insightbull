@@ -1,15 +1,13 @@
 """
 Sentiment Data Repository
 
-Repository implementation for SentimentData model with specialized queries
-for sentiment analysis data management.
+Repository for SentimentData model with specialized sentiment analysis queries.
 """
 
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, and_, or_, between
 from app.utils.timezone import ensure_utc, to_naive_utc
-from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 import uuid
 from app.utils.timezone import utc_now
@@ -19,9 +17,7 @@ from .base_repository import BaseRepository
 
 
 class SentimentDataRepository(BaseRepository[SentimentData]):
-    """
-    Repository for SentimentData model with specialized sentiment analysis queries
-    """
+    """Repository for SentimentData model with specialized sentiment analysis queries."""
     
     def __init__(self, db_session: AsyncSession):
         super().__init__(SentimentData, db_session)
@@ -330,54 +326,7 @@ class SentimentDataRepository(BaseRepository[SentimentData]):
             .limit(limit)
         )
         return result.scalars().all()
-    
-    async def create_sentiment_data(
-        self,
-        stock_id: uuid.UUID,
-        sentiment_score: float,
-        sentiment_label: str,
-        confidence_score: float,
-        source: str,
-        source_data: Dict[str, Any] = None
-    ) -> SentimentData:
-        """
-        Create new sentiment data with validation
-        
-        Args:
-            stock_id: UUID of the stock
-            sentiment_score: Numerical sentiment score (-1 to 1)
-            sentiment_label: Label (positive, negative, neutral)
-            confidence_score: Confidence in the prediction (0 to 1)
-            source: Data source
-            source_data: Additional source-specific data
-            
-        Returns:
-            Created sentiment data instance
-        """
-        # Validate sentiment score range
-        if not -1.0 <= sentiment_score <= 1.0:
-            raise ValueError("Sentiment score must be between -1.0 and 1.0")
-        
-        # Validate confidence score range
-        if not 0.0 <= confidence_score <= 1.0:
-            raise ValueError("Confidence score must be between 0.0 and 1.0")
-        
-        # Validate sentiment label
-        valid_labels = ['positive', 'negative', 'neutral']
-        if sentiment_label.lower() not in valid_labels:
-            raise ValueError(f"Sentiment label must be one of: {valid_labels}")
-        
-        sentiment_data = {
-            'stock_id': stock_id,
-            'sentiment_score': sentiment_score,
-            'sentiment_label': sentiment_label.lower(),
-            'confidence_score': confidence_score,
-            'source': source,
-            'source_data': source_data or {}
-        }
-        
-        return await self.create(sentiment_data)
-    
+
     async def get_sentiment_correlation_data(
         self, 
         symbol: str, 

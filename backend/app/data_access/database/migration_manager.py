@@ -1,19 +1,13 @@
 """
 Database Migration Manager
-=========================
 
-Unified migration management using the data_access database system.
-Provides CLI interface for database migrations and schema management.
+Manages database migrations and schema operations.
 """
 
-from typing import Optional, List
-from pathlib import Path
-import asyncio
+from typing import List
 
 from app.data_access.database.connection import init_database, get_db_session
 from app.data_access.database.base import Base
-
-# Use centralized logging system
 from app.infrastructure.log_system import get_logger
 logger = get_logger()
 
@@ -40,7 +34,6 @@ class MigrationManager:
         await self.initialize()
         
         async with get_db_session() as session:
-            # Get engine from session
             engine = session.get_bind()
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.drop_all)

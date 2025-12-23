@@ -1,8 +1,7 @@
 """
 Stock Repository
 
-Repository implementation for Stock model with specialized queries
-for stock market data management.
+Repository for Stock model with specialized stock market queries.
 """
 
 from typing import List, Optional, Dict, Any
@@ -18,9 +17,7 @@ from .base_repository import BaseRepository
 
 
 class StockRepository(BaseRepository[Stock]):
-    """
-    Repository for Stock model with specialized stock market queries
-    """
+    """Repository for Stock model with specialized stock market queries."""
     
     def __init__(self, db_session: AsyncSession):
         super().__init__(Stock, db_session)
@@ -241,60 +238,3 @@ class StockRepository(BaseRepository[Stock]):
             'recent_additions': recent_additions,
             'generated_at': utc_now()
         }
-    
-    async def create_stock(self, symbol: str, name: str, sector: str = None) -> Stock:
-        """
-        Create a new stock with validation
-        
-        Args:
-            symbol: Stock symbol (will be uppercased)
-            name: Company name
-            sector: Sector classification
-            
-        Returns:
-            Created stock instance
-        """
-        # Check if stock already exists
-        existing = await self.get_by_symbol(symbol)
-        if existing:
-            raise ValueError(f"Stock with symbol {symbol} already exists")
-        
-        stock_data = {
-            'symbol': symbol.upper(),
-            'name': name,
-            'sector': sector
-        }
-        
-        return await self.create(stock_data)
-    
-    async def update_stock_info(
-        self, 
-        symbol: str, 
-        name: str = None, 
-        sector: str = None
-    ) -> Optional[Stock]:
-        """
-        Update stock information
-        
-        Args:
-            symbol: Stock symbol
-            name: New company name (optional)
-            sector: New sector (optional)
-            
-        Returns:
-            Updated stock or None if not found
-        """
-        stock = await self.get_by_symbol(symbol)
-        if not stock:
-            return None
-        
-        update_data = {}
-        if name:
-            update_data['name'] = name
-        if sector:
-            update_data['sector'] = sector
-        
-        if update_data:
-            return await self.update(stock.id, update_data)
-        
-        return stock

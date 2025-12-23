@@ -1,15 +1,8 @@
 """
 Watchlist Observer Pattern Implementation
-========================================
 
 Observer pattern for real-time dashboard updates when watchlist changes occur.
-Implements the Observer design pattern as specified in the FYP Report architecture.
-
-This module provides:
-- WatchlistObserver interface (Observer pattern)
-- Concrete observer implementations for different dashboard components
-- Subject interface for watchlist changes
-- Event notification system for real-time updates
+Provides observer interfaces, concrete implementations, and event notification system.
 """
 
 from abc import ABC, abstractmethod
@@ -17,7 +10,6 @@ from typing import List, Dict, Any, Optional, Set
 from datetime import datetime
 from enum import Enum
 import asyncio
-import structlog
 
 from app.infrastructure.log_system import get_logger
 
@@ -33,12 +25,7 @@ class WatchlistEventType(Enum):
 
 
 class WatchlistEvent:
-    """
-    Event data for watchlist changes
-    
-    Contains all information about a watchlist change event
-    including the type of change, affected stocks, and metadata.
-    """
+    """Event data for watchlist changes"""
     
     def __init__(
         self,
@@ -64,13 +51,7 @@ class WatchlistEvent:
 
 
 class WatchlistObserver(ABC):
-    """
-    Abstract Observer interface for watchlist changes
-    
-    Implements the Observer pattern as specified in the FYP Report.
-    All dashboard components that need to react to watchlist changes
-    should implement this interface.
-    """
+    """Abstract Observer interface for watchlist changes"""
     
     @abstractmethod
     async def update(self, event: WatchlistEvent) -> None:
@@ -90,12 +71,7 @@ class WatchlistObserver(ABC):
 
 
 class WatchlistSubject(ABC):
-    """
-    Abstract Subject interface for watchlist changes
-    
-    Manages observer registration and notification.
-    Classes that trigger watchlist changes should inherit from this.
-    """
+    """Abstract Subject interface for watchlist changes"""
     
     def __init__(self):
         self._observers: Set[WatchlistObserver] = set()
@@ -135,7 +111,6 @@ class WatchlistSubject(ABC):
             stocks_affected=event.stocks_affected
         )
         
-        # Notify all observers asynchronously
         tasks = []
         for observer in self._observers:
             try:
@@ -148,11 +123,9 @@ class WatchlistSubject(ABC):
                     error=str(e)
                 )
         
-        # Wait for all notifications to complete
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Log any notification failures
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     observer = list(self._observers)[i]
@@ -163,15 +136,8 @@ class WatchlistSubject(ABC):
                     )
 
 
-# Concrete Observer Implementations
-
 class DashboardObserver(WatchlistObserver):
-    """
-    Observer for main dashboard updates
-    
-    Handles watchlist changes that affect the main dashboard display.
-    Updates stock tiles, metrics, and overview information.
-    """
+    """Observer for main dashboard updates"""
     
     def __init__(self):
         self._observer_id = "dashboard_observer"
@@ -190,7 +156,6 @@ class DashboardObserver(WatchlistObserver):
                 stocks_affected=event.stocks_affected
             )
             
-            # Simulate dashboard update operations
             if event.event_type == WatchlistEventType.STOCK_ADDED:
                 await self._handle_stock_added(event.stocks_affected)
             elif event.event_type == WatchlistEventType.STOCK_REMOVED:
@@ -207,46 +172,22 @@ class DashboardObserver(WatchlistObserver):
     async def _handle_stock_added(self, stocks: List[str]) -> None:
         """Handle stocks being added to watchlist"""
         self._logger.info("Dashboard updating for added stocks", stocks=stocks)
-        # In a real implementation, this would:
-        # - Fetch initial data for new stocks
-        # - Add stock tiles to dashboard
-        # - Update summary metrics
-        # - Trigger UI refresh
         
     async def _handle_stock_removed(self, stocks: List[str]) -> None:
         """Handle stocks being removed from watchlist"""
         self._logger.info("Dashboard updating for removed stocks", stocks=stocks)
-        # In a real implementation, this would:
-        # - Remove stock tiles from dashboard
-        # - Update summary metrics
-        # - Clean up cached data
-        # - Trigger UI refresh
         
     async def _handle_watchlist_updated(self, event: WatchlistEvent) -> None:
         """Handle general watchlist updates"""
         self._logger.info("Dashboard processing watchlist update", metadata=event.metadata)
-        # In a real implementation, this would:
-        # - Refresh entire watchlist display
-        # - Update all metrics and summaries
-        # - Re-sort/re-organize dashboard layout
         
     async def _handle_watchlist_cleared(self) -> None:
         """Handle watchlist being cleared"""
         self._logger.info("Dashboard processing watchlist cleared")
-        # In a real implementation, this would:
-        # - Remove all stock tiles
-        # - Reset dashboard to empty state
-        # - Clear all cached data
-        # - Show empty state message
 
 
 class AnalyticsObserver(WatchlistObserver):
-    """
-    Observer for analytics dashboard updates
-    
-    Handles watchlist changes that affect analytical displays,
-    charts, and correlation calculations.
-    """
+    """Observer for analytics dashboard updates"""
     
     def __init__(self):
         self._observer_id = "analytics_observer"
@@ -265,7 +206,6 @@ class AnalyticsObserver(WatchlistObserver):
                 stocks_affected=event.stocks_affected
             )
             
-            # Process analytics updates based on event type
             if event.event_type in [WatchlistEventType.STOCK_ADDED, WatchlistEventType.STOCK_REMOVED]:
                 await self._recalculate_correlations(event.stocks_affected)
                 await self._update_analytics_charts()
@@ -281,47 +221,22 @@ class AnalyticsObserver(WatchlistObserver):
     async def _recalculate_correlations(self, stocks: List[str]) -> None:
         """Recalculate stock correlations"""
         self._logger.info("Recalculating correlations for stocks", stocks=stocks)
-        # In a real implementation, this would:
-        # - Fetch historical data for affected stocks
-        # - Recalculate correlation matrices
-        # - Update correlation charts and heatmaps
-        # - Cache new correlation data
     
     async def _update_analytics_charts(self) -> None:
         """Update analytics charts and visualizations"""
         self._logger.info("Updating analytics charts")
-        # In a real implementation, this would:
-        # - Refresh sentiment trend charts
-        # - Update performance comparison charts
-        # - Recalculate technical indicators
-        # - Update chart data sources
     
     async def _refresh_all_analytics(self) -> None:
         """Refresh all analytics data and displays"""
         self._logger.info("Refreshing all analytics data")
-        # In a real implementation, this would:
-        # - Reload all analytical calculations
-        # - Refresh all charts and visualizations
-        # - Update analytical summaries
-        # - Recalculate all metrics
     
     async def _clear_analytics_data(self) -> None:
         """Clear all analytics data"""
         self._logger.info("Clearing analytics data")
-        # In a real implementation, this would:
-        # - Clear all chart data
-        # - Reset analytical calculations
-        # - Show empty state for analytics
-        # - Clear cached calculations
 
 
 class DataCollectionObserver(WatchlistObserver):
-    """
-    Observer for data collection pipeline updates
-    
-    Handles watchlist changes that affect which stocks
-    need to be included in data collection processes.
-    """
+    """Observer for data collection pipeline updates"""
     
     def __init__(self):
         self._observer_id = "data_collection_observer"
@@ -340,7 +255,6 @@ class DataCollectionObserver(WatchlistObserver):
                 stocks_affected=event.stocks_affected
             )
             
-            # Update data collection targets based on event
             if event.event_type == WatchlistEventType.STOCK_ADDED:
                 await self._add_collection_targets(event.stocks_affected)
             elif event.event_type == WatchlistEventType.STOCK_REMOVED:
@@ -357,25 +271,21 @@ class DataCollectionObserver(WatchlistObserver):
     async def _add_collection_targets(self, stocks: List[str]) -> None:
         """Add stocks to data collection targets"""
         self._logger.info("Adding stocks to collection targets", stocks=stocks)
-        # Refresh scheduler with updated watchlist
         await self._refresh_data_collection_scheduler()
     
     async def _remove_collection_targets(self, stocks: List[str]) -> None:
         """Remove stocks from data collection targets"""
         self._logger.info("Removing stocks from collection targets", stocks=stocks)
-        # Refresh scheduler with updated watchlist
         await self._refresh_data_collection_scheduler()
     
     async def _update_collection_schedule(self) -> None:
         """Update data collection schedule"""
         self._logger.info("Updating data collection schedule")
-        # Refresh scheduler with updated watchlist
         await self._refresh_data_collection_scheduler()
     
     async def _clear_collection_targets(self) -> None:
         """Clear all data collection targets"""
         self._logger.info("Clearing all collection targets")
-        # Refresh scheduler with updated watchlist
         await self._refresh_data_collection_scheduler()
     
     async def _refresh_data_collection_scheduler(self) -> None:
@@ -384,8 +294,6 @@ class DataCollectionObserver(WatchlistObserver):
             # Import here to avoid circular imports
             from app.business.scheduler import Scheduler
             
-            # Get scheduler instance (assuming singleton pattern)
-            # Note: In a production system, you might want to inject this dependency
             scheduler = Scheduler()
             if scheduler._is_running:
                 await scheduler.refresh_scheduled_jobs()
@@ -397,15 +305,8 @@ class DataCollectionObserver(WatchlistObserver):
             self._logger.error("Failed to refresh data collection scheduler", error=str(e))
 
 
-# Observer Manager and Factory
-
 class WatchlistObserverManager:
-    """
-    Manager for watchlist observers
-    
-    Provides centralized management of observer registration,
-    notification, and lifecycle management.
-    """
+    """Manager for watchlist observers"""
     
     _instance = None
     _initialized = False
@@ -423,8 +324,7 @@ class WatchlistObserverManager:
     
     def register_default_observers(self) -> None:
         """Register default system observers (only once)"""
-        # Check if observers are already registered
-        if len(self._observers) >= 3:  # We expect 3 default observers
+        if len(self._observers) >= 3:
             return
             
         observers = [
@@ -458,6 +358,5 @@ class WatchlistObserverManager:
             self._logger.info("Unregistered observer", observer_id=observer_id)
 
 
-# Global observer manager instance
 observer_manager = WatchlistObserverManager()
 observer_manager.register_default_observers()

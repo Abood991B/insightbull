@@ -1,12 +1,10 @@
 """
 Database Models
-===============
 
 SQLAlchemy models for data persistence.
-Maps business entities to database tables.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Float, Text, Boolean, ForeignKey, JSON, Index, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, JSON, Index, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -25,25 +23,20 @@ class StocksWatchlist(Base):
     name = Column(String(255), nullable=False)
     sector = Column(String(100))
     
-    # Watchlist management fields
     is_active = Column(Boolean, default=True, nullable=False, index=True)
     added_to_watchlist = Column(DateTime(timezone=True), server_default=func.now())
-    priority = Column(Integer, default=0, nullable=False)  # For ordering/prioritization
+    priority = Column(Integer, default=0, nullable=False)
     
-    # Stock metadata
-    market_cap = Column(String(50))  # Large Cap, Mid Cap, Small Cap
+    market_cap = Column(String(50))
     exchange = Column(String(20), default="NASDAQ")  # NASDAQ, NYSE, etc.
-    current_price = Column(Numeric(precision=10, scale=2), nullable=True)  # Latest stock price for quick access
+    current_price = Column(Numeric(precision=10, scale=2), nullable=True)
     
-    # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # Relationships
     sentiment_data = relationship("SentimentData", back_populates="stock")
     price_data = relationship("StockPrice", back_populates="stock")
     
-    # Indexes for performance
     __table_args__ = (
         Index('idx_stocks_watchlist_active', 'is_active'),
         Index('idx_stocks_watchlist_symbol_active', 'symbol', 'is_active'),
@@ -65,12 +58,10 @@ class SentimentData(Base):
     raw_text = Column(Text)
     additional_metadata = Column(JSON)  # Additional metadata: source_url, content_type, original_timestamp, label
     content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hash for duplicate detection
-    created_at = Column(DateTime(timezone=True), server_default=func.now())  # When sentiment analysis was performed
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Relationships
     stock = relationship("StocksWatchlist", back_populates="sentiment_data")
     
-    # Composite index for duplicate detection (stock + source + content_hash)
     __table_args__ = (
         Index('idx_sentiment_duplicate_check', 'stock_id', 'source', 'content_hash'),
         Index('idx_sentiment_created_at', 'created_at'),
@@ -95,15 +86,13 @@ class StockPrice(Base):
     volume = Column(Integer)
     change = Column(Numeric(precision=8, scale=2))  # Max 999999.99 (positive or negative)
     change_percent = Column(Numeric(precision=6, scale=2))  # Max 9999.99% 
-    price_timestamp = Column(DateTime(timezone=True), nullable=False)  # When the price data is from (market time)
+    price_timestamp = Column(DateTime(timezone=True), nullable=False)
     
-    # Additional price fields for better tracking (2 decimal places)
     open_price = Column(Numeric(precision=10, scale=2))
     close_price = Column(Numeric(precision=10, scale=2)) 
     high_price = Column(Numeric(precision=10, scale=2))
     low_price = Column(Numeric(precision=10, scale=2))
     
-    # Relationships
     stock = relationship("StocksWatchlist", back_populates="price_data")
 
 
@@ -118,11 +107,10 @@ class NewsArticle(Base):
     url = Column(String(1000), unique=True)
     source = Column(String(100), nullable=False)
     author = Column(String(255))
-    published_at = Column(DateTime(timezone=True), nullable=False)  # When article was published by source
-    sentiment_score = Column(Numeric(precision=5, scale=4))  # Range -1.0000 to 1.0000
-    confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
-    stock_mentions = Column(JSON)  # Array of stock symbols mentioned
-    # Relationship back to stock for joins
+    published_at = Column(DateTime(timezone=True), nullable=False)
+    sentiment_score = Column(Numeric(precision=5, scale=4))
+    confidence = Column(Numeric(precision=5, scale=4))
+    stock_mentions = Column(JSON)
     stock = relationship("StocksWatchlist")
 
 
@@ -140,11 +128,10 @@ class HackerNewsPost(Base):
     points = Column(Integer, default=0)
     num_comments = Column(Integer, default=0)
     url = Column(String(1000))
-    created_utc = Column(DateTime(timezone=True), nullable=False)  # When item was created on HN
-    sentiment_score = Column(Numeric(precision=5, scale=4))  # Range -1.0000 to 1.0000
-    confidence = Column(Numeric(precision=5, scale=4))  # Range 0.0000 to 1.0000
-    stock_mentions = Column(JSON)  # Array of stock symbols mentioned
-    # Relationship back to stock for joins
+    created_utc = Column(DateTime(timezone=True), nullable=False)
+    sentiment_score = Column(Numeric(precision=5, scale=4))
+    confidence = Column(Numeric(precision=5, scale=4))
+    stock_mentions = Column(JSON)
     stock = relationship("StocksWatchlist")
 
 
@@ -163,15 +150,15 @@ class SystemLog(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
 
-# Export all models for easy import
+Stock = StocksWatchlist  # Type alias for backward compatibility
+
+
 __all__ = [
-    "StocksWatchlist", 
+    "StocksWatchlist",
+    "Stock",  # Export the alias
     "SentimentData", 
     "StockPrice", 
     "NewsArticle", 
     "HackerNewsPost", 
     "SystemLog"
 ]
-
-# Keep Stock as alias for backward compatibility during transition
-Stock = StocksWatchlist

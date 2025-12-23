@@ -1,11 +1,10 @@
 """
-Simple Repository Pattern Implementation
+Base Repository Pattern Implementation
 
-Basic repository class implementing the Repository Pattern for data access abstraction.
-Aligned with FYP layered architecture requirements.
+Repository base class implementing the Repository Pattern for data access abstraction.
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import TypeVar, Generic, List, Optional, Dict, Any, TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -19,11 +18,7 @@ ModelType = TypeVar("ModelType")
 
 
 class BaseRepository(Generic[ModelType], ABC):
-    """
-    Base repository class providing basic CRUD operations
-    
-    Simple implementation of the Repository Pattern for the FYP project.
-    """
+    """Base repository class providing basic CRUD operations."""
     
     def __init__(self, model: type[ModelType], db_session: AsyncSession):
         """

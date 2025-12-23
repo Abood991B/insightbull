@@ -10,8 +10,6 @@ Components:
 - Scheduler: Automated job scheduling and triggers  
 - DataCollector: Coordinates data collection from multiple sources
 - Processor: Text preprocessing and data cleaning operations
-- Use Cases: Business use case implementations
-- Entities: Domain entities and business objects
 """
 
 from .pipeline import DataPipeline

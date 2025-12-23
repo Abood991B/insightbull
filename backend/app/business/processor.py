@@ -13,13 +13,12 @@ Following FYP Report specification:
 
 import re
 import html
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from ..infrastructure.log_system import get_logger
 from ..utils.timezone import utc_now
 
-from ..infrastructure.collectors.base_collector import RawData, DataSource
+from ..infrastructure.collectors.base_collector import RawData
 
 logger = get_logger()
 
@@ -29,12 +28,12 @@ class ProcessingConfig:
     """Configuration for text processing"""
     remove_html: bool = True
     remove_urls: bool = True
-    remove_mentions: bool = True  # @mentions and u/users
-    remove_hashtags: bool = False  # Keep hashtags as they might be relevant
+    remove_mentions: bool = True
+    remove_hashtags: bool = False
     normalize_whitespace: bool = True
-    convert_to_lowercase: bool = False  # Keep case for better sentiment analysis
-    min_length: int = 10  # Minimum text length after processing
-    max_length: int = 5000  # Maximum text length
+    convert_to_lowercase: bool = False
+    min_length: int = 10
+    max_length: int = 5000
     language: str = "en"
     
     expand_contractions: bool = True
@@ -45,7 +44,7 @@ class ProcessingResult:
     """Result of text processing operation"""
     original_text: str
     processed_text: str
-    removed_elements: Dict[str, int]  # Count of removed elements
+    removed_elements: Dict[str, int]
     processing_time: float
     success: bool
     error_message: Optional[str] = None
@@ -91,10 +90,8 @@ class TextProcessor:
             config: Processing configuration
         """
         self.config = config or ProcessingConfig()
-        # Logger already initialized at module level
         self.logger = logger
         
-        # Compile regex patterns for efficiency
         self._compile_patterns()
     
     def _compile_patterns(self):
@@ -113,16 +110,10 @@ class TextProcessor:
         self.whitespace_pattern = re.compile(r'\s+')
         self.newline_pattern = re.compile(r'\n+')
         
-        # Special characters and noise
-        self.special_chars_pattern = re.compile(r'[^\w\s.,!?;:()\-\'\"$%]')
-        self.repeated_chars_pattern = re.compile(r'(.)\1{3,}')  # Remove excessive repetition
+        self.repeated_chars_pattern = re.compile(r'(.)\1{3,}')
         
-        # Forum/community specific patterns
         self.forum_quote_pattern = re.compile(r'^&gt;.*$', re.MULTILINE)
         self.edit_pattern = re.compile(r'\[?\s*edit\s*:.*?\]?', re.IGNORECASE)
-        
-        # Stock ticker cleanup (preserve but normalize)
-        self.ticker_pattern = re.compile(r'\$([A-Z]{1,5})\b')
     
     def process_raw_data(self, raw_data: RawData) -> ProcessingResult:
         """
@@ -260,9 +251,8 @@ class TextProcessor:
         if len(processed) < self.config.min_length:
             return ""
         
-        # IMPROVEMENT: Intelligent Truncation
-        # Instead of blindly cutting off at max_length, try to preserve the most important parts.
-        # For financial news, the beginning (lead) and end (conclusion) are most critical.
+        # Intelligent truncation: preserve the most important parts
+        # For financial news, the beginning (lead) and end (conclusion) are most critical
         if len(processed) > self.config.max_length:
             # Keep first 60% and last 40% of the allowed length
             keep_start = int(self.config.max_length * 0.6)
@@ -364,60 +354,3 @@ class TextProcessor:
             results.append(result)
         
         return results
-    
-    def validate_text_quality(self, text: str) -> Dict[str, Any]:
-        """
-        Validate text quality for sentiment analysis.
-        
-        Args:
-            text: Text to validate
-            
-        Returns:
-            Quality metrics dictionary
-        """
-        if not text:
-            return {
-                "valid": False,
-                "reason": "empty_text",
-                "length": 0,
-                "word_count": 0
-            }
-        
-        length = len(text)
-        words = text.split()
-        word_count = len(words)
-        
-        # Check minimum requirements
-        if length < self.config.min_length:
-            return {
-                "valid": False,
-                "reason": "too_short",
-                "length": length,
-                "word_count": word_count
-            }
-        
-        if word_count < 3:
-            return {
-                "valid": False,
-                "reason": "insufficient_words",
-                "length": length,
-                "word_count": word_count
-            }
-        
-        # Check for mostly special characters or numbers
-        alpha_ratio = sum(c.isalpha() for c in text) / length
-        if alpha_ratio < 0.3:
-            return {
-                "valid": False,
-                "reason": "low_alpha_content",
-                "length": length,
-                "word_count": word_count,
-                "alpha_ratio": alpha_ratio
-            }
-        
-        return {
-            "valid": True,
-            "length": length,
-            "word_count": word_count,
-            "alpha_ratio": alpha_ratio
-        }

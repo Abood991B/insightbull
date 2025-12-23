@@ -32,9 +32,7 @@ from app.infrastructure.collectors import (
 )
 from app.infrastructure.rate_limiter import RateLimitHandler
 from app.infrastructure.log_system import get_logger
-from app.infrastructure.security.security_utils import SecurityUtils
 from app.infrastructure.security.api_key_manager import SecureAPIKeyLoader
-from app.business.entities.dashboard_entities import StockInfo
 
 
 @dataclass
@@ -69,7 +67,6 @@ class DataCollector:
         """Initialize the data collector with configured collectors"""
         self.logger = get_logger()
         self.rate_limiter = RateLimitHandler()
-        self.security = SecurityUtils()
         
         # Initialize secure API key loader with encryption/decryption
         self.secure_loader = SecureAPIKeyLoader()
