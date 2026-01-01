@@ -367,15 +367,11 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Load data on component mount
   useEffect(() => {
     loadDashboardData();
     updateCollectorHealth();
-    
-    // Check if pipeline is already running on mount
     checkPipelineStatus();
     
-    // Cleanup polling on unmount
     return () => {
       stopPipelinePolling();
     };
@@ -418,7 +414,6 @@ const AdminDashboard: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [loading, checkPipelineStatus]);
 
-  // Helper functions
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'healthy':

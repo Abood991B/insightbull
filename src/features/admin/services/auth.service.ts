@@ -78,7 +78,6 @@ export class AuthService {
         return { success: false, error: 'Invalid authentication response from server' };
       }
 
-      // Create admin user object from backend response
       const adminUser: AdminUser = {
         email: authResult.user.email,
         name: authResult.user.name || authResult.user.email,
@@ -86,7 +85,6 @@ export class AuthService {
         totpEnabled: this.hasTotpSecret(authResult.user.email),
       };
 
-      // Create initial session with backend tokens (TOTP not yet verified)
       this.createSession(adminUser, authResult.access_token, authResult.refresh_token);
       
       this.logSecurityEvent('OAUTH_SUCCESS', { email: adminUser.email });

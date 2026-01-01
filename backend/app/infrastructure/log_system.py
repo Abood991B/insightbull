@@ -408,7 +408,6 @@ class LogSystem:
             # Import here to avoid circular imports
             from app.data_access.database.connection import get_db_session
             from app.data_access.models import SystemLog
-            from app.utils.timezone import malaysia_now
             
             async with get_db_session() as db:
                 log_entry = SystemLog(

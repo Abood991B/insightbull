@@ -9,11 +9,10 @@ Implements FYP Report Phase 8 requirements U-FR6 through U-FR10.
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 import asyncio
-import structlog
 
-from app.utils.timezone import utc_now, ensure_utc, to_iso_string, to_naive_utc
+from app.utils.timezone import utc_now, ensure_utc, to_naive_utc
 from app.data_access.models import StocksWatchlist, SentimentData, StockPrice, SystemLog
 from app.infrastructure.log_system import get_logger
 from app.presentation.schemas.admin_schemas import *

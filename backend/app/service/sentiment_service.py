@@ -10,7 +10,6 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc, or_
-import structlog
 import math
 from app.utils.timezone import utc_now, to_naive_utc
 

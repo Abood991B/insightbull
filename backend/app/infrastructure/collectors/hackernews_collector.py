@@ -557,7 +557,6 @@ class HackerNewsCollector(BaseCollector):
         if not text:
             return ""
         # Simple HTML tag removal
-        import re
         clean = re.sub(r'<[^>]+>', ' ', text)
         clean = re.sub(r'\s+', ' ', clean)
         return clean.strip()

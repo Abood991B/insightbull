@@ -18,13 +18,9 @@ from sqlalchemy import select, func, desc, and_, or_, delete, inspect
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from app.utils.timezone import utc_now, to_naive_utc
-from uuid import uuid4
 from app.data_access.database import get_db
 from app.presentation.dependencies.auth_dependencies import get_current_admin_user as get_current_admin
 from app.infrastructure.security.auth_service import AdminUser
-from app.infrastructure.log_system import LogSystem
-
-logger = LogSystem()
 from app.presentation.schemas.admin_schemas import (
     # Model accuracy schemas
     ModelAccuracyResponse,
@@ -41,7 +37,6 @@ from app.presentation.schemas.admin_schemas import (
     # System logs schemas
     SystemLogsResponse, LogFilters, LogLevel
 )
-from enum import Enum
 
 # LogLevel enum imported from schemas
 from app.service.admin_service import AdminService
@@ -1203,7 +1198,7 @@ async def get_system_status(
 
 
 @router.post("/data-collection/trigger")
-async def trigger_manual_collection(
+async def trigger_data_collection(
     stock_symbols: Optional[List[str]] = None,
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)

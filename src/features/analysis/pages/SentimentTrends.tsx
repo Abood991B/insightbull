@@ -30,11 +30,8 @@ import {
   Legend
 } from 'recharts';
 
-// Import services
 import { stockService } from "@/api/services/stock.service";
 import { analysisService } from "@/api/services/analysis.service";
-
-// Import utilities
 import { formatDateTime } from "@/shared/utils/timezone";
 import { EmptyWatchlistState } from "@/shared/components/states";
 

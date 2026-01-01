@@ -320,7 +320,6 @@ class YFinanceCollector(BaseCollector):
             
             # Clean HTML from summary if present
             if summary and '<' in summary:
-                import re
                 summary = re.sub(r'<[^>]+>', '', summary)
             
             # Combine title and summary for analysis text

@@ -14,7 +14,6 @@ import structlog
 
 from app.infrastructure.security.auth_service import AuthService
 from app.infrastructure.config.settings import Settings, get_settings
-from app.presentation.schemas.admin_schemas import *
 
 
 logger = structlog.get_logger()

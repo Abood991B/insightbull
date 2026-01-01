@@ -9,7 +9,7 @@ Following FYP Report specification for SY-FR3 (Perform Sentiment Analysis).
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum

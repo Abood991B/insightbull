@@ -62,6 +62,3 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
-
-# Alembic
-alembic.ini

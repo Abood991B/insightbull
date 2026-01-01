@@ -127,42 +127,6 @@ def to_naive_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return utc_dt.replace(tzinfo=None)
 
 
-def parse_iso_string(iso_string: Optional[str]) -> Optional[datetime]:
-    """
-    Parse ISO 8601 string to timezone-aware UTC datetime.
-    
-    Handles various ISO 8601 formats and ensures result is UTC.
-    
-    Args:
-        iso_string: ISO 8601 formatted datetime string
-        
-    Returns:
-        Optional[datetime]: Timezone-aware UTC datetime or None
-        
-    Example:
-        >>> dt = parse_iso_string("2025-11-02T14:30:45+00:00")
-        >>> dt.tzinfo
-        datetime.timezone.utc
-    """
-    if not iso_string:
-        return None
-    
-    try:
-        dt = datetime.fromisoformat(iso_string)
-        return ensure_utc(dt)
-    except (ValueError, TypeError) as e:
-        warnings.warn(f"Failed to parse ISO string '{iso_string}': {e}")
-        return None
-
-
-# ============================================================================
-# DEPRECATED FUNCTIONS - For Backward Compatibility Only
-# ============================================================================
-# These functions are kept for backward compatibility during migration.
-# They will be removed in a future version.
-# All new code should use utc_now(), ensure_utc(), and to_iso_string().
-# ============================================================================
-
 def malaysia_now() -> datetime:
     """
     DEPRECATED: Use utc_now() instead.
@@ -207,83 +171,14 @@ def utc_to_malaysia(utc_dt: datetime) -> datetime:
     return ensure_utc(utc_dt)
 
 
-def malaysia_to_utc(malaysia_dt: datetime) -> datetime:
-    """
-    DEPRECATED: Use ensure_utc() instead.
-    
-    This function converts any datetime to UTC, regardless of source timezone.
-    
-    Raises:
-        DeprecationWarning: This function is deprecated
-        
-    Returns:
-        datetime: UTC datetime
-    """
-    warnings.warn(
-        "malaysia_to_utc() is deprecated. Use ensure_utc() instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    return ensure_utc(malaysia_dt)
-
-
-def format_malaysia_time(dt: Optional[datetime], format_str: str = "%Y-%m-%d %H:%M:%S %Z") -> str:
-    """
-    DEPRECATED: Backend should not format for specific timezones.
-    
-    This function now formats in UTC with ISO 8601.
-    Frontend handles timezone-specific formatting.
-    
-    Raises:
-        DeprecationWarning: This function is deprecated
-        
-    Returns:
-        str: ISO 8601 formatted UTC string or "N/A"
-    """
-    warnings.warn(
-        "format_malaysia_time() is deprecated. Use to_iso_string() for API responses. "
-        "Frontend handles timezone-specific formatting.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    if dt is None:
-        return "N/A"
-    return to_iso_string(dt) or "N/A"
-
-
-def malaysia_isoformat(dt: Optional[datetime] = None) -> str:
-    """
-    DEPRECATED: Use to_iso_string() instead.
-    
-    This function returns UTC ISO format, not Malaysia timezone.
-    
-    Raises:
-        DeprecationWarning: This function is deprecated
-        
-    Returns:
-        str: ISO 8601 formatted UTC string
-    """
-    warnings.warn(
-        "malaysia_isoformat() is deprecated. Use to_iso_string() instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    if dt is None:
-        dt = utc_now()
-    return to_iso_string(dt) or ""
-
-
 # Export public API
 __all__ = [
-    # New API (recommended)
+    # Active API (recommended)
     'utc_now',
     'ensure_utc',
     'to_iso_string',
-    'parse_iso_string',
-    # Deprecated (backward compatibility)
+    'to_naive_utc',
+    # Deprecated but still used (backward compatibility)
     'malaysia_now',
     'utc_to_malaysia',
-    'malaysia_to_utc',
-    'format_malaysia_time',
-    'malaysia_isoformat',
 ]

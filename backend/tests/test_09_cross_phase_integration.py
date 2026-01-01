@@ -36,8 +36,7 @@ async def test_deep_integration():
         from app.presentation.middleware.security_middleware import (
             RateLimitMiddleware, 
             SecurityHeadersMiddleware, 
-            InputValidationMiddleware, 
-            RequestLoggingMiddleware
+            InputValidationMiddleware
         )
         print("✅ All security middleware classes imported successfully")
         
@@ -45,7 +44,6 @@ async def test_deep_integration():
         print("✅ RateLimitMiddleware - available")
         print("✅ SecurityHeadersMiddleware - available") 
         print("✅ InputValidationMiddleware - available")
-        print("✅ RequestLoggingMiddleware - available")
         
     except Exception as e:
         print(f"❌ Security middleware error: {e}")

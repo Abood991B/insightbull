@@ -95,86 +95,6 @@ export const formatDate = (utcTimestamp: string | Date | null | undefined): stri
   });
 };
 
-/**
- * Format time only (no date)
- */
-export const formatTime = (utcTimestamp: string | Date | null | undefined): string => {
-  return formatDateTime(utcTimestamp, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZone: USER_TIMEZONE,
-  });
-};
-
-/**
- * Get current time in user's timezone
- */
-export const getCurrentTime = (): string => {
-  return formatDateTime(new Date());
-};
-
-/**
- * Validate if a timestamp string is valid
- */
-export const isValidTimestamp = (timestamp: string | Date | null | undefined): boolean => {
-  if (!timestamp) return false;
-  try {
-    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
-    return !isNaN(date.getTime());
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Get timezone info for display
- */
-export const getTimezoneInfo = (): {
-  timezone: string;
-  offset: string;
-  abbreviation: string;
-} => {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: USER_TIMEZONE,
-    timeZoneName: 'short',
-  });
-  
-  const parts = formatter.formatToParts(now);
-  const tzPart = parts.find(part => part.type === 'timeZoneName');
-  
-  return {
-    timezone: USER_TIMEZONE,
-    offset: new Date().toLocaleTimeString('en-US', {
-      timeZone: USER_TIMEZONE,
-      timeZoneName: 'longOffset'
-    }).split(' ').pop() || '',
-    abbreviation: tzPart?.value || '',
-  };
-};
-
-// DEPRECATED - Legacy functions for backward compatibility
-// These will be removed in future versions
-
-/** @deprecated Use formatDateTime instead */
-export const formatMalaysiaTime = formatDateTime;
-
-/** @deprecated Use formatDate instead */
-export const formatMalaysiaDate = formatDate;
-
-/** @deprecated Use formatTime instead */
-export const formatMalaysiaTimeOnly = formatTime;
-
-/** @deprecated Use getCurrentTime instead */
-export const getMalaysiaTime = getCurrentTime;
-
-/** @deprecated Use isValidTimestamp instead */
-export const isValidDate = isValidTimestamp;
-
-/** @deprecated Use USER_TIMEZONE instead */
-export const MALAYSIA_TIMEZONE = USER_TIMEZONE;
-
 // ============================================================================
 // Time Utility Functions (merged from timeUtils.ts)
 // ============================================================================
@@ -184,7 +104,17 @@ export const MALAYSIA_TIMEZONE = USER_TIMEZONE;
  * Works with UTC timestamps from API
  */
 export function formatTimeAgo(utcTimestamp: string | Date | null): string {
-  if (!utcTimestamp || !isValidTimestamp(utcTimestamp)) {
+  if (!utcTimestamp) {
+    return 'Never';
+  }
+  
+  // Validate timestamp
+  try {
+    const testDate = typeof utcTimestamp === 'string' ? new Date(utcTimestamp) : utcTimestamp;
+    if (isNaN(testDate.getTime())) {
+      return 'Never';
+    }
+  } catch {
     return 'Never';
   }
 
@@ -223,19 +153,4 @@ export function formatTimeAgo(utcTimestamp: string | Date | null): string {
     console.error('Error in formatTimeAgo:', error, utcTimestamp);
     return 'Unable to format';
   }
-}
-
-/**
- * Check if timestamp is within last N hours
- */
-export function isWithinHours(utcTimestamp: string | Date | null, hours: number): boolean {
-  if (!utcTimestamp || !isValidTimestamp(utcTimestamp)) {
-    return false;
-  }
-
-  const now = new Date();
-  const past = new Date(utcTimestamp);
-  const diffHours = (now.getTime() - past.getTime()) / (1000 * 60 * 60);
-
-  return diffHours >= 0 && diffHours <= hours;
 }

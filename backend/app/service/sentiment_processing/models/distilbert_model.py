@@ -22,7 +22,6 @@ from typing import List, Dict, Any, Optional
 
 try:
     from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
-    import torch.nn.functional as F
 except ImportError:
     raise ImportError("Transformers required: pip install transformers torch")
 

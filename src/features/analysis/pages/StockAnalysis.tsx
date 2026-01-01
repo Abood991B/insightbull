@@ -8,11 +8,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { AlertCircle, TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
-
-// Import services
 import { stockService } from "@/api/services/stock.service";
-
-// Import chart components
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 // Chart colors - Accessible color palette
@@ -22,10 +18,7 @@ const SENTIMENT_COLORS = {
   neutral: '#6B7280'   // gray-500
 };
 
-// Import empty state components
 import { EmptyWatchlistState } from "@/shared/components/states";
-
-// Import utility functions
 import { 
   getSentimentLabel, 
   getSentimentColor, 
@@ -138,10 +131,8 @@ const StockAnalysis = () => {
 
   // Listen for pipeline completion events and refetch data
   usePipelineNotifications(() => {
-    // Query invalidation is handled by the hook
   });
 
-  // Fetch stock list for dropdown
   const { data: stockListResponse, isLoading: isLoadingList } = useQuery({
     queryKey: ['stocks-list'],
     queryFn: () => stockService.getAllStocks(100, true),
@@ -150,8 +141,6 @@ const StockAnalysis = () => {
     refetchInterval: 60 * 1000,
   });
 
-  // Fetch selected stock analysis data with timeframe
-  // Each timeframe gets its own cache entry, refetches when timeframe changes
   const { data: stockAnalysisResponse, isLoading: isLoadingAnalysis, error, isFetching } = useQuery({
     queryKey: ['stock-analysis', selectedStock, timeframe],
     queryFn: () => stockService.getStockAnalysis(selectedStock, timeframe),
@@ -160,7 +149,6 @@ const StockAnalysis = () => {
     refetchOnMount: true,
   });
 
-  // Set first stock as default when list loads
   useEffect(() => {
     if (!selectedStock && stockListResponse?.data?.stocks.length) {
       const firstStock = stockListResponse.data.stocks[0].symbol;
@@ -169,13 +157,11 @@ const StockAnalysis = () => {
     }
   }, [stockListResponse, selectedStock, setSearchParams]);
 
-  // Handle stock selection
   const handleStockChange = (symbol: string) => {
     setSelectedStock(symbol);
     setSearchParams({ symbol, timeframe });
   };
 
-  // Handle timeframe change
   const handleTimeframeChange = (value: TimeframeValue) => {
     setTimeframe(value);
     if (selectedStock) {
@@ -183,11 +169,9 @@ const StockAnalysis = () => {
     }
   };
 
-  // Extract data
   const stockList = stockListResponse?.data;
   const stockAnalysis = stockAnalysisResponse?.data;
 
-  // Loading state for dropdown
   if (isLoadingList) {
     return (
       <UserLayout>
@@ -202,7 +186,6 @@ const StockAnalysis = () => {
     );
   }
 
-  // Empty watchlist state
   if (!stockList || stockList.stocks.length === 0) {
     return (
       <UserLayout>
@@ -211,14 +194,12 @@ const StockAnalysis = () => {
     );
   }
 
-  // Helper function to get sentiment icon
   const getSentimentIcon = (score: number) => {
     if (score > SENTIMENT_THRESHOLDS.POSITIVE) return <TrendingUp className="h-5 w-5 text-green-600" />;
     if (score < SENTIMENT_THRESHOLDS.NEGATIVE) return <TrendingDown className="h-5 w-5 text-red-600" />;
     return <Minus className="h-5 w-5 text-gray-500" />;
   };
 
-  // Prepare pie chart data with filtering for zero values
   const getPieChartData = () => {
     if (!stockAnalysis?.sentiment_distribution) return [];
     const { positive, negative, neutral } = stockAnalysis.sentiment_distribution;
@@ -229,7 +210,6 @@ const StockAnalysis = () => {
     ].filter(item => item.value > 0);
   };
 
-  // Prepare bar chart data with color coding
   const getBarChartData = () => {
     if (!stockAnalysis?.top_performers) return [];
     return stockAnalysis.top_performers.map((performer: any) => ({

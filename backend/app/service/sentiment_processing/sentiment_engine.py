@@ -11,7 +11,7 @@ with unified model approach: FinBERT-Tone for ALL sources.
 
 import asyncio
 import time
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor

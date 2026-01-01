@@ -179,7 +179,13 @@ const CorrelationAnalysis = () => {
     error: correlationError 
   } = useQuery({
     queryKey: ['correlation-analysis', selectedStock, timeRange],
-    queryFn: () => analysisService.getCorrelationAnalysis(selectedStock, timeRange),
+    queryFn: async () => {
+      const result = await analysisService.getCorrelationAnalysis(selectedStock, timeRange);
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      return result;
+    },
     enabled: !!selectedStock,
     staleTime: 60 * 1000,
   });
@@ -340,8 +346,10 @@ const CorrelationAnalysis = () => {
         {correlationError && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{(correlationError as Error).message}</AlertDescription>
+            <AlertTitle>Unable to Load Correlation Analysis</AlertTitle>
+            <AlertDescription>
+              {(correlationError as Error).message}
+            </AlertDescription>
           </Alert>
         )}
 

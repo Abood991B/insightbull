@@ -24,5 +24,3 @@ __all__ = [
     'CollectionResult', 
     'data_collection_service'
 ]
-
-__all__ = []

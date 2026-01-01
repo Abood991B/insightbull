@@ -10,7 +10,6 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, and_, desc
-import structlog
 from app.utils.timezone import utc_now, to_iso_string, to_naive_utc
 
 from app.data_access.models import Stock, SentimentData, StockPrice, NewsArticle, HackerNewsPost

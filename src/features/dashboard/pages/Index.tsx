@@ -7,18 +7,12 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useNavigate } from "react-router-dom";
 import { TrendingUp, TrendingDown, Activity, Clock, AlertCircle, RefreshCw, Search, BarChart3, TrendingUpIcon } from "lucide-react";
-
-// Import services and types
 import { dashboardService } from "@/api/services/dashboard.service";
 import type { DashboardSummary, StockSummary } from "@/api/types/backend-schemas";
-
-// Import empty state components
 import {EmptyPipelineState, PartialDataWarning } from "@/shared/components/states";
 import { validateDashboardData } from "@/shared/utils/dataValidation";
 import { SENTIMENT_THRESHOLDS } from "@/shared/utils/sentimentUtils";
 import DashboardSkeleton from "@/features/dashboard/components/DashboardSkeleton";
-
-// Import utility functions
 import { formatTimeAgo } from "@/shared/utils/timezone";
 import { usePipelineNotifications } from "@/shared/hooks/usePipelineNotifications";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -42,8 +36,6 @@ const Index = () => {
     setLastRefresh(Date.now());
   });
 
-  // Fetch dashboard data with React Query
-  // Use shorter refetch interval (30 seconds) to catch pipeline updates quickly
   const { data: response, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard-summary'],
     queryFn: () => dashboardService.getDashboardSummary(),
@@ -64,7 +56,6 @@ const Index = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [refetch]);
 
-  // Loading state
   if (isLoading) {
     return (
       <UserLayout>
@@ -73,7 +64,6 @@ const Index = () => {
     );
   }
 
-  // Error state
   if (error || response?.error) {
     return (
       <UserLayout>
@@ -125,7 +115,6 @@ const Index = () => {
     .sort((a, b) => (a.sentiment_score ?? 0) - (b.sentiment_score ?? 0))
     .slice(0, 5);
 
-  // Helper functions
   const formatPrice = (price: number | null) => {
     return price !== null ? `$${price.toFixed(2)}` : 'N/A';
   };
@@ -176,7 +165,6 @@ const Index = () => {
     
     if (totalMarketCap === 0) return '$0.0T';
     
-    // Format based on magnitude
     if (totalMarketCap >= 1000000000000) {
       return `$${(totalMarketCap / 1000000000000).toFixed(1)}T`;
     } else if (totalMarketCap >= 1000000000) {
@@ -198,7 +186,6 @@ const Index = () => {
     }
   };
 
-  // Format pipeline status
   const getPipelineStatusDisplay = (status: string) => {
     const statusMap: Record<string, { text: string; color: string }> = {
       'operational': { text: 'Operational', color: 'text-green-600' },
@@ -209,7 +196,6 @@ const Index = () => {
     return statusMap[status] || { text: status, color: 'text-gray-600' };
   };
 
-  // Check if data is partial
   const showWarning = validation.isPartial;
 
   return (

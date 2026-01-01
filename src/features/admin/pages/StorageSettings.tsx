@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import AdminLayout from "@/shared/components/layouts/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
@@ -181,7 +181,6 @@ const StorageSettings = () => {
     loadStorageSettings();
   }, []);
 
-  // Helper functions
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'healthy':

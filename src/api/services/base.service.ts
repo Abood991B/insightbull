@@ -39,7 +39,7 @@ export class BaseService {
 
       if (!response.ok) {
         return {
-          error: data.message || 'An error occurred',
+          error: data.detail || data.message || 'An error occurred',
           status: response.status,
         };
       }

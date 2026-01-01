@@ -28,7 +28,7 @@ import time
 import torch
 import asyncio
 from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 

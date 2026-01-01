@@ -17,7 +17,7 @@ Following FYP Report specification for financial news sentiment analysis.
 import time
 import re
 import torch
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 import asyncio
 
 # Transformers imports

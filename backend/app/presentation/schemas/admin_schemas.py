@@ -7,38 +7,9 @@ Implements FYP Report Phase 8 requirements U-FR6 through U-FR10.
 """
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
-
-
-# Authentication Schemas
-class AdminTokenValidation(BaseModel):
-    """Admin token validation response"""
-    valid: bool
-    user_id: str
-    email: str
-    permissions: List[str]
-    last_login: Optional[datetime] = None
-
-
-class AdminSessionInfo(BaseModel):
-    """Admin session information"""
-    authenticated: bool
-    user: Dict[str, Any]
-
-
-class TokenRefreshRequest(BaseModel):
-    """Token refresh request"""
-    refresh_token: str
-
-
-class TokenRefreshResponse(BaseModel):
-    """Token refresh response"""
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
 
 
 # U-FR6: Model Accuracy Evaluation Schemas
@@ -238,14 +209,6 @@ class SystemLogsResponse(BaseModel):
 
 
 # System Management Schemas
-class SystemStatus(BaseModel):
-    """Overall system status"""
-    status: str = Field(..., description="Overall system status")
-    services: Dict[str, str] = Field(..., description="Status of individual services")
-    metrics: Dict[str, Any] = Field(..., description="System metrics")
-    last_updated: datetime = Field(..., description="Last status update")
-
-
 class ManualDataCollectionRequest(BaseModel):
     """Manual data collection trigger request"""
     stock_symbols: Optional[List[str]] = Field(None, description="Specific stocks to collect (all if empty)")
@@ -265,13 +228,3 @@ class ManualDataCollectionResponse(BaseModel):
     estimated_completion: Optional[str] = Field(None, description="Estimated completion time")
     symbols_targeted: List[str] = Field(..., description="Symbols that will be processed")
     message: str
-
-
-# Response configurations
-class AdminBaseResponse(BaseModel):
-    """Base response model for admin endpoints"""
-    model_config = ConfigDict(
-        json_encoders={
-            datetime: lambda v: v.isoformat()
-        }
-    )

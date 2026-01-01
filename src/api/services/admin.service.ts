@@ -615,7 +615,6 @@ export interface MarketStatus {
   };
 }
 
-// Utility Functions
 const getAuthHeaders = () => {
   // Get token from admin auth service session
   const session = authService.getSession();
@@ -640,39 +639,6 @@ const handleApiResponse = async (response: Response) => {
  */
 class AdminAPIService {
   
-  // ============================================================================
-  // AUTHENTICATION & SESSION MANAGEMENT
-  // ============================================================================
-  
-  async validateToken(): Promise<boolean> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/admin/auth/validate`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-      });
-      return response.ok;
-    } catch (error) {
-      console.error('Token validation failed:', error);
-      return false;
-    }
-  }
-
-  async verifySession(): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/api/admin/auth/verify`, {
-      headers: getAuthHeaders(),
-    });
-    return handleApiResponse(response);
-  }
-
-  async refreshToken(refreshToken: string): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/api/admin/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    return handleApiResponse(response);
-  }
-
   // ============================================================================
   // SYSTEM MONITORING & STATUS
   // ============================================================================

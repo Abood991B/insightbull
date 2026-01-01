@@ -9,10 +9,9 @@ Implements system status, health checks, and operational services.
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 import asyncio
 import os
-import structlog
 import time
 from app.utils.timezone import utc_now, ensure_utc, to_iso_string, to_naive_utc
 

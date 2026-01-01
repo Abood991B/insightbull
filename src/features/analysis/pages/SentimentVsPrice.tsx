@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import UserLayout from "@/shared/components/layouts/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select";
-import { Alert, AlertDescription } from "@/shared/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/shared/components/ui/alert";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import {
   TrendingUp,
@@ -13,7 +13,8 @@ import {
   ArrowDownRight,
   Activity,
   Calendar,
-  Zap
+  Zap,
+  AlertCircle
 } from 'lucide-react';
 import {
   AreaChart,
@@ -32,11 +33,8 @@ import {
   Legend
 } from 'recharts';
 
-// Import services
 import { stockService } from "@/api/services/stock.service";
 import { analysisService } from "@/api/services/analysis.service";
-
-// Import utilities
 import { formatDateTime } from "@/shared/utils/timezone";
 import { EmptyWatchlistState } from "@/shared/components/states";
 
@@ -126,9 +124,15 @@ const SentimentVsPrice = () => {
     enabled: !!selectedStock,
   });
 
-  const { data: sentimentResponse, isLoading: isLoadingSentiment } = useQuery({
+  const { data: sentimentResponse, isLoading: isLoadingSentiment, error: sentimentError } = useQuery({
     queryKey: ['sentiment-history', selectedStock, timeRange],
-    queryFn: () => analysisService.getSentimentHistory(selectedStock, timeRange),
+    queryFn: async () => {
+      const result = await analysisService.getSentimentHistory(selectedStock, timeRange);
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      return result;
+    },
     enabled: !!selectedStock,
   });
 
@@ -346,6 +350,17 @@ const SentimentVsPrice = () => {
             </div>
           </div>
         </div>
+
+        {/* Error State */}
+        {sentimentError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Unable to Load Sentiment Data</AlertTitle>
+            <AlertDescription>
+              {(sentimentError as Error).message}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* PRIMARY VISUALIZATION: Unified Dual-Axis Chart */}
         <Card className="shadow-sm border-slate-200">

@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from datetime import datetime, date
 from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from app.utils.timezone import utc_now
 from app.infrastructure.log_system import get_logger
 

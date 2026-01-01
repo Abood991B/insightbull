@@ -12,10 +12,8 @@ Following FYP security requirements and best practices.
 """
 
 import time
-from typing import Dict, Any, Optional
+from typing import Dict
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
-import json
 
 from fastapi import Request, Response, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -206,56 +204,6 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
             if agent in user_agent:
                 logger.warning(f"Suspicious user agent from IP {client_ip}: {user_agent}")
                 break
-
-
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """
-    Request logging middleware for audit trail
-    
-    Logs all requests with details for monitoring and debugging
-    """
-    
-    def __init__(self, app, settings: Settings):
-        super().__init__(app)
-        self.settings = settings
-    
-    async def dispatch(self, request: Request, call_next):
-        """Log request details"""
-        start_time = time.time()
-        client_ip = self.get_client_ip(request)
-        
-        # Log request
-        logger.info(f"Request: {request.method} {request.url.path} from {client_ip}")
-        
-        try:
-            response = await call_next(request)
-            process_time = time.time() - start_time
-            
-            # Log response
-            logger.info(
-                f"Response: {response.status_code} for {request.method} "
-                f"{request.url.path} in {process_time:.3f}s"
-            )
-            
-            # Add process time header
-            response.headers["X-Process-Time"] = str(process_time)
-            
-            return response
-            
-        except Exception as e:
-            process_time = time.time() - start_time
-            logger.error(
-                f"Error: {str(e)} for {request.method} {request.url.path} "
-                f"in {process_time:.3f}s"
-            )
-            raise
-    
-    def get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request"""
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        return request.client.host if request.client else "unknown"
 
 
 def setup_cors_middleware(app, settings: Settings):

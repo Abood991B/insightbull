@@ -17,10 +17,8 @@ from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete, and_
-import structlog
 from app.utils.timezone import utc_now
 import aiohttp
-import asyncio
 
 from app.data_access.models import StocksWatchlist
 from app.infrastructure.log_system import get_logger

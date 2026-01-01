@@ -21,10 +21,6 @@ from ...business.pipeline import DataPipeline, PipelineConfig, PipelineResult, P
 from ...business.processor import ProcessingConfig
 from ...infrastructure.collectors.base_collector import DateRange
 from ...infrastructure.rate_limiter import RateLimitHandler
-from ...data_access.repositories.sentiment_repository import SentimentDataRepository
-from ...data_access.repositories.stock_repository import StockRepository
-from ..deps import get_db_session
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/admin/pipeline", tags=["Admin Pipeline Management"])
 
