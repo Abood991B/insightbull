@@ -39,6 +39,9 @@ import { formatDate } from "@/shared/utils/timezone";
 // Import empty state components
 import { EmptyWatchlistState } from "@/shared/components/states";
 
+// Import term tooltip for financial terminology
+import { InfoTooltip } from "@/shared/components/ui/term-tooltip";
+
 // --- Types ---
 type TimeframeValue = '1d' | '7d' | '14d' | '30d';
 
@@ -382,7 +385,10 @@ const CorrelationAnalysis = () => {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Card>
                 <CardHeader className="pb-1 pt-3 px-4">
-                  <CardTitle className="text-xs font-medium text-slate-500">Correlation (r)</CardTitle>
+                  <CardTitle className="text-xs font-medium text-slate-500">
+                    Correlation (r)
+                    <InfoTooltip term="correlation" />
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="pb-3 px-4">
                   <div className={`text-2xl font-bold ${dataMetrics.canCalculateCorrelation ? getCorrelationColor(r) : 'text-slate-300'}`}>
@@ -396,7 +402,10 @@ const CorrelationAnalysis = () => {
 
               <Card>
                 <CardHeader className="pb-1 pt-3 px-4">
-                  <CardTitle className="text-xs font-medium text-slate-500">R² (Explained)</CardTitle>
+                  <CardTitle className="text-xs font-medium text-slate-500">
+                    R² (Explained)
+                    <InfoTooltip term="rSquared" />
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="pb-3 px-4">
                   <div className={`text-2xl font-bold ${dataMetrics.canCalculateCorrelation ? 'text-blue-600' : 'text-slate-300'}`}>
@@ -410,7 +419,10 @@ const CorrelationAnalysis = () => {
 
               <Card>
                 <CardHeader className="pb-1 pt-3 px-4">
-                  <CardTitle className="text-xs font-medium text-slate-500">P-Value</CardTitle>
+                  <CardTitle className="text-xs font-medium text-slate-500">
+                    P-Value
+                    <InfoTooltip term="pValue" />
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="pb-3 px-4">
                   <div className={`text-2xl font-bold ${
@@ -427,7 +439,10 @@ const CorrelationAnalysis = () => {
 
               <Card>
                 <CardHeader className="pb-1 pt-3 px-4">
-                  <CardTitle className="text-xs font-medium text-slate-500">Sample Size</CardTitle>
+                  <CardTitle className="text-xs font-medium text-slate-500">
+                    Sample Size
+                    <InfoTooltip term="sampleSize" />
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="pb-3 px-4">
                   <div className={`text-2xl font-bold ${sampleSize >= 30 ? 'text-green-600' : sampleSize >= 10 ? 'text-amber-500' : 'text-red-500'}`}>
@@ -551,7 +566,9 @@ const CorrelationAnalysis = () => {
                       </p>
                       <p className="mt-1 text-slate-500">
                         Sentiment explains approximately {(rSquared * 100).toFixed(1)}% of price variation.
-                        95% CI: [{ci[0]?.toFixed(3)}, {ci[1]?.toFixed(3)}]
+                        <span className="inline-flex items-center">
+                          95% CI<InfoTooltip term="confidenceInterval" />: [{ci[0]?.toFixed(3)}, {ci[1]?.toFixed(3)}]
+                        </span>
                       </p>
                     </div>
                   </div>

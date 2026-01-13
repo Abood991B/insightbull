@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { useNavigate } from "react-router-dom";
 import { TrendingUp, TrendingDown, Activity, Clock, AlertCircle, RefreshCw, Search, BarChart3, TrendingUpIcon } from "lucide-react";
 import { dashboardService } from "@/api/services/dashboard.service";
+import { InfoTooltip } from "@/shared/components/ui/term-tooltip";
 import type { DashboardSummary, StockSummary } from "@/api/types/backend-schemas";
 import {EmptyPipelineState, PartialDataWarning } from "@/shared/components/states";
 import { validateDashboardData } from "@/shared/utils/dataValidation";
@@ -269,6 +270,7 @@ const Index = () => {
                   <span className="text-sm font-medium">
                     {getPipelineStatusDisplay(system_status.pipeline_status).text}
                   </span>
+                  <InfoTooltip term="pipelineStatus" className="text-white/70" />
                 </div>
               </div>
             </div>
@@ -280,7 +282,10 @@ const Index = () => {
           {/* Average Sentiment */}
           <Card className="bg-gradient-to-br from-green-50 to-emerald-100 border-l-4 border-l-green-500">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Average Sentiment</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Average Sentiment
+                <InfoTooltip term="averageSentiment" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-bold text-gray-900 mb-1">
@@ -295,7 +300,10 @@ const Index = () => {
           {/* Market Cap */}
           <Card className="bg-gradient-to-br from-blue-50 to-sky-100 border-l-4 border-l-blue-500">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Market Cap</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Market Cap
+                <InfoTooltip term="marketCap" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-bold text-gray-900 mb-1">
@@ -325,7 +333,10 @@ const Index = () => {
           {/* Data Points */}
           <Card className="bg-gradient-to-br from-orange-50 to-amber-100 border-l-4 border-l-orange-500">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">Data Points</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Data Points
+                <InfoTooltip term="dataPoints" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-4xl font-bold text-gray-900 mb-1">
@@ -345,7 +356,10 @@ const Index = () => {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-green-600" />
-                <CardTitle className="text-lg">Top Positive Sentiment</CardTitle>
+                <CardTitle className="text-lg">
+                  Top Positive Sentiment
+                  <InfoTooltip term="bullish" />
+                </CardTitle>
               </div>
               <CardDescription>Stocks with highest sentiment scores (-1 to +1 scale)</CardDescription>
             </CardHeader>
@@ -387,7 +401,10 @@ const Index = () => {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <TrendingDown className="h-5 w-5 text-red-600" />
-                <CardTitle className="text-lg">Top Negative Sentiment</CardTitle>
+                <CardTitle className="text-lg">
+                  Top Negative Sentiment
+                  <InfoTooltip term="bearish" />
+                </CardTitle>
               </div>
               <CardDescription>Stocks with lowest sentiment scores (-1 to +1 scale)</CardDescription>
             </CardHeader>

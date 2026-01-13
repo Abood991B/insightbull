@@ -37,6 +37,7 @@ import { stockService } from "@/api/services/stock.service";
 import { analysisService } from "@/api/services/analysis.service";
 import { formatDateTime } from "@/shared/utils/timezone";
 import { EmptyWatchlistState } from "@/shared/components/states";
+import { InfoTooltip } from "@/shared/components/ui/term-tooltip";
 
 // --- Timeframe Options (Synchronized across all pages) ---
 const TIMEFRAME_OPTIONS = [
@@ -463,6 +464,7 @@ const SentimentVsPrice = () => {
               <CardTitle className="text-base flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-purple-500" />
                 Daily Impact Analysis
+                <InfoTooltip term="dailyImpact" />
               </CardTitle>
               <CardDescription>Does daily sentiment (Bar) align with daily price direction (Line)?</CardDescription>
             </CardHeader>
@@ -518,7 +520,10 @@ const SentimentVsPrice = () => {
             <CardContent className="space-y-6">
               <div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-sm text-slate-600">Event Volume</span>
+                  <span className="text-sm text-slate-600">
+                    Event Volume
+                    <InfoTooltip term="dataPoints" />
+                  </span>
                   <span className="text-sm font-bold text-slate-900">{sentimentHistory?.total_records || 0}</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2">
@@ -538,7 +543,10 @@ const SentimentVsPrice = () => {
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-2 bg-blue-50 rounded-lg"><Zap className="h-4 w-4 text-blue-600" /></div>
                   <div>
-                    <p className="text-xs text-slate-500">Data Quality</p>
+                    <p className="text-xs text-slate-500">
+                      Data Quality
+                      <InfoTooltip term="dataCoverage" />
+                    </p>
                     <p className="font-semibold text-slate-700">
                       {(sentimentHistory?.data_coverage || 0) > 0.5 ? 'Good' : 'Limited'} Coverage
                     </p>

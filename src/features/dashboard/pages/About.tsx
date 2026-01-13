@@ -3,6 +3,7 @@ import UserLayout from "@/shared/components/layouts/UserLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Badge } from "@/shared/components/ui/badge";
 import { TrendingUp, BarChart3, Activity, Database, Zap, Shield } from "lucide-react";
+import { TermTooltip } from "@/shared/components/ui/term-tooltip";
 
 const About = () => {
   const features = [
@@ -100,7 +101,9 @@ const About = () => {
               </p>
               <p className="text-gray-700 leading-relaxed">
                 We focus on the top 20 technology stocks, providing statistical analysis including 
-                Pearson correlation coefficients, R-squared values, and significance testing to ensure 
+                <TermTooltip term="correlation" underline>Pearson correlation coefficients</TermTooltip>, 
+                <TermTooltip term="rSquared" underline>R-squared values</TermTooltip>, and 
+                <TermTooltip term="pValue" underline>significance testing</TermTooltip> to ensure 
                 data-driven insights.
               </p>
               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
@@ -133,8 +136,10 @@ const About = () => {
                 enhanced with Gemma 3 27B AI verification for improved accuracy on uncertain predictions.
               </p>
               <p className="text-gray-700 leading-relaxed">
-                Our system processes thousands of data points daily, providing statistical correlation 
-                analysis between sentiment trends and stock price movements with rigorous significance testing.
+                Our system processes thousands of data points daily, providing statistical 
+                <TermTooltip term="correlation" underline>correlation analysis</TermTooltip> between 
+                <TermTooltip term="sentimentScore" underline>sentiment trends</TermTooltip> and stock price movements 
+                with rigorous significance testing.
               </p>
               <div className="mt-4 space-y-3">
                 <div className="p-3 bg-green-50 rounded-lg">

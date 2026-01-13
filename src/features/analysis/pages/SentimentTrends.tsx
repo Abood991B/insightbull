@@ -34,6 +34,7 @@ import { stockService } from "@/api/services/stock.service";
 import { analysisService } from "@/api/services/analysis.service";
 import { formatDateTime } from "@/shared/utils/timezone";
 import { EmptyWatchlistState } from "@/shared/components/states";
+import { InfoTooltip, TermTooltip } from "@/shared/components/ui/term-tooltip";
 
 // --- Professional Color Palette ---
 const COLORS = {
@@ -93,15 +94,19 @@ interface MetricCardProps {
   icon: React.ReactNode;
   colorClass: string;
   trend?: 'up' | 'down' | 'neutral';
+  tooltip?: React.ReactNode;
 }
 
-const MetricCard = ({ title, value, subtitle, icon, colorClass, trend }: MetricCardProps) => (
+const MetricCard = ({ title, value, subtitle, icon, colorClass, trend, tooltip }: MetricCardProps) => (
   <Card className="relative overflow-hidden border-0 shadow-sm hover:shadow-md transition-shadow">
     <div className={`absolute top-0 left-0 w-1 h-full ${colorClass}`} />
     <CardContent className="p-4">
       <div className="flex items-start justify-between">
         <div className="space-y-1">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{title}</p>
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+            {title}
+            {tooltip}
+          </div>
           <div className="flex items-center gap-2">
             <span className={`text-2xl font-bold ${
               trend === 'up' ? 'text-emerald-600' : 
@@ -489,6 +494,7 @@ const SentimentTrends = () => {
               icon={<TrendingUp className="h-5 w-5 text-slate-600" />}
               colorClass="bg-emerald-500"
               trend={metrics.trend}
+              tooltip={<InfoTooltip term="sentimentScore" />}
             />
             <MetricCard
               title="Volatility"
@@ -496,6 +502,7 @@ const SentimentTrends = () => {
               subtitle={`Std Dev: ${metrics.volatility.toFixed(3)}`}
               icon={<Activity className="h-5 w-5 text-slate-600" />}
               colorClass="bg-amber-500"
+              tooltip={<InfoTooltip term="volatility" />}
             />
             <MetricCard
               title="Momentum"
@@ -503,6 +510,7 @@ const SentimentTrends = () => {
               subtitle={`Strength: ${(Math.abs(metrics.avgSentiment) * 100).toFixed(1)}%`}
               icon={<Zap className="h-5 w-5 text-slate-600" />}
               colorClass="bg-blue-500"
+              tooltip={<InfoTooltip term="momentum" />}
             />
             <MetricCard
               title="Data Points"
@@ -510,6 +518,7 @@ const SentimentTrends = () => {
               subtitle={`Coverage: ${(metrics.dataCoverage * 100).toFixed(0)}%`}
               icon={<BarChart3 className="h-5 w-5 text-slate-600" />}
               colorClass="bg-purple-500"
+              tooltip={<InfoTooltip term="dataPoints" />}
             />
           </div>
         )}
@@ -521,6 +530,7 @@ const SentimentTrends = () => {
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="h-4 w-4 text-blue-500" />
                 Sentiment Timeline
+                <InfoTooltip term="sentimentTimeline" />
               </CardTitle>
               <CardDescription>
                 Individual sentiment scores over time
@@ -670,6 +680,7 @@ const SentimentTrends = () => {
                 <CardTitle className="text-base flex items-center gap-2">
                   <Zap className="h-4 w-4 text-amber-500" />
                   Sentiment Momentum
+                  <InfoTooltip term="momentum" />
                 </CardTitle>
                 <CardDescription>
                   Per-bucket sentiment range: <span className="text-emerald-600 font-medium">High</span> = most positive, 

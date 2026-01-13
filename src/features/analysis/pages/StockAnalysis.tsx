@@ -10,6 +10,7 @@ import { Skeleton } from "@/shared/components/ui/skeleton";
 import { AlertCircle, TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
 import { stockService } from "@/api/services/stock.service";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { InfoTooltip } from "@/shared/components/ui/term-tooltip";
 
 // Chart colors - Accessible color palette
 const SENTIMENT_COLORS = {
@@ -344,19 +345,21 @@ const StockAnalysis = () => {
                   <p className="text-4xl font-bold text-blue-600">
                     ${stockAnalysis.stock_overview.current_price}
                   </p>
-                  <p className={`text-sm font-medium mt-2 ${stockAnalysis.stock_overview.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <div className={`text-sm font-medium mt-2 ${stockAnalysis.stock_overview.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {stockAnalysis.stock_overview.price_change_24h >= 0 ? '↑' : '↓'} {Math.abs(stockAnalysis.stock_overview.price_change_24h).toFixed(2)}% (24h)
-                  </p>
+                    <InfoTooltip term="priceChange" />
+                  </div>
                 </div>
 
                 {/* Sentiment Score with Gauge */}
                 <div className="text-center p-5 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl">
-                  <p className="text-sm font-medium text-gray-700 mb-1">
+                  <div className="text-sm font-medium text-gray-700 mb-1">
                     Sentiment Score
+                    <InfoTooltip term="sentimentScore" />
                     <span className="ml-1 text-xs font-normal text-gray-500">
                       ({TIMEFRAME_OPTIONS.find(t => t.value === timeframe)?.label})
                     </span>
-                  </p>
+                  </div>
                   <SentimentGauge score={stockAnalysis.stock_overview.sentiment_score} />
                   <div className="flex items-center justify-center gap-2 mt-2">
                     {getSentimentIcon(stockAnalysis.stock_overview.sentiment_score)}
@@ -371,7 +374,10 @@ const StockAnalysis = () => {
 
                 {/* Sentiment Distribution Summary */}
                 <div className="text-center p-5 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl">
-                  <p className="text-sm font-medium text-purple-700 mb-3">Sentiment Breakdown</p>
+                  <div className="text-sm font-medium text-purple-700 mb-3">
+                    Sentiment Breakdown
+                    <InfoTooltip term="sentimentDistribution" />
+                  </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600 flex items-center gap-1">
@@ -475,6 +481,7 @@ const StockAnalysis = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   Watchlist Comparison
+                  <InfoTooltip term="watchlist" />
                   <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded">
                     Top 5
                   </span>
