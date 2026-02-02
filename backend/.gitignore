@@ -32,7 +32,10 @@ env/
 ENV/
 
 # Database files
+# Database
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
 *.sqlite
 data/insight_stock.db

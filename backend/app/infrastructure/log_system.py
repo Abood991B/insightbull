@@ -403,28 +403,42 @@ class LogSystem:
     async def _async_write_to_db(self, level: str, message: str, logger: str, 
                                 component: str, function: str, line_number: int, 
                                 extra_data: Dict[str, Any]):
-        """Async method to write log to database"""
-        try:
-            # Import here to avoid circular imports
-            from app.data_access.database.connection import get_db_session
-            from app.data_access.models import SystemLog
-            
-            async with get_db_session() as db:
-                log_entry = SystemLog(
-                    level=level,
-                    message=message,
-                    logger=logger,
-                    component=component,
-                    function=function,
-                    line_number=line_number,
-                    extra_data=extra_data or {},
-                    timestamp=utc_now()
-                )
-                db.add(log_entry)
-                await db.commit()
-        except Exception as e:
-            # Don't let database logging errors break the application
-            print(f"Failed to write log to database: {e}")
+        """Async method to write log to database with retry logic for SQLite locks"""
+        max_retries = 3
+        retry_delay_base = 0.1  # 100ms base delay
+        
+        for attempt in range(max_retries):
+            try:
+                # Import here to avoid circular imports
+                from app.data_access.database.connection import get_db_session
+                from app.data_access.models import SystemLog
+                
+                async with get_db_session() as db:
+                    log_entry = SystemLog(
+                        level=level,
+                        message=message,
+                        logger=logger,
+                        component=component,
+                        function=function,
+                        line_number=line_number,
+                        extra_data=extra_data or {},
+                        timestamp=utc_now()
+                    )
+                    db.add(log_entry)
+                    # Commit is handled by the context manager
+                return  # Success, exit the retry loop
+            except Exception as e:
+                error_str = str(e).lower()
+                if "database is locked" in error_str and attempt < max_retries - 1:
+                    # Wait with exponential backoff before retrying
+                    retry_delay = retry_delay_base * (2 ** attempt)
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    # Final attempt failed or non-lock error
+                    # Silently drop the log to avoid console spam
+                    # The log was already written to file/console
+                    break
     
     def info(self, message: str, **kwargs):
         """Log info level message"""

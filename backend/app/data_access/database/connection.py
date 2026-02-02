@@ -2,11 +2,13 @@
 Database Connection Management
 
 SQLAlchemy database connection and session management with async support.
+Includes SQLite-specific optimizations for better concurrency handling.
 """
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, StaticPool
 from sqlalchemy.exc import OperationalError
+from sqlalchemy import event, text
 import structlog
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -27,6 +29,27 @@ engine = None
 async_session_factory = None
 
 
+def _configure_sqlite_connection(dbapi_conn, connection_record):
+    """
+    Configure SQLite connection for better concurrency.
+    Called for each new connection to the database.
+    """
+    cursor = dbapi_conn.cursor()
+    # Enable WAL mode for better concurrent read/write performance
+    cursor.execute("PRAGMA journal_mode=WAL")
+    # Set busy timeout to 30 seconds (30000 ms) to wait for locks
+    cursor.execute("PRAGMA busy_timeout=30000")
+    # Enable foreign keys
+    cursor.execute("PRAGMA foreign_keys=ON")
+    # Synchronous mode: NORMAL is a good balance between safety and speed
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    # Cache size: negative value = KB, positive = pages
+    cursor.execute("PRAGMA cache_size=-64000")  # 64MB cache
+    # Temp store in memory for better performance
+    cursor.execute("PRAGMA temp_store=MEMORY")
+    cursor.close()
+
+
 async def init_database():
     """Initialize database connection and create tables."""
     global engine, async_session_factory
@@ -39,13 +62,37 @@ async def init_database():
     
     logger.info("Initializing database connection", database_url=database_url.split('@')[0] + '@***' if '@' in database_url else database_url)
     
-    engine = create_async_engine(
-        database_url,
-        echo=False,
-        poolclass=NullPool,
-        pool_pre_ping=True,
-        pool_recycle=300,
-    )
+    # Check if using SQLite
+    is_sqlite = "sqlite" in database_url.lower()
+    
+    if is_sqlite:
+        # SQLite-specific configuration for better concurrency
+        engine = create_async_engine(
+            database_url,
+            echo=False,
+            # Use StaticPool for SQLite to maintain a single connection that can be reused
+            # This helps avoid "database is locked" errors
+            poolclass=StaticPool,
+            # Connect args for SQLite
+            connect_args={
+                "check_same_thread": False,
+                "timeout": 30,  # 30 second timeout for acquiring locks
+            },
+        )
+        
+        # Register event listener to configure each connection
+        @event.listens_for(engine.sync_engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            _configure_sqlite_connection(dbapi_conn, connection_record)
+    else:
+        # PostgreSQL or other database configuration
+        engine = create_async_engine(
+            database_url,
+            echo=False,
+            poolclass=NullPool,
+            pool_pre_ping=True,
+            pool_recycle=300,
+        )
     
     async_session_factory = async_sessionmaker(
         engine,
