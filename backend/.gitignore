@@ -40,6 +40,11 @@ ENV/
 *.sqlite
 data/insight_stock.db
 
+# Runtime state files (change during execution)
+data/scheduler_state.json
+data/scheduler_history.json
+data/quota_tracking.json
+
 # Logs
 *.log
 logs/
