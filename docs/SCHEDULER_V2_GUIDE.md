@@ -2,7 +2,7 @@
 
 ## Overview
 
-The new Scheduler Manager V2 replaces the old cron-based scheduler with an intelligent, market-aware preset scheduling system that aligns with the FYP-Report.md requirements.
+The new Scheduler Manager V2 replaces the old cron-based scheduler with an intelligent, market-aware preset scheduling system that aligns with the project requirements.
 
 ## Key Improvements
 
@@ -25,7 +25,7 @@ The new Scheduler Manager V2 replaces the old cron-based scheduler with an intel
 - Prevents orphaned raw data without sentiment
 - Ensures sentiment analysis uses FRESH data
 - Simplifies user mental model
-- Aligns with FYP-Report.md Section 4.7 (Data Flow)
+- Aligns with Section 4.7 of the project specification (Data Flow)
 
 ### 3. **Smart Preset Schedules** ✅
 
@@ -123,7 +123,7 @@ Error collecting MarketAux news: 402 Payment Required
 - Old component: `SchedulerManager.tsx` (kept for reference)
 - Route updated: `/admin/scheduler` now uses V2
 
-### Step 2: Verify Against FYP-Report ✅
+### Step 2: Verify Against Project Requirements ✅
 **Alignment Check:**
 - ✅ Section 3.2.15 (UC-15: Scheduled Data Collection) - Implemented
 - ✅ Section 4.3 (Business Layer: Scheduler) - Preserved
@@ -223,7 +223,7 @@ Old cron → New preset mapping:
 - Reduced API rate limit stress (was 15 min, now 30 min during market)
 
 ### Rate Limit Considerations
-**API Limits (from FYP-Report):**
+**API Limits (from project specification):**
 - NewsAPI: 100 requests/day
 - FinHub: 60 requests/minute
 - Reddit: 60 requests/minute  
@@ -273,7 +273,7 @@ Old cron → New preset mapping:
 ### Preserved Files (for reference)
 - `src/features/admin/pages/SchedulerManager.tsx` (old implementation)
 
-## Alignment with FYP-Report
+## Alignment with Project Requirements
 
 ### Section 3.2.15 - Use Case UC-15: Scheduled Data Collection ✅
 > "The system schedules data collection tasks to run at regular intervals"
@@ -304,7 +304,7 @@ Scheduler Manager V2 provides a **significantly improved user experience** by:
 4. Monitoring collector health in real-time
 5. Maintaining atomic pipeline execution for data consistency
 
-The implementation aligns with FYP-Report.md specifications while addressing real-world issues identified in production logs (MarketAux failures, job ID staleness).
+The implementation aligns with project specifications while addressing real-world issues identified in production logs (MarketAux failures, job ID staleness).
 
 **Status:** ✅ Ready for testing
 **Next Step:** Test all 4 presets with real backend, verify collector health monitoring

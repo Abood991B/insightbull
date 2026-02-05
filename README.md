@@ -300,7 +300,6 @@ insight-stock-dashboard/
 │   ├── EMPTY_STATE_GUIDE.md          # Empty database handling
 │   └── *.md                          # Additional docs
 │
-├── FYP-Report.md                     # Full FYP documentation (6000+ lines)
 ├── package.json                      # Frontend dependencies
 ├── vite.config.ts                    # Vite configuration
 ├── tailwind.config.ts                # Tailwind configuration
@@ -516,7 +515,6 @@ API Docs: https://api.your-domain.com/api/docs
 
 | Document | Description |
 |----------|-------------|
-| [FYP-Report.md](FYP-Report.md) | Complete project specification (6000+ lines) |
 | [Backend README](backend/README.md) | Backend-specific documentation |
 | [Backend Reference](docs/BACKEND_REFERENCE.md) | API and architecture details |
 | [Security Setup](docs/SECURITY_IMPLEMENTATION.md) | OAuth2 + TOTP configuration |
@@ -530,7 +528,7 @@ API Docs: https://api.your-domain.com/api/docs
 
 ## Roadmap
 
-### v1.0.0 Final (Current - FYP Submission)
+### v1.0.0 (Current)
 - [x] Hybrid FinBERT + Gemma AI sentiment analysis
 - [x] TPM optimization (77% token reduction)
 - [x] Multi-factor authentication (OAuth2 + TOTP)
@@ -596,11 +594,9 @@ This project is developed as a Final Year Project (FYP) for educational purposes
 
 - **Project**: Stock Market Sentiment Dashboard
 - **Code**: FYP01-DS-T2510-0038
-- **Documentation**: See `FYP-Report.md` for full details
 - **Issues**: GitHub Issues for bug reports
 
 ---
 
-**Version**: 1.0.0 (Final)  
-**Last Updated**: February 2026  
-**Status**: Production Ready - Final Year Project Submission
+**Version**: 1.0.0  
+**Last Updated**: February 5, 2026

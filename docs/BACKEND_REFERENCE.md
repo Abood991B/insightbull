@@ -198,7 +198,7 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 
 ### Backend Technology Requirements
 
-Based on the FYP Report analysis, the backend should implement:
+Based on the project specification analysis, the backend should implement:
 
 #### Core Libraries & Frameworks
 - **Python 3.8+**: Primary language
@@ -438,4 +438,4 @@ The frontend implements polling for real-time updates:
 - **Input Validation**: Sanitize all inputs
 - **SQL Injection Prevention**: Use parameterized queries
 
-This reference document provides the complete foundation for implementing the backend system that will integrate seamlessly with the existing frontend while fulfilling all requirements specified in the FYP Report.
+This reference document provides the complete foundation for implementing the backend system that will integrate seamlessly with the existing frontend while fulfilling all requirements specified in the project specification.

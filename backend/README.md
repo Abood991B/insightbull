@@ -129,7 +129,7 @@ alembic downgrade -1
 backend/
 ├── app/
 │   ├── presentation/           # API routes, schemas, middleware
-│   │   ├── routes/            # FastAPI routers
+│   │   ├── controllers/            # FastAPI routers
 │   │   ├── schemas/           # Pydantic models
 │   │   ├── middleware/        # Logging, security middleware
 │   │   └── dependencies/      # Auth dependencies
@@ -224,7 +224,7 @@ python scripts/verify_tpm_fix.py
 |-------|----------|
 | `ModuleNotFoundError: No module named 'app'` | Ensure you're in `backend/` with venv activated |
 | Database migration failed | `alembic downgrade base && alembic upgrade head` |
-| 429 errors from Gemini | Run `python scripts/verify_tpm_fix.py` - fixed in v1.0.0 |
+| 429 errors from Gemini | Fixed in v1.0.0 - ensure TPM limits are configured |
 | Low sentiment confidence | Set `VERIFICATION_MODE=all` in .env |
 | Pipeline not running | Check scheduler: `curl http://localhost:8000/api/v1/admin/scheduler/status` |
 
@@ -258,7 +258,6 @@ See full API documentation at `http://localhost:8000/api/docs` when running.
 | Script | Purpose |
 |--------|---------|
 | `db_health_check.py` | Verify database state |
-| `verify_tpm_fix.py` | Validate TPM optimization |
 | `clear_tables.py` | Reset data (dev only) |
 | `reprocess_sentiment_data.py` | Reprocess with updated model |
 | `backfill_stock_mentions.py` | Backfill missing data |
@@ -270,8 +269,7 @@ See full API documentation at `http://localhost:8000/api/docs` when running.
 - **Full Project Docs**: [../README.md](../README.md)
 - **Backend Reference**: [../docs/BACKEND_REFERENCE.md](../docs/BACKEND_REFERENCE.md)
 - **Security Setup**: [../docs/SECURITY_IMPLEMENTATION.md](../docs/SECURITY_IMPLEMENTATION.md)
-- **FYP Report**: [../FYP-Report.md](../FYP-Report.md)
 
 ---
 
-**Version**: 1.0.0 (Final) | **Status**: Production Ready - FYP Submission
+**Version**: 1.0.0
