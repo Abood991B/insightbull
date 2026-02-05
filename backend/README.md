@@ -224,7 +224,7 @@ python scripts/verify_tpm_fix.py
 |-------|----------|
 | `ModuleNotFoundError: No module named 'app'` | Ensure you're in `backend/` with venv activated |
 | Database migration failed | `alembic downgrade base && alembic upgrade head` |
-| 429 errors from Gemini | Run `python scripts/verify_tpm_fix.py` - should be fixed in v1.3.0 |
+| 429 errors from Gemini | Run `python scripts/verify_tpm_fix.py` - fixed in v1.0.0 |
 | Low sentiment confidence | Set `VERIFICATION_MODE=all` in .env |
 | Pipeline not running | Check scheduler: `curl http://localhost:8000/api/v1/admin/scheduler/status` |
 
@@ -274,4 +274,4 @@ See full API documentation at `http://localhost:8000/api/docs` when running.
 
 ---
 
-**Version**: 1.3.0 | **Status**: Production Ready
+**Version**: 1.0.0 (Final) | **Status**: Production Ready - FYP Submission

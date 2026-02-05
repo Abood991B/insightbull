@@ -45,6 +45,9 @@ data/scheduler_state.json
 data/scheduler_history.json
 data/quota_tracking.json
 
+# Secure keys - NEVER commit (encrypted API keys)
+data/secure_keys/
+
 # Logs
 *.log
 logs/

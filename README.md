@@ -179,8 +179,8 @@ src/
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/your-username/insight-stock-dashboard.git
-cd insight-stock-dashboard
+git clone https://github.com/Abood991B/insight-stock-dash.git
+cd insight-stock-dash
 ```
 
 ### 2. Backend Setup
@@ -520,30 +520,32 @@ API Docs: https://api.your-domain.com/api/docs
 | [Backend README](backend/README.md) | Backend-specific documentation |
 | [Backend Reference](docs/BACKEND_REFERENCE.md) | API and architecture details |
 | [Security Setup](docs/SECURITY_IMPLEMENTATION.md) | OAuth2 + TOTP configuration |
-| [Frontend Integration](docs/FRONTEND_INTEGRATION_PLAN.md) | Integration roadmap |
+| [Admin Security Guide](docs/ADMIN_SECURITY_SETUP.md) | Admin panel setup guide |
 | [Empty State Guide](docs/EMPTY_STATE_GUIDE.md) | Handling empty database |
 | [Project Structure](docs/PROJECT_STRUCTURE.md) | Frontend architecture |
+| [Database Migrations](docs/DATABASE_MIGRATIONS.md) | Alembic migration guide |
+| [Scheduler Guide](docs/SCHEDULER_V2_GUIDE.md) | Smart scheduler documentation |
 
 ---
 
 ## Roadmap
 
-### v1.3.0 (Current)
+### v1.0.0 Final (Current - FYP Submission)
 - [x] Hybrid FinBERT + Gemma AI sentiment analysis
 - [x] TPM optimization (77% token reduction)
-- [x] Multi-factor authentication
+- [x] Multi-factor authentication (OAuth2 + TOTP)
 - [x] 45-minute automated scheduling
-- [x] 5 production-ready collectors
+- [x] 5 production-ready data collectors
 - [x] Comprehensive admin panel
+- [x] Full frontend-backend integration
+- [x] 91%+ sentiment analysis accuracy
 
-### v1.4.0 (Planned)
+### Future Enhancements
 - [ ] WebSocket real-time updates
 - [ ] GraphQL API
 - [ ] Historical data backfilling
 - [ ] Advanced correlation analysis
 - [ ] Prometheus metrics
-
-### Future
 - [ ] Cryptocurrency sentiment
 - [ ] Multi-language support
 - [ ] Trading platform integration
@@ -599,6 +601,6 @@ This project is developed as a Final Year Project (FYP) for educational purposes
 
 ---
 
-**Version**: 1.3.0  
-**Last Updated**: December 2025  
-**Status**: Production Ready
+**Version**: 1.0.0 (Final)  
+**Last Updated**: February 2026  
+**Status**: Production Ready - Final Year Project Submission

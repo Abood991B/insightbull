@@ -7,10 +7,13 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Environment files - NEVER commit to version control
 .env
-.env.example
+.env.local
 .env.production
+.env.*.local
 
+# Dependencies
 node_modules
 dist
 dist-ssr
