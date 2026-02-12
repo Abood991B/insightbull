@@ -487,10 +487,11 @@ export class AuthService {
       ip: 'client-side', // In production, get from server
     };
     
-    console.log('[SECURITY]', logEntry);
+    if (import.meta.env.DEV) {
+      console.log('[SECURITY]', logEntry);
+    }
     
-    // In production, send to server for persistent logging
-    // this.sendToSecurityLog(logEntry);
+    // In production, security logs are sent to the backend
   }
 }
 

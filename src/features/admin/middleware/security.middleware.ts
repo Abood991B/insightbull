@@ -113,8 +113,10 @@ export const logAuditEvent = (
     auditLogs.shift();
   }
   
-  // In production, send to server
-  console.log('[AUDIT]', log);
+  // Log audit events only in development
+  if (import.meta.env.DEV) {
+    console.log('[AUDIT]', log);
+  }
 };
 
 export const getAuditLogs = (

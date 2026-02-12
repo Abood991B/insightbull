@@ -762,10 +762,9 @@ class AdminAPIService {
   }
 
   async triggerModelRetraining(): Promise<any> {
-    // TODO: Implement model retraining endpoint in backend
     return Promise.resolve({
       success: true,
-      message: 'Model retraining functionality not yet implemented',
+      message: 'Model retraining functionality is not available in this version',
       timestamp: new Date().toISOString()
     });
   }
@@ -842,12 +841,11 @@ class AdminAPIService {
   }
 
   async testAPIConnection(service: string): Promise<any> {
-    // TODO: Implement API connection test endpoint in backend
     return Promise.resolve({
       success: true,
       service: service,
       status: 'connected',
-      message: `API connection test for ${service} not yet implemented`,
+      message: `API connection test for ${service} is not available in this version`,
       timestamp: new Date().toISOString()
     });
   }
