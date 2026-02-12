@@ -45,8 +45,20 @@ data/scheduler_state.json
 data/scheduler_history.json
 data/quota_tracking.json
 
+# Data files — only commit example configs
+data/*.json
+data/*.db
+data/*.csv
+data/*.pkl
+!data/collector_config.example.json
+
 # Secure keys - NEVER commit (encrypted API keys)
 data/secure_keys/
+
+# Training data and models
+data/training/
+data/models/
+data/backups/
 
 # Logs
 *.log

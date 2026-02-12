@@ -128,7 +128,7 @@ async def configure_pipeline(
         }
         
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Configuration failed: {str(e)}")
+        raise HTTPException(status_code=400, detail="Configuration failed. Check server logs for details.")
 
 
 @router.post("/run", response_model=Dict[str, str])
@@ -203,7 +203,7 @@ async def run_pipeline(
             }
         
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Pipeline execution failed: {str(e)}")
+        raise HTTPException(status_code=400, detail="Pipeline execution failed. Check server logs for details.")
 
 
 @router.get("/status", response_model=PipelineStatusResponse)
@@ -218,7 +218,7 @@ async def get_pipeline_status(pipeline: DataPipeline = Depends(get_pipeline)):
         return PipelineStatusResponse(**status)
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get status. Check server logs for details.")
 
 
 @router.get("/result", response_model=Optional[PipelineResultResponse])
@@ -250,7 +250,7 @@ async def get_pipeline_result(pipeline: DataPipeline = Depends(get_pipeline)):
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get result: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get result. Check server logs for details.")
 
 
 @router.post("/cancel", response_model=Dict[str, str])
@@ -277,7 +277,7 @@ async def cancel_pipeline(pipeline: DataPipeline = Depends(get_pipeline)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to cancel pipeline: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to cancel pipeline. Check server logs for details.")
 
 
 @router.get("/health", response_model=Dict[str, Any])
@@ -324,7 +324,7 @@ async def get_collector_info(pipeline: DataPipeline = Depends(get_pipeline)):
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get collector info: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get collector info. Check server logs for details.")
 
 
 @router.get("/rate-limits", response_model=Dict[str, Dict[str, Any]])
@@ -338,4 +338,4 @@ async def get_rate_limit_status(pipeline: DataPipeline = Depends(get_pipeline)):
         return pipeline.rate_limiter.get_all_status()
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get rate limits: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get rate limits. Check server logs for details.")

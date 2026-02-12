@@ -1,40 +1,45 @@
-// Security configuration for admin authentication
+/**
+ * Security configuration for admin authentication.
+ *
+ * SECURITY NOTE: Only public, non-sensitive values belong here.
+ * All secrets (client_secret, session keys, TOTP secrets) are
+ * handled exclusively on the backend. Never expose secrets in
+ * frontend code - they are visible to anyone via browser DevTools.
+ */
 export const securityConfig = {
   oauth2: {
     clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
-    clientSecret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET || '',
+    // clientSecret is intentionally omitted - token exchange happens server-side only
     redirectUri: import.meta.env.VITE_OAUTH_REDIRECT_URI || 'http://localhost:5173/admin/auth/callback',
     scope: 'openid email profile',
     discoveryDocs: ['https://accounts.google.com/.well-known/openid-configuration'],
   },
-  
+
   admin: {
-    // Parse comma-separated admin emails from environment
-    authorizedEmails: (import.meta.env.VITE_ADMIN_EMAILS || '').split(',').map((email: string) => email.trim()).filter(Boolean),
+    // Admin email authorization is enforced server-side only
     sessionTimeout: parseInt(import.meta.env.VITE_SESSION_TIMEOUT || '1800000'), // 30 minutes default
-    sessionSecret: import.meta.env.VITE_SESSION_SECRET || 'default-secret-change-in-production',
   },
-  
+
   totp: {
-    issuer: import.meta.env.VITE_TOTP_ISSUER || 'Stock Market Dashboard',
+    issuer: import.meta.env.VITE_TOTP_ISSUER || 'Stock Market Sentiment Dashboard',
     algorithm: 'SHA1',
     digits: 6,
     period: 30,
     window: 2, // Allow 2 time windows for clock skew
   },
-  
+
   rateLimit: {
     windowMs: parseInt(import.meta.env.VITE_RATE_LIMIT_WINDOW || '900000'), // 15 minutes
     maxAttempts: parseInt(import.meta.env.VITE_RATE_LIMIT_MAX_ATTEMPTS || '5'),
   },
-  
+
   security: {
     enableHttps: import.meta.env.VITE_ENABLE_HTTPS === 'true',
     secureCookies: import.meta.env.VITE_SECURE_COOKIES === 'true',
     sameSite: 'strict' as const,
     httpOnly: true,
   },
-  
+
   // Security headers
   headers: {
     'X-Content-Type-Options': 'nosniff',
@@ -48,23 +53,15 @@ export const securityConfig = {
 // Validate configuration on load
 export const validateSecurityConfig = (): boolean => {
   const errors: string[] = [];
-  
+
   if (!securityConfig.oauth2.clientId) {
     errors.push('Google OAuth2 Client ID is not configured');
   }
-  
-  if (securityConfig.admin.authorizedEmails.length === 0) {
-    errors.push('No admin emails configured');
-  }
-  
-  if (securityConfig.admin.sessionSecret === 'default-secret-change-in-production') {
-    console.warn('⚠️ Using default session secret - change in production!');
-  }
-  
+
   if (errors.length > 0) {
     console.error('Security configuration errors:', errors);
     return false;
   }
-  
+
   return true;
 };

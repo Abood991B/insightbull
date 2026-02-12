@@ -75,6 +75,7 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   }
 
   return (
+    // SECURITY REVIEWED: Content is generated from static THEMES config, not user input
     <style
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)

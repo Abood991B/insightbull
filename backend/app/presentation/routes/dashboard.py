@@ -104,7 +104,7 @@ async def get_dashboard_summary(
         logger.error(f"Dashboard summary error: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate dashboard summary: {str(e)}"
+            detail="Failed to generate dashboard summary. Check server logs for details."
         )
 
 

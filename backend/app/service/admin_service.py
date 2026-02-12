@@ -871,13 +871,16 @@ class AdminService(WatchlistSubject):
                 query = query.where(SystemLog.timestamp <= filters.end_time)
                 
             if filters.logger:
-                query = query.where(SystemLog.logger.ilike(f"%{filters.logger}%"))
+                from app.utils.sql import escape_like
+                query = query.where(SystemLog.logger.ilike(f"%{escape_like(filters.logger)}%"))
                 
             if filters.module:
-                query = query.where(SystemLog.component.ilike(f"%{filters.module}%"))
+                from app.utils.sql import escape_like
+                query = query.where(SystemLog.component.ilike(f"%{escape_like(filters.module)}%"))
                 
             if filters.search_term:
-                query = query.where(SystemLog.message.ilike(f"%{filters.search_term}%"))
+                from app.utils.sql import escape_like
+                query = query.where(SystemLog.message.ilike(f"%{escape_like(filters.search_term)}%"))
             
             # Get total count for filtered results
             count_query = select(func.count()).select_from(query.subquery())

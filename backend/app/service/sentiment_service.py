@@ -15,6 +15,7 @@ from app.utils.timezone import utc_now, to_naive_utc
 
 from app.data_access.models import Stock, SentimentData, NewsArticle, HackerNewsPost
 from app.infrastructure.log_system import get_logger
+from app.utils.sql import escape_like
 
 
 logger = get_logger()
@@ -399,8 +400,8 @@ class SentimentService:
                 .where(and_(
                     NewsArticle.published_at >= cutoff_date,
                     or_(
-                        NewsArticle.title.ilike(f"%{stock_symbol}%"),
-                        NewsArticle.content.ilike(f"%{stock_symbol}%")
+                        NewsArticle.title.ilike(f"%{escape_like(stock_symbol)}%"),
+                        NewsArticle.content.ilike(f"%{escape_like(stock_symbol)}%")
                     )
                 ))
                 .order_by(desc(NewsArticle.published_at))
@@ -425,8 +426,8 @@ class SentimentService:
                 .where(and_(
                     HackerNewsPost.created_utc >= cutoff_date,
                     or_(
-                        HackerNewsPost.title.ilike(f"%{stock_symbol}%"),
-                        HackerNewsPost.content.ilike(f"%{stock_symbol}%")
+                        HackerNewsPost.title.ilike(f"%{escape_like(stock_symbol)}%"),
+                        HackerNewsPost.content.ilike(f"%{escape_like(stock_symbol)}%")
                     )
                 ))
                 .order_by(desc(HackerNewsPost.created_utc))

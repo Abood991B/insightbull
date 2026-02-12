@@ -15,7 +15,7 @@
 The **Stock Market Sentiment Dashboard** is an open-source, web-based platform that provides accessible, sentiment-driven financial analytics for retail investors, financial analysts, and researchers. The system aggregates unstructured textual data from financial news sources and social media discussions for technology stocks, performs sentiment analysis, and provides interactive visualizations with correlation analysis.
 
 ### Key Features
-- **Multi-source Data Collection**: Reddit (PRAW), FinHub, Marketaux, NewsAPI
+- **Multi-source Data Collection**: Reddit (PRAW), FinHub, NewsAPI
 - **Dual-model Sentiment Analysis**: FinBERT for financial news, VADER for social media
 - **Interactive Visualizations**: Time-series plots, correlation analysis, sentiment trends
 - **Admin Panel**: TOTP-secured administrative interface
@@ -44,7 +44,7 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 - **Processor**: Text preprocessing and data cleaning
 
 #### 3. Infrastructure Layer
-- **Collectors**: RedditCollector, FinHubCollector, NewsAPICollector, MarketauxCollector
+- **Collectors**: RedditCollector, FinHubCollector, NewsAPICollector
 - **APIKeyManager**: Secure credential management
 - **RateLimitHandler**: API throttling and backoff strategies
 - **LogSystem**: Centralized logging (Singleton pattern)
@@ -156,7 +156,7 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 ```
 - sentiment_id (INTEGER, Primary Key)
 - stock_symbol (VARCHAR(10), Foreign Key → Stock)
-- source (VARCHAR(20)) // Reddit, FinHub, Marketaux, NewsAPI
+- source (VARCHAR(20)) // Reddit, FinHub, NewsAPI
 - timestamp (DATETIME, UTC normalized)
 - score (FLOAT) // Sentiment score
 - label (VARCHAR(10)) // Positive, Neutral, Negative
@@ -212,7 +212,6 @@ Based on the project specification analysis, the backend should implement:
 - **PRAW**: Reddit API wrapper
 - **finnhub-python**: FinHub API client
 - **newsapi-python**: NewsAPI client
-- **requests**: HTTP client for Marketaux
 
 #### Sentiment Analysis
 - **transformers**: Hugging Face models (FinBERT)

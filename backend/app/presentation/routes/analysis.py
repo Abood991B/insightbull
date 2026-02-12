@@ -117,7 +117,7 @@ async def get_sentiment_history(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve sentiment history: {str(e)}"
+            detail="Failed to retrieve sentiment history. Check server logs for details."
         )
 
 
@@ -223,7 +223,7 @@ async def get_correlation_analysis(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to perform correlation analysis: {str(e)}"
+            detail="Failed to perform correlation analysis. Check server logs for details."
         )
 
 

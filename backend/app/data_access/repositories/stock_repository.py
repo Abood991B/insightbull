@@ -143,7 +143,8 @@ class StockRepository(BaseRepository[Stock]):
         Returns:
             List of matching stocks
         """
-        search_term = f"%{query.upper()}%"
+        from app.utils.sql import escape_like
+        search_term = f"%{escape_like(query.upper())}%"
         
         result = await self.db_session.execute(
             select(Stock)

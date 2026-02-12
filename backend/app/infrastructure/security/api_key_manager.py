@@ -1,4 +1,4 @@
-"""
+﻿"""
 API Key Encryption Utility
 ==========================
 
@@ -31,6 +31,17 @@ from app.infrastructure.log_system import get_logger
 logger = get_logger()
 
 
+def _get_salt() -> bytes:
+    """Get salt from environment variable. Raises ValueError if not set."""
+    salt = os.getenv('API_ENCRYPTION_SALT')
+    if not salt:
+        raise ValueError(
+            "API_ENCRYPTION_SALT environment variable is required. "
+            "Set it to a unique, random base64-encoded string."
+        )
+    return salt.encode()
+
+
 class APIKeyManager:
     """
     Manages encryption and decryption of API keys for secure storage.
@@ -39,33 +50,28 @@ class APIKeyManager:
     to protect sensitive API credentials used in data collection.
     """
     
-    def __init__(self, master_password: Optional[str] = None):
+    def __init__(self, master_password: Optional[str] = None, salt: Optional[bytes] = None):
         """
         Initialize the API Key Manager.
         
         Args:
             master_password: Optional master password. If not provided,
                            will use environment variable or generate one.
+            salt: Optional salt bytes. If not provided,
+                  will use API_ENCRYPTION_SALT environment variable.
         """
         self.master_password = master_password or self._get_master_password()
+        self._salt = salt or _get_salt()
         self._cipher_suite = self._create_cipher_suite()
     
     def _get_master_password(self) -> str:
-        """Get or generate master password for encryption"""
-        # Try to get from environment first
+        """Get master password for encryption from environment variable."""
         master_key = os.getenv('API_ENCRYPTION_KEY')
         
         if not master_key:
-            # Generate a default key based on system info (not recommended for production)
-            import platform
-            import hashlib
-            
-            system_info = f"{platform.node()}-{platform.system()}-phase5-pipeline"
-            master_key = hashlib.sha256(system_info.encode()).hexdigest()[:32]
-            
-            logger.warning(
-                "No API_ENCRYPTION_KEY environment variable found. "
-                "Using system-generated key. For production, set API_ENCRYPTION_KEY."
+            raise ValueError(
+                "API_ENCRYPTION_KEY environment variable is required. "
+                "Set it to a strong, random secret string."
             )
         
         return master_key
@@ -75,14 +81,11 @@ class APIKeyManager:
         # Convert master password to bytes and create key
         password_bytes = self.master_password.encode()
         
-        # Use a fixed salt for consistency (in production, use random salt stored securely)
-        salt = b'phase5_salt_2025'
-        
         # Derive key using PBKDF2
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=salt,
+            salt=self._salt,
             iterations=100000,
         )
         
@@ -109,8 +112,7 @@ class APIKeyManager:
             
         except Exception as e:
             logger.error(f"Failed to encrypt API key: {e}")
-            # Return original key if encryption fails (fallback)
-            return api_key
+            raise RuntimeError("Encryption failed — refusing to store plaintext key") from e
     
     def decrypt_api_key(self, encrypted_key: str) -> str:
         """
@@ -149,8 +151,7 @@ class APIKeyManager:
                 
         except Exception as e:
             logger.error(f"Failed to decrypt API key: {e}")
-            # Return original key if decryption fails (fallback)
-            return encrypted_key
+            raise RuntimeError("Decryption failed — refusing to return ciphertext") from e
     
     def encrypt_all_keys(self, keys_dict: Dict[str, str]) -> Dict[str, str]:
         """
@@ -285,7 +286,7 @@ class SecureAPIKeyLoader:
             try:
                 with open(keys_file, 'r') as f:
                     existing_keys = json.load(f)
-            except:
+            except Exception:
                 existing_keys = {}
         
         # Update the specific key
@@ -387,7 +388,7 @@ def create_encrypted_env_template():
             print(f"# {key_name}=<not_set>")
     
     print()
-    print("🔑 To use encrypted keys, set API_ENCRYPTION_KEY environment variable")
+    print("To use encrypted keys, set API_ENCRYPTION_KEY environment variable")
     print("   or the system will generate a default key.")
 
 

@@ -1,0 +1,46 @@
+{
+    "collectors": {
+        "hackernews": {
+            "enabled": true,
+            "display_name": "Hacker News",
+            "requires_api_key": false,
+            "description": "Tech community data from news.ycombinator.com"
+        },
+        "gdelt": {
+            "enabled": true,
+            "display_name": "GDELT",
+            "requires_api_key": false,
+            "description": "Global news from 100+ countries in 65 languages"
+        },
+        "finnhub": {
+            "enabled": true,
+            "display_name": "FinHub",
+            "requires_api_key": true,
+            "description": "Financial market data and news"
+        },
+        "newsapi": {
+            "enabled": true,
+            "display_name": "NewsAPI",
+            "requires_api_key": true,
+            "description": "General news data collection"
+        },
+        "yfinance": {
+            "enabled": true,
+            "display_name": "Yahoo Finance",
+            "requires_api_key": false,
+            "description": "Free financial news from Yahoo Finance"
+        }
+    },
+    "last_updated": null,
+    "updated_by": null,
+    "ai_services": {
+        "gemini": {
+            "enabled": false,
+            "display_name": "Gemma 3 27B AI",
+            "requires_api_key": true,
+            "description": "AI sentiment verification for improved accuracy",
+            "verification_mode": "low_confidence_and_neutral",
+            "confidence_threshold": 0.85
+        }
+    }
+}

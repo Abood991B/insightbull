@@ -17,7 +17,7 @@ The new Scheduler Manager V2 replaces the old cron-based scheduler with an intel
 **Problem Solved:** Separate "Data Collection" and "Sentiment Analysis" jobs don't make sense
 
 **New Approach:** ALL schedules run the FULL pipeline
-- Data Collection (4 collectors: NewsAPI, FinHub, Reddit, MarketAux)
+- Data Collection (3 collectors: NewsAPI, FinHub, Reddit)
 - → Sentiment Analysis (FinBERT + VADER)
 - → Storage (Database with deduplication)
 
@@ -61,20 +61,13 @@ Four market-aware presets replace arbitrary scheduling:
 - Clear time zone display (ET = Eastern Time)
 
 ### 5. **Collector Health Monitoring** ✅
-**Problem Solved:** MarketAux API failing silently (402 Payment Required)
+**Problem Solved:** Collectors failing silently without user visibility
 
 **New Feature:** "Data Collector Health" dashboard
-- Real-time status of all 4 collectors
+- Real-time status of all 3 collectors
 - Shows success: NewsAPI (45 articles), FinHub (32), Reddit (18 posts)
-- Shows failure: MarketAux (402 Payment Required - Subscription expired)
 - Clear warning when collectors are down
-- Graceful degradation (pipeline continues with 3/4 collectors)
-
-**From Logs Analysis:**
-```
-Error collecting MarketAux news: 402 Payment Required
-(All stocks: AAPL, MSFT, GOOGL, AMZN, META, AMD, TSLA, NVDA, MU, AVGO)
-```
+- Graceful degradation (pipeline continues with remaining collectors)
 
 ### 6. **Market Context Awareness** ✅
 **New Feature:** Real-time market status badge
@@ -157,7 +150,6 @@ Once V2 is tested and approved:
 1. Check "Data Collector Health" section
 2. Green checkmarks = working
 3. Red X = failed (see error message)
-4. If MarketAux shows 402: Either upgrade subscription or ignore (3/4 collectors still work)
 
 **Understanding Timeline:**
 - Amber dots = Pre-market (before 9:30 AM)
@@ -177,21 +169,6 @@ Failed to cancel job datacoll_dfec3efb - job not found
 **Cause:** Job IDs regenerate on backend restart, old IDs become stale
 
 **Solution V2:** UI shows current jobs only, no manual ID entry needed
-
-### Issue: MarketAux 402 Payment Required
-**From Logs:**
-```
-Error collecting MarketAux news: 402 Payment Required
-```
-
-**Impact:** 25% data loss (1 of 4 collectors down)
-
-**Solution:**
-- **Option A:** Upgrade MarketAux subscription
-- **Option B:** Disable MarketAux collector in backend
-- **Option C:** Accept 3/4 collectors (still functional)
-
-**V2 Handling:** Shows clear warning, pipeline continues gracefully
 
 ### Issue: No scheduled runs appearing
 **Possible Causes:**
@@ -226,8 +203,7 @@ Old cron → New preset mapping:
 **API Limits (from project specification):**
 - NewsAPI: 100 requests/day
 - FinHub: 60 requests/minute
-- Reddit: 60 requests/minute  
-- MarketAux: Currently down (402)
+- Reddit: 60 requests/minute
 
 **V2 Frequency Impact:**
 - Pre-Market: 1 run/day = 4 requests (1 per collector)
@@ -304,7 +280,7 @@ Scheduler Manager V2 provides a **significantly improved user experience** by:
 4. Monitoring collector health in real-time
 5. Maintaining atomic pipeline execution for data consistency
 
-The implementation aligns with project specifications while addressing real-world issues identified in production logs (MarketAux failures, job ID staleness).
+The implementation aligns with project specifications while addressing real-world issues identified in production logs (job ID staleness).
 
 **Status:** ✅ Ready for testing
 **Next Step:** Test all 4 presets with real backend, verify collector health monitoring

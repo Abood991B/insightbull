@@ -75,14 +75,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     def get_client_ip(self, request: Request) -> str:
         """Extract client IP from request"""
-        # Check for forwarded headers (behind proxy)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        
-        forwarded_host = request.headers.get("X-Forwarded-Host")
-        if forwarded_host:
-            return forwarded_host
+        # Only trust proxy headers if explicitly configured
+        trust_proxy = Settings().trust_proxy_headers if hasattr(Settings(), 'trust_proxy_headers') else False
+        if trust_proxy:
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                return forwarded_for.split(",")[0].strip()
         
         # Direct connection
         return request.client.host if request.client else "unknown"
@@ -166,9 +164,11 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     
     def get_client_ip(self, request: Request) -> str:
         """Extract client IP from request"""
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
+        trust_proxy = Settings().trust_proxy_headers if hasattr(Settings(), 'trust_proxy_headers') else False
+        if trust_proxy:
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                return forwarded_for.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
     
     def sanitize_query_params(self, request: Request):

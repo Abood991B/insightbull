@@ -193,7 +193,7 @@ async def trigger_manual_collection(
         logger.error("Error during manual full pipeline execution", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to execute full pipeline: {str(e)}"
+            detail="Failed to execute full pipeline. Check server logs for details."
         )
 
 
@@ -338,7 +338,7 @@ async def run_benchmark_evaluation(
         logger.error("Error running benchmark evaluation", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to run benchmark evaluation: {str(e)}"
+            detail="Failed to run benchmark evaluation. Check server logs for details."
         )
 
 
@@ -470,7 +470,7 @@ async def get_sentiment_engine_metrics(
         logger.error("Error retrieving sentiment engine metrics", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve sentiment engine metrics: {str(e)}"
+            detail="Failed to retrieve sentiment engine metrics. Check server logs for details."
         )
 
 
@@ -586,7 +586,7 @@ async def toggle_collector(
         logger.error("Error toggling collector", error=str(e), collector=collector_name)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to toggle collector: {str(e)}"
+            detail="Failed to toggle collector. Check server logs for details."
         )
 
 
@@ -633,7 +633,7 @@ async def toggle_ai_service(
         logger.error("Error toggling AI service", error=str(e), service=service_name)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to toggle AI service: {str(e)}"
+            detail="Failed to toggle AI service. Check server logs for details."
         )
 
 
@@ -683,7 +683,7 @@ async def update_ai_service_settings(
         logger.error("Error updating AI service settings", error=str(e), service=service_name)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update AI service settings: {str(e)}"
+            detail="Failed to update AI service settings. Check server logs for details."
         )
 
 
@@ -734,7 +734,7 @@ async def get_stock_watchlist(
         logger.error("Full traceback", traceback=traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve stock watchlist: {str(e)}"
+            detail="Failed to retrieve stock watchlist. Check server logs for details."
         )
 
 
@@ -1054,7 +1054,8 @@ async def download_system_logs(
         if level:
             query = query.where(SystemLog.level == level.value)
         if component:
-            query = query.where(SystemLog.component.ilike(f"%{component}%"))
+            from app.utils.sql import escape_like
+            query = query.where(SystemLog.component.ilike(f"%{escape_like(component)}%"))
         if start_date:
             start_time = dt.strptime(start_date, "%Y-%m-%d")
             query = query.where(SystemLog.timestamp >= start_time)
@@ -1111,7 +1112,7 @@ async def download_system_logs(
         logger.error("Error downloading system logs", error=str(e), traceback=error_details)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to download system logs: {str(e)}"
+            detail="Failed to download system logs. Check server logs for details."
         )
 
 
@@ -1653,7 +1654,7 @@ async def get_collector_health(
         logger.error("Error retrieving collector health", error=str(e))
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve collector health status: {str(e)}"
+            detail="Failed to retrieve collector health status. Check server logs for details."
         )
 
 
@@ -1882,7 +1883,7 @@ async def update_market_caps(
         logger.error("Error updating market caps", error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update market caps: {str(e)}"
+            detail="Failed to update market caps. Check server logs for details."
         )
 
 
@@ -2170,7 +2171,7 @@ async def get_database_schema(
         logger.error("Error retrieving database schema", error=str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve database schema: {str(e)}"
+            detail="Failed to retrieve database schema. Check server logs for details."
         )
 
 
@@ -2380,7 +2381,7 @@ async def export_table_to_csv(
         logger.error("Error exporting table to CSV", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to export table: {str(e)}"
+            detail="Failed to export table. Check server logs for details."
         )
 
 

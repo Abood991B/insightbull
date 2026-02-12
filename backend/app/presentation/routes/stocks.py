@@ -103,7 +103,7 @@ async def get_stock_analysis_dashboard(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve stock analysis: {str(e)}"
+            detail="Failed to retrieve stock analysis. Check server logs for details."
         )
 
 
@@ -162,7 +162,7 @@ async def get_all_stocks(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve stocks: {str(e)}"
+            detail="Failed to retrieve stocks. Check server logs for details."
         )
 
 
@@ -233,7 +233,7 @@ async def get_stock_detail(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve stock details: {str(e)}"
+            detail="Failed to retrieve stock details. Check server logs for details."
         )
 
 

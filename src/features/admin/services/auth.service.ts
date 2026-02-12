@@ -95,34 +95,8 @@ export class AuthService {
     }
   }
 
-  private async exchangeCodeForTokens(code: string): Promise<{ success: boolean; tokens?: any; error?: string }> {
-    try {
-      const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          code,
-          client_id: securityConfig.oauth2.clientId,
-          client_secret: securityConfig.oauth2.clientSecret,
-          redirect_uri: securityConfig.oauth2.redirectUri,
-          grant_type: 'authorization_code',
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        return { success: false, error: error.error_description || 'Token exchange failed' };
-      }
-
-      const tokens = await response.json();
-      return { success: true, tokens };
-    } catch (error) {
-      console.error('Token exchange error:', error);
-      return { success: false, error: 'Failed to exchange authorization code' };
-    }
-  }
+  // Legacy exchangeCodeForTokens removed — OAuth token exchange MUST happen
+  // server-side only (via /api/admin/auth/oauth/google) to protect client_secret.
 
   private async getUserInfo(accessToken: string): Promise<any> {
     const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -378,10 +352,10 @@ export class AuthService {
     }
   }
 
-  // Authorization
-  private isAuthorizedAdmin(email: string): boolean {
-    const authorizedEmails = securityConfig.admin.authorizedEmails;
-    return authorizedEmails.includes(email.toLowerCase());
+  // Authorization — admin email validation is enforced server-side.
+  // If the backend issued a valid session, the user is authorized.
+  private isAuthorizedAdmin(_email: string): boolean {
+    return this.session !== null;
   }
 
   // Rate Limiting

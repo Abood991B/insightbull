@@ -1,0 +1,7 @@
+# Ignore all data files — they contain runtime state and potentially sensitive information
+*
+# Keep the directory structure and this .gitignore
+!.gitignore
+!training/
+# Keep example configs
+!collector_config.example.json

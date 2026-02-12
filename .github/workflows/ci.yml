@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Frontend ──────────────────────────────────────────────
+  frontend-lint-test:
+    name: Frontend Lint & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint . --max-warnings 0
+        continue-on-error: true
+
+      - name: Run tests
+        run: npx vitest run --reporter=verbose
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+
+  # ── Backend ───────────────────────────────────────────────
+  backend-lint-test:
+    name: Backend Lint & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff pytest-asyncio
+
+      - name: Lint with Ruff
+        run: ruff check .
+        continue-on-error: true
+
+      - name: Run tests
+        run: pytest --tb=short -q
+        continue-on-error: true
+        env:
+          DATABASE_URL: "sqlite+aiosqlite:///./data/test.db"
+          API_ENCRYPTION_KEY: "ci-test-key-not-for-production-use"
+          API_ENCRYPTION_SALT: "ci_test_salt_1234"
+          SECRET_KEY: "ci-test-secret"
+          JWT_SECRET_KEY: "ci-test-jwt-secret"
+          DEBUG: "false"
+          ENVIRONMENT: "testing"
+
+  # ── Security scan ─────────────────────────────────────────
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for secrets in code
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+        continue-on-error: true

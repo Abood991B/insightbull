@@ -60,9 +60,23 @@ class Settings(BaseSettings):
             return [email.strip() for email in v.split(',') if email.strip()]
         return v or []
     
-    # API Key Encryption
-    api_key_encryption_key: str = secrets.token_urlsafe(32)
-    
+    # API Key Encryption (REQUIRED — no auto-generation)
+    api_key_encryption_key: str = ""
+    api_encryption_salt: str = ""
+
+    @field_validator('api_key_encryption_key', mode='after')
+    @classmethod
+    def validate_encryption_key(cls, v):
+        """Warn if encryption key is not set."""
+        if not v:
+            import warnings
+            warnings.warn(
+                "API_KEY_ENCRYPTION_KEY is not set. "
+                "API key encryption will fail at runtime. "
+                "Generate one: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+        return v
+
     # Rate Limiting
     rate_limit_requests: int = 100
     rate_limit_window: int = 3600  # 1 hour in seconds
@@ -70,6 +84,9 @@ class Settings(BaseSettings):
     # Security Headers
     enable_security_headers: bool = True
     csrf_protection: bool = True
+    
+    # Proxy Trust — set True only if behind a trusted reverse proxy
+    trust_proxy_headers: bool = False
     
     # CORS Settings
     allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080"
