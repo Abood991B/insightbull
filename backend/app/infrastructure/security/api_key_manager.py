@@ -309,7 +309,7 @@ class SecureAPIKeyLoader:
             return self._cache
         
         # Load keys from environment first (HackerNews and YFinance need no API key)
-        encrypted_keys = {
+        env_keys = {
             'FINNHUB_API_KEY': os.getenv('FINNHUB_API_KEY', ''),
             'NEWSAPI_KEY': os.getenv('NEWSAPI_KEY', ''),
             'NEWS_API_KEY': os.getenv('NEWS_API_KEY', ''),  # Alternative name
@@ -318,10 +318,25 @@ class SecureAPIKeyLoader:
         
         # Override with keys from persistent storage if they exist
         persistent_keys = self._load_encrypted_keys_from_file()
+        
+        # Merge: persistent storage overrides env vars
+        encrypted_keys = {**env_keys}
         encrypted_keys.update(persistent_keys)
         
-        # Decrypt all keys
-        decrypted_keys = self.key_manager.decrypt_all_keys(encrypted_keys)
+        # Decrypt all keys — gracefully skip any that fail
+        decrypted_keys = {}
+        for key_name, encrypted_key in encrypted_keys.items():
+            if not encrypted_key:
+                decrypted_keys[key_name] = ""
+                continue
+            try:
+                decrypted_keys[key_name] = self.key_manager.decrypt_api_key(encrypted_key)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to decrypt key {key_name}, falling back to env var: {e}"
+                )
+                # Fall back to the plain env var if persistent decryption fails
+                decrypted_keys[key_name] = env_keys.get(key_name, '')
         
         # Map keys to expected names (lowercase with underscores)
         mapped_keys = {
