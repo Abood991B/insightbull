@@ -15,15 +15,15 @@
 The **Stock Market Sentiment Dashboard** is an open-source, web-based platform that provides accessible, sentiment-driven financial analytics for retail investors, financial analysts, and researchers. The system aggregates unstructured textual data from financial news sources and social media discussions for technology stocks, performs sentiment analysis, and provides interactive visualizations with correlation analysis.
 
 ### Key Features
-- **Multi-source Data Collection**: Reddit (PRAW), FinHub, NewsAPI
-- **Dual-model Sentiment Analysis**: FinBERT for financial news, VADER for social media
+- **Multi-source Data Collection**: HackerNews, Finnhub, NewsAPI, GDELT, Yahoo Finance
+- **Hybrid Sentiment Analysis**: FinBERT for financial news + Google Gemini (Gemma 3 27B) for AI verification
 - **Interactive Visualizations**: Time-series plots, correlation analysis, sentiment trends
-- **Admin Panel**: TOTP-secured administrative interface
+- **Admin Panel**: OAuth2 + TOTP-secured administrative interface
 - **Real-time Updates**: Dashboard polling for new data
 
 ### Target Stocks
 - **Top 20 IXT Technology Stocks** including the **Magnificent Seven**:
-  - AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, INTC, CSCO, AMD, AVGO, ORCL, PLTR, IBM, CRM, INTU
+  - AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, INTC, CSCO, AMD, AVGO, ORCL, PLTR, IBM, CRM, INTU, QCOM, TXN, AMAT, MU
 
 ## Architecture Framework
 
@@ -44,16 +44,17 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 - **Processor**: Text preprocessing and data cleaning
 
 #### 3. Infrastructure Layer
-- **Collectors**: RedditCollector, FinHubCollector, NewsAPICollector
-- **APIKeyManager**: Secure credential management
+- **Collectors**: HackerNewsCollector, FinnhubCollector, NewsAPICollector, GDELTCollector, YFinanceCollector
+- **APIKeyManager**: Secure credential management (AES-256 encryption)
 - **RateLimitHandler**: API throttling and backoff strategies
-- **LogSystem**: Centralized logging (Singleton pattern)
+- **LogSystem**: Centralized structured logging (Singleton pattern)
 
 #### 4. Service Layer (Analytical Intelligence)
 - **SentimentEngine**: Sentiment analysis orchestration
 - **SentimentModel Interface**: Strategy pattern for model abstraction
-- **VADERModel**: Social media sentiment analysis
 - **FinBERTModel**: Financial news sentiment analysis
+- **DistilBERTModel**: Lightweight alternative sentiment model
+- **HybridSentimentAnalyzer**: FinBERT + Google Gemini AI verification
 
 #### 5. Data Access Layer
 - **StorageManager**: Data persistence operations
@@ -90,7 +91,7 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 |---|---|---|
 | SY-FR1 | Data Collection Pipeline | Multi-source data fetching with scheduling |
 | SY-FR2 | Preprocess Raw Data | Text cleaning and normalization |
-| SY-FR3 | Sentiment Analysis | VADER + FinBERT classification |
+| SY-FR3 | Sentiment Analysis | FinBERT + Gemini AI hybrid classification |
 | SY-FR4 | Store Sentiment Results | Structured data persistence |
 | SY-FR5 | Schedule Batch Fetching | Automated data collection |
 | SY-FR6 | Handle API Rate Limits | Throttling and retry mechanisms |
@@ -138,7 +139,7 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 #### UC-13: Sentiment Analysis Processing
 - **Actor**: System
 - **Description**: Apply appropriate sentiment models to preprocessed text
-- **Flow**: Load preprocessed data → Route to VADER/FinBERT → Generate sentiment scores
+- **Flow**: Load preprocessed data → Route to FinBERT → Optional Gemini AI verification → Generate sentiment scores
 
 ## Data Model
 
@@ -156,7 +157,7 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 ```
 - sentiment_id (INTEGER, Primary Key)
 - stock_symbol (VARCHAR(10), Foreign Key → Stock)
-- source (VARCHAR(20)) // Reddit, FinHub, NewsAPI
+- source (VARCHAR(20)) // hackernews, finnhub, newsapi, gdelt
 - timestamp (DATETIME, UTC normalized)
 - score (FLOAT) // Sentiment score
 - label (VARCHAR(10)) // Positive, Neutral, Negative
@@ -186,7 +187,7 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 ```
 - evaluation_id (INTEGER, Primary Key)
 - job_id (INTEGER, Foreign Key → JobLog)
-- model_name (VARCHAR(20)) // VADER, FinBERT
+- model_name (VARCHAR(20)) // FinBERT, DistilBERT
 - accuracy (FLOAT)
 - precision (FLOAT)
 - recall (FLOAT)
@@ -196,45 +197,45 @@ The system follows a **5-layer architecture** pattern chosen for its clear separ
 
 ## Technology Stack
 
-### Backend Technology Requirements
-
-Based on the project specification analysis, the backend should implement:
+### Backend Technology Stack
 
 #### Core Libraries & Frameworks
-- **Python 3.8+**: Primary language
-- **FastAPI/Flask**: RESTful API framework
-- **SQLAlchemy**: ORM for database operations
-- **Pandas**: Data manipulation and analysis
-- **NumPy**: Numerical computing
-- **scikit-learn**: Machine learning utilities
+- **Python 3.10+**: Primary language
+- **FastAPI 0.115.0**: RESTful API framework
+- **SQLAlchemy 2.0.36**: Async ORM for database operations
+- **Pydantic 2.8.2**: Data validation and settings management
+- **Pandas 2.2.3**: Data manipulation and analysis
+- **NumPy 2.1.1**: Numerical computing
 
 #### Data Collection
-- **PRAW**: Reddit API wrapper
-- **finnhub-python**: FinHub API client
-- **newsapi-python**: NewsAPI client
+- **finnhub-python 2.4.20**: Finnhub API client
+- **newsapi-python 0.2.7**: NewsAPI client
+- **yfinance**: Yahoo Finance stock price data
+- **httpx / aiohttp**: Async HTTP client for HackerNews and GDELT
 
 #### Sentiment Analysis
-- **transformers**: Hugging Face models (FinBERT)
-- **torch**: PyTorch backend
-- **nltk**: VADER sentiment analyzer
-- **BeautifulSoup4**: HTML parsing
+- **transformers 4.45.2**: Hugging Face models (FinBERT, DistilBERT)
+- **torch 2.4.1**: PyTorch backend
+- **google-generativeai**: Google Gemini API for AI verification
 
 #### Data Storage
-- **PostgreSQL/SQLite**: Primary database
-- **Redis**: Caching layer (optional)
-- **yfinance**: Stock price data
+- **aiosqlite 0.20.0**: Async SQLite (development)
+- **asyncpg 0.29.0 / psycopg2-binary**: PostgreSQL (production)
+- **Alembic 1.13.3**: Database migrations
 
 #### Infrastructure
-- **Celery**: Task scheduling and background jobs
-- **APScheduler**: Alternative job scheduler
+- **APScheduler 3.10.4**: Job scheduling
 - **python-dotenv**: Environment variable management
-- **cryptography**: API key encryption
+- **cryptography 43.0.3**: API key encryption (AES-256)
+- **PyJWT 2.9.0**: JSON Web Token authentication
+- **structlog 24.4.0**: Structured logging
 
 #### Development & Testing
-- **pytest**: Testing framework
-- **black**: Code formatting
-- **flake8**: Linting
-- **mypy**: Type checking
+- **pytest 8.3.3**: Testing framework
+- **pytest-asyncio**: Async test support
+- **black 24.10.0**: Code formatting
+- **isort 5.13.2**: Import sorting
+- **flake8 7.1.1**: Linting
 
 ## Current Frontend Analysis
 
@@ -252,7 +253,7 @@ Based on the project specification analysis, the backend should implement:
 ```
 src/features/dashboard/
 ├── pages/
-│   ├── Index.tsx          // Main dashboard with mock data
+│   ├── Index.tsx          // Main dashboard view
 │   ├── About.tsx          // About page
 │   └── NotFound.tsx       // 404 page
 ```
@@ -274,12 +275,14 @@ src/features/admin/
 │   ├── AdminProtectedRoute.tsx    // Route protection
 │   ├── OAuth2AdminAuth.tsx       // OAuth2 authentication
 │   ├── TOTPVerification.tsx      // TOTP 2FA
-│   └── QRCodeDisplay.tsx         // QR code generation
+│   ├── QRCodeDisplay.tsx         // QR code generation
+│   └── SystemHealthAlerts.tsx    // Health alert banners
 ├── pages/
 │   ├── AdminDashboard.tsx        // Admin overview
-│   ├── AdminLogin.tsx            // Simple login
+│   ├── AdminLogin.tsx            // OAuth2 login entry
 │   ├── ModelAccuracy.tsx         // Model performance
 │   ├── ApiConfig.tsx            // API configuration
+│   ├── SchedulerManagerV2.tsx   // Pipeline scheduler
 │   ├── WatchlistManager.tsx     // Stock management
 │   ├── StorageSettings.tsx      // Data storage config
 │   └── SystemLogs.tsx           // System monitoring
@@ -287,9 +290,9 @@ src/features/admin/
     └── auth.service.ts          // Authentication logic
 ```
 
-### Current Data Patterns
+### Data Patterns
 
-The frontend currently uses **mock data** with these patterns:
+The frontend consumes the FastAPI backend with these data structures:
 
 #### Stock Data Structure
 ```typescript
@@ -312,57 +315,98 @@ interface SentimentData {
 ```
 
 ### Authentication System
-- **Basic Admin Login**: username/password (demo: admin/admin123)
-- **OAuth2 Google Integration**: Implemented but not connected to backend
-- **TOTP 2FA**: Full implementation with QR codes and secret generation
-- **Session Management**: Local storage-based with activity monitoring
+- **OAuth2 Google Login**: Server-side Google OAuth2 via `/api/admin/auth/oauth/google`
+- **TOTP 2FA**: QR code setup via `/api/admin/auth/totp/setup`, verification via `/api/admin/auth/totp/verify`
+- **JWT Tokens**: Server-issued JWT access tokens stored in memory, refresh via activity monitoring
+- **Admin Allow-list**: Backend `ADMIN_EMAILS` env var controls who can authenticate
 
 ## Integration Points
 
-### API Endpoints Required
+### API Endpoints (Implemented)
 
-Based on frontend analysis, the backend needs to implement:
-
-#### User Endpoints
+#### Public Endpoints
 ```
-GET  /api/dashboard/summary           // Dashboard overview data
-GET  /api/stocks                      // All tracked stocks
-GET  /api/stocks/{symbol}             // Individual stock data
-GET  /api/stocks/{symbol}/sentiment   // Stock sentiment history
-GET  /api/stocks/{symbol}/correlation // Sentiment-price correlation
-GET  /api/analysis/correlation        // Cross-stock correlation
-GET  /api/analysis/trends/{symbol}    // Sentiment trends
+GET  /api/dashboard/summary                        // Dashboard overview data
+GET  /api/stocks/                                   // All tracked stocks
+GET  /api/stocks/{symbol}                           // Individual stock detail
+GET  /api/stocks/{symbol}/analysis                  // Stock analysis data
+GET  /api/analysis/stocks/{symbol}/sentiment        // Sentiment history
+GET  /api/analysis/stocks/{symbol}/correlation      // Sentiment-price correlation
 ```
 
-#### Admin Endpoints
+#### Admin Authentication Endpoints (prefix: `/api/admin`)
 ```
-POST /api/admin/auth/login           // Basic authentication
-POST /api/admin/auth/oauth/google    // OAuth2 authentication
-POST /api/admin/auth/totp/verify     // TOTP verification
-GET  /api/admin/auth/totp/setup      // TOTP setup
-POST /api/admin/auth/logout          // Session termination
-
-GET  /api/admin/models/accuracy      // Model performance metrics
-PUT  /api/admin/models/retrain       // Trigger model retraining
-
-GET  /api/admin/config/apis          // API configuration status
-PUT  /api/admin/config/apis          // Update API keys
-
-GET  /api/admin/watchlist            // Current stock watchlist
-PUT  /api/admin/watchlist            // Update watchlist
-
-GET  /api/admin/storage/status       // Storage system status
-PUT  /api/admin/storage/settings     // Update storage config
-
-GET  /api/admin/logs                 // System logs
-GET  /api/admin/system/status        // System health
+POST /api/admin/auth/oauth/google    // Google OAuth2 login
+POST /api/admin/auth/totp/verify     // TOTP 2FA verification
+GET  /api/admin/auth/totp/setup      // TOTP QR code setup
 ```
 
-#### Data Pipeline Endpoints
+#### Admin Management Endpoints (prefix: `/api/admin`, JWT required)
 ```
-POST /api/pipeline/trigger           // Manual pipeline execution
-GET  /api/pipeline/status            // Pipeline status
-GET  /api/pipeline/jobs              // Job history
+GET  /api/admin/health                              // Admin health check
+POST /api/admin/data-collection/manual              // Manual data collection
+POST /api/admin/data-collection/trigger             // Trigger collection
+
+GET  /api/admin/models/accuracy                     // Model accuracy metrics
+GET  /api/admin/models/benchmark                    // Benchmark results
+POST /api/admin/models/benchmark/run                // Run benchmark
+GET  /api/admin/models/sentiment-engine-metrics     // Sentiment engine metrics
+
+GET  /api/admin/config/apis                         // API key status
+PUT  /api/admin/config/apis                         // Update API keys
+GET  /api/admin/config/collectors                   // Collector configs
+PUT  /api/admin/config/collectors/{name}            // Update collector config
+GET  /api/admin/config/ai-services                  // AI service configs
+PUT  /api/admin/config/ai-services/{name}/toggle    // Toggle AI service
+PUT  /api/admin/config/ai-services/{name}/settings  // Update AI settings
+
+GET  /api/admin/watchlist                           // Current watchlist
+PUT  /api/admin/watchlist                           // Update watchlist
+GET  /api/admin/stocks/search                       // Search stocks
+
+GET  /api/admin/storage                             // Storage statistics
+POST /api/admin/storage/optimize                    // Optimize database
+POST /api/admin/storage/backup                      // Create backup
+
+GET  /api/admin/logs                                // System logs
+GET  /api/admin/logs/download                       // Download logs
+DEL  /api/admin/logs/clear                          // Clear old logs
+
+GET  /api/admin/system/status                       // System health
+GET  /api/admin/market/status                       // Market hours status
+GET  /api/admin/collectors/health                   // Collector health
+
+GET  /api/admin/scheduler/jobs                      // Scheduled jobs
+GET  /api/admin/scheduler/jobs/{job_id}             // Job detail
+PUT  /api/admin/scheduler/jobs/{job_id}             // Update job
+GET  /api/admin/scheduler/events                    // Scheduler events
+GET  /api/admin/scheduler/history                   // Job history
+POST /api/admin/scheduler/refresh                   // Refresh scheduler
+
+POST /api/admin/realtime-price-service/start        // Start price service
+GET  /api/admin/realtime-price-service/status       // Price service status
+POST /api/admin/realtime-price-service/stop         // Stop price service
+PUT  /api/admin/realtime-price-service/config       // Update config
+POST /api/admin/realtime-price-service/test-fetch   // Test price fetch
+POST /api/admin/realtime-price-service/update-market-caps // Update caps
+GET  /api/admin/realtime-price-service/debug        // Debug info
+
+GET  /api/admin/database/schema                     // Database schema
+GET  /api/admin/database/tables/{name}/data         // Table data
+GET  /api/admin/database/tables/{name}/export       // Export table
+GET  /api/admin/database/stats                      // Database stats
+```
+
+#### Data Pipeline Endpoints (prefix: `/api/admin/pipeline`, JWT required)
+```
+POST /api/admin/pipeline/configure   // Configure pipeline
+POST /api/admin/pipeline/run         // Run pipeline
+GET  /api/admin/pipeline/status      // Pipeline status
+GET  /api/admin/pipeline/result      // Latest result
+POST /api/admin/pipeline/cancel      // Cancel running pipeline
+GET  /api/admin/pipeline/health      // Pipeline health
+GET  /api/admin/pipeline/collectors  // Collector status
+GET  /api/admin/pipeline/rate-limits // Rate limit status
 ```
 
 ### Data Format Specifications
@@ -401,11 +445,11 @@ GET  /api/pipeline/jobs              // Job history
 ### Frontend-Backend Communication
 
 #### API Client Configuration
-The frontend expects API calls to:
-- **Base URL**: `http://localhost:3000/api` (configurable via `VITE_API_BASE_URL`)
+The frontend sends API calls to:
+- **Base URL**: `http://localhost:8000/api` (configurable via `VITE_API_BASE_URL`)
 - **Timeout**: 30 seconds
 - **Headers**: `Content-Type: application/json`
-- **Authentication**: Bearer token in Authorization header
+- **Authentication**: Bearer JWT token in `Authorization` header
 
 #### Error Handling
 Frontend expects standardized error responses:
@@ -426,10 +470,10 @@ The frontend implements polling for real-time updates:
 ### Security Integration Points
 
 #### Authentication Flow
-1. **Basic Login**: POST credentials → receive JWT token
-2. **OAuth2 Flow**: Redirect to Google → callback with code → exchange for tokens
-3. **TOTP Verification**: Validate TOTP code → receive full access token
-4. **Session Management**: Token refresh and activity monitoring
+1. **OAuth2 Login**: Frontend sends Google `id_token` → Backend verifies with Google → checks `ADMIN_EMAILS` allow-list → returns JWT + TOTP requirement flag
+2. **TOTP Setup** (first login): Backend generates TOTP secret → returns QR code URI → admin scans with authenticator app
+3. **TOTP Verification**: Admin submits TOTP code → backend verifies → returns full-access JWT
+4. **Session Management**: JWT expiry + frontend activity monitoring with configurable timeout
 
 #### API Security
 - **Rate Limiting**: Implement per-IP and per-user limits
@@ -437,4 +481,4 @@ The frontend implements polling for real-time updates:
 - **Input Validation**: Sanitize all inputs
 - **SQL Injection Prevention**: Use parameterized queries
 
-This reference document provides the complete foundation for implementing the backend system that will integrate seamlessly with the existing frontend while fulfilling all requirements specified in the project specification.
+This reference document describes the fully implemented backend system and its integration with the React frontend, aligned with the project specification requirements.

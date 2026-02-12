@@ -5,7 +5,7 @@
 **Your backend database is currently EMPTY** - the data collection pipeline has not been run yet. This means:
 - ❌ No sentiment data in database
 - ❌ No stock price history
-- ❌ No Reddit posts or news articles
+- ❌ No news articles or social posts collected
 - ❌ No correlation calculations possible
 - ✅ Backend API is running and functional
 - ✅ Database schema is ready

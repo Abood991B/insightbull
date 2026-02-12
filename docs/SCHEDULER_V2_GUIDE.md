@@ -17,8 +17,8 @@ The new Scheduler Manager V2 replaces the old cron-based scheduler with an intel
 **Problem Solved:** Separate "Data Collection" and "Sentiment Analysis" jobs don't make sense
 
 **New Approach:** ALL schedules run the FULL pipeline
-- Data Collection (3 collectors: NewsAPI, FinHub, Reddit)
-- → Sentiment Analysis (FinBERT + VADER)
+- Data Collection (5 collectors: NewsAPI, Finnhub, HackerNews, GDELT, Yahoo Finance)
+- → Sentiment Analysis (FinBERT + DistilBERT + Gemini AI verification)
 - → Storage (Database with deduplication)
 
 **Why Atomic?**
@@ -64,8 +64,8 @@ Four market-aware presets replace arbitrary scheduling:
 **Problem Solved:** Collectors failing silently without user visibility
 
 **New Feature:** "Data Collector Health" dashboard
-- Real-time status of all 3 collectors
-- Shows success: NewsAPI (45 articles), FinHub (32), Reddit (18 posts)
+- Real-time status of all 5 collectors
+- Shows success: NewsAPI (articles), Finnhub (news), HackerNews (posts), GDELT (articles), YFinance (prices)
 - Clear warning when collectors are down
 - Graceful degradation (pipeline continues with remaining collectors)
 
@@ -111,10 +111,10 @@ Four market-aware presets replace arbitrary scheduling:
 
 ## Migration from Old to New
 
-### Step 1: Test V2 Alongside Old Version ✅ DONE
-- New component: `SchedulerManagerV2.tsx`
-- Old component: `SchedulerManager.tsx` (kept for reference)
-- Route updated: `/admin/scheduler` now uses V2
+### Step 1: V2 Now Active ✅ DONE
+- Active component: `SchedulerManagerV2.tsx`
+- Route: `/admin/scheduler` uses V2
+- Old `SchedulerManager.tsx` has been removed
 
 ### Step 2: Verify Against Project Requirements ✅
 **Alignment Check:**
@@ -123,11 +123,8 @@ Four market-aware presets replace arbitrary scheduling:
 - ✅ Section 4.7 (Data Flow: Sequential pipeline) - Atomic execution
 - ✅ Section 7.3 (Testing: Rate limit handling) - Monitored in UI
 
-### Step 3: Remove Old Implementation (Future)
-Once V2 is tested and approved:
-1. Delete `src/features/admin/pages/SchedulerManager.tsx`
-2. Update imports to remove old component
-3. Update documentation references
+### Step 3: Migration Complete ✅
+The old `SchedulerManager.tsx` has been removed. All scheduler functionality uses V2.
 
 ## User Guide
 
@@ -200,18 +197,20 @@ Old cron → New preset mapping:
 - Reduced API rate limit stress (was 15 min, now 30 min during market)
 
 ### Rate Limit Considerations
-**API Limits (from project specification):**
-- NewsAPI: 100 requests/day
-- FinHub: 60 requests/minute
-- Reddit: 60 requests/minute
+**API Limits:**
+- NewsAPI: 100 requests/day (free tier)
+- Finnhub: 60 requests/minute
+- HackerNews: Public API (no key required)
+- GDELT: Public API (no key required)
+- Yahoo Finance: Rate-limited by library
 
 **V2 Frequency Impact:**
-- Pre-Market: 1 run/day = 4 requests (1 per collector)
-- Active Trading: ~14 runs/day (30 min intervals × 6.5 hrs) = 56 requests
-- After-Hours: 2 runs/day = 8 requests
-- Weekend: 1 run/week = 4 requests
+- Pre-Market: 1 run/day = 5 requests (1 per collector)
+- Active Trading: ~14 runs/day (30 min intervals × 6.5 hrs) = 70 requests
+- After-Hours: 2 runs/day = 10 requests
+- Weekend: 1 run/week = 5 requests
 
-**Total:** ~68 requests/day per collector (well within limits)
+**Total:** ~85 requests/day per collector (well within limits)
 
 ## Future Enhancements
 
@@ -239,15 +238,12 @@ Old cron → New preset mapping:
 ## Files Modified
 
 ### New Files
-- `src/features/admin/pages/SchedulerManagerV2.tsx` (new implementation)
+- `src/features/admin/pages/SchedulerManagerV2.tsx` (scheduler implementation)
 - `docs/SCHEDULER_V2_GUIDE.md` (this file)
 
 ### Updated Files
 - `src/App.tsx` (routing to V2)
 - `src/features/admin/index.ts` (export V2)
-
-### Preserved Files (for reference)
-- `src/features/admin/pages/SchedulerManager.tsx` (old implementation)
 
 ## Alignment with Project Requirements
 

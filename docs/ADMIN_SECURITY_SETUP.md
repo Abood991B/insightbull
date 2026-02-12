@@ -12,31 +12,34 @@ The admin panel implements a three-layer security model:
 3. **TOTP Verification** - Time-based One-Time Password using authenticator apps
 
 ### Session Management
-- 30-minute session timeout with activity-based renewal
+- Configurable session timeout (`VITE_SESSION_TIMEOUT`) with activity-based renewal
 - Automatic logout on inactivity
-- Secure session storage with encryption
+- Server-issued JWT tokens (no secrets in browser storage)
 - Real-time session monitoring
 
 ## Setup Instructions
 
 ### 1. Install Dependencies
-Run the PowerShell script to install all required packages:
-```powershell
-.\install-auth-dependencies.ps1
+
+**Frontend:**
+```bash
+npm install
 ```
 
-Or manually install:
+**Backend:**
 ```bash
-npm install @react-oauth/google otplib qrcode js-cookie crypto-js jsonwebtoken axios
-npm install --save-dev @types/qrcode @types/js-cookie @types/crypto-js @types/jsonwebtoken
+cd backend
+pip install -r requirements.txt
 ```
+
+> Cryptographic operations (JWT signing, TOTP secret generation, API key encryption) are handled entirely on the backend. The frontend only needs `@react-oauth/google`, `qrcode`, and `js-cookie`.
 
 ### 2. Google OAuth2 Configuration
 
 #### Create Google Cloud Project
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select existing
-3. Enable Google+ API
+3. Enable the Google Identity Services API
 
 #### Configure OAuth2 Credentials
 1. Navigate to **APIs & Services > Credentials**
@@ -45,43 +48,45 @@ npm install --save-dev @types/qrcode @types/js-cookie @types/crypto-js @types/js
 4. Configure:
    - **Name**: Stock Market Dashboard Admin
    - **Authorized JavaScript origins**:
-     - Development: `http://localhost:5173`
+     - Development: `http://localhost:8080`
      - Production: `https://yourdomain.com`
    - **Authorized redirect URIs**:
-     - Development: `http://localhost:5173/admin/auth/callback`
-     - Production: `https://yourdomain.com/admin/auth/callback`
+     - Development: `http://localhost:8080/admin`
+     - Production: `https://yourdomain.com/admin`
 5. Save the Client ID and Client Secret
 
 ### 3. Environment Configuration
 
 #### Development Setup
-1. Copy `.env.example` to `.env`
-2. Configure the following variables:
 
+**Frontend** (`.env` in project root — public values only):
 ```env
-# Google OAuth2
 VITE_GOOGLE_CLIENT_ID=your_client_id_here
-VITE_GOOGLE_CLIENT_SECRET=your_client_secret_here
-VITE_OAUTH_REDIRECT_URI=http://localhost:5173/admin/auth/callback
-
-# Admin Emails (comma-separated)
-VITE_ADMIN_EMAILS=admin@example.com,admin2@example.com
-
-# Session Security
-VITE_SESSION_SECRET=generate_32_char_random_string
+VITE_OAUTH_REDIRECT_URI=http://localhost:8080/admin
+VITE_API_BASE_URL=http://localhost:8000
 VITE_SESSION_TIMEOUT=1800000
-
-# TOTP Configuration
-VITE_TOTP_SECRET_KEY=generate_another_32_char_random_string
+VITE_TOTP_ISSUER=StockDashboard
 ```
 
+**Backend** (`backend/.env` — all secrets):
+```env
+GOOGLE_CLIENT_ID=your_client_id_here
+GOOGLE_CLIENT_SECRET=your_client_secret_here
+ADMIN_EMAILS=admin@example.com,admin2@example.com
+SECRET_KEY=generate_64_char_random_string
+JWT_SECRET_KEY=generate_64_char_random_string
+API_KEY_ENCRYPTION_KEY=generate_32_byte_hex_string
+API_ENCRYPTION_SALT=generate_16_byte_hex_string
+```
+
+> **Security policy:** Secrets (`GOOGLE_CLIENT_SECRET`, `ADMIN_EMAILS`, `JWT_SECRET_KEY`, encryption keys) **never** appear in the frontend `.env`. They exist only in `backend/.env`.
+
 #### Production Setup
-1. Use `.env.production` as template
-2. Update all URLs to use HTTPS
-3. Generate cryptographically secure secrets:
+1. Set all URLs to use HTTPS
+2. Generate cryptographically secure secrets for backend:
 
 ```bash
-# Generate secure random strings (Linux/Mac)
+# Generate secure random strings
 openssl rand -hex 32
 
 # Or use Node.js
@@ -90,14 +95,14 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ### 4. Admin Email Management
 
-Add authorized admin emails to `VITE_ADMIN_EMAILS`:
+Add authorized admin emails to the **backend** `ADMIN_EMAILS` env var:
 - Use comma-separated list
 - Emails are case-insensitive
-- Only these emails can access admin panel
+- Only these emails can authenticate through OAuth2
 
-Example:
+Example (in `backend/.env`):
 ```env
-VITE_ADMIN_EMAILS=john.doe@company.com,jane.smith@company.com,admin@company.com
+ADMIN_EMAILS=john.doe@company.com,jane.smith@company.com,admin@company.com
 ```
 
 ### 5. TOTP Setup for Admins
@@ -117,7 +122,7 @@ VITE_ADMIN_EMAILS=john.doe@company.com,jane.smith@company.com,admin@company.com
 1. Navigate to `/admin`
 2. Sign in with Google
 3. Enter current TOTP code
-4. Access granted for 30 minutes
+4. Access granted (JWT token issued with configured expiry)
 
 ## Security Features
 
@@ -127,8 +132,8 @@ VITE_ADMIN_EMAILS=john.doe@company.com,jane.smith@company.com,admin@company.com
 - IP-based tracking (when deployed with backend)
 
 ### Session Security
-- Encrypted session storage
-- Automatic timeout after 30 minutes
+- Server-issued JWT tokens with expiry
+- Configurable frontend timeout (`VITE_SESSION_TIMEOUT`)
 - Activity-based session renewal
 - Secure logout with complete cleanup
 
@@ -187,9 +192,9 @@ VITE_ADMIN_EMAILS=john.doe@company.com,jane.smith@company.com,admin@company.com
 - Verify activity tracking is working
 
 #### Unauthorized Access Error
-- Confirm email is in `VITE_ADMIN_EMAILS`
+- Confirm email is in backend `ADMIN_EMAILS` env var
 - Check for typos in email address
-- Verify environment variables are loaded
+- Verify backend environment variables are loaded correctly
 
 ## Security Best Practices
 

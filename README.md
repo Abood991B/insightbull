@@ -295,10 +295,13 @@ insight-stock-dashboard/
 │
 ├── docs/                             # Documentation
 │   ├── BACKEND_REFERENCE.md          # Backend specification
-│   ├── FRONTEND_INTEGRATION_PLAN.md  # Integration roadmap
 │   ├── SECURITY_IMPLEMENTATION.md    # OAuth2 + TOTP setup
+│   ├── ADMIN_SECURITY_SETUP.md       # Admin panel setup guide
+│   ├── SCHEDULER_V2_GUIDE.md         # Smart scheduler documentation
+│   ├── DATABASE_MIGRATIONS.md        # Alembic migration guide
+│   ├── PROJECT_STRUCTURE.md          # Frontend architecture
 │   ├── EMPTY_STATE_GUIDE.md          # Empty database handling
-│   └── *.md                          # Additional docs
+│   └── SETUP.md                      # Installation instructions
 │
 ├── package.json                      # Frontend dependencies
 ├── vite.config.ts                    # Vite configuration
@@ -319,23 +322,26 @@ http://localhost:8000/api
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/dashboard/summary` | GET | Market overview with top stocks |
-| `/dashboard/health` | GET | System health check |
-| `/stocks/` | GET | List all tracked stocks |
-| `/stocks/{symbol}` | GET | Stock details with price history |
-| `/analysis/stocks/{symbol}/sentiment` | GET | Sentiment data for stock |
-| `/analysis/stocks/{symbol}/correlation` | GET | Price-sentiment correlation |
+| `/api/dashboard/summary` | GET | Market overview with top stocks |
+| `/api/stocks/` | GET | List all tracked stocks |
+| `/api/stocks/{symbol}` | GET | Stock details with price history |
+| `/api/stocks/{symbol}/analysis` | GET | Comprehensive stock analysis |
+| `/api/analysis/stocks/{symbol}/sentiment` | GET | Sentiment history for stock |
+| `/api/analysis/stocks/{symbol}/correlation` | GET | Price-sentiment correlation |
 
 ### Protected Endpoints (OAuth2 + TOTP)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/admin/system-status` | GET | Comprehensive system metrics |
-| `/admin/pipeline/trigger` | POST | Manually trigger pipeline |
-| `/admin/scheduler/status` | GET | Scheduler state and history |
-| `/admin/api-keys` | GET/POST | Manage encrypted API keys |
-| `/admin/watchlist` | GET/POST/DELETE | Manage stock watchlist |
-| `/admin/logs` | GET | System logs with filtering |
+| `/api/admin/system/status` | GET | Comprehensive system metrics |
+| `/api/admin/data-collection/trigger` | POST | Manually trigger pipeline |
+| `/api/admin/scheduler/jobs` | GET | Scheduler state and job listing |
+| `/api/admin/config/apis` | GET/PUT | Manage encrypted API keys |
+| `/api/admin/watchlist` | GET/PUT | Manage stock watchlist |
+| `/api/admin/logs` | GET | System logs with filtering |
+| `/api/admin/collectors/health` | GET | Collector health status |
+| `/api/admin/database/schema` | GET | Database schema explorer |
+| `/api/admin/market/status` | GET | Real-time market status |
 
 ### Interactive Documentation
 - **Swagger UI**: `http://localhost:8000/api/docs`
@@ -354,40 +360,44 @@ http://localhost:8000/api
 ENVIRONMENT=development
 DATABASE_URL=sqlite+aiosqlite:///./data/insight_stock.db
 
-# AI/ML
+# AI/ML (optional — for AI verification of sentiment)
 GEMINI_API_KEY=your_gemini_api_key
-VERIFICATION_MODE=low_confidence_and_neutral
 
 # Data Sources
 FINNHUB_API_KEY=your_finnhub_key
 NEWS_API_KEY=your_newsapi_key
 
-# Security
-SECRET_KEY=your_32_char_secret
+# Google OAuth2 (required for admin panel)
+GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# Admin Access
 ADMIN_EMAILS=admin@example.com
 
-# Scheduler
-SCHEDULER_CRON=0,45 14-20 * * 0-4
-SCHEDULER_TIMEZONE=America/New_York
+# Security (generate unique values!)
+SECRET_KEY=your_32_char_secret
+JWT_SECRET_KEY=your_jwt_secret
+API_KEY_ENCRYPTION_KEY=your_encryption_key
+API_ENCRYPTION_SALT=your_encryption_salt
 ```
 
 ### Frontend Environment Variables
 
 ```bash
 # .env in project root
+# SECURITY: Only NON-SECRET values belong here.
+# All secrets are configured in backend/.env ONLY.
 
-# API Connection
-VITE_API_URL=http://localhost:8000
-
-# Google OAuth2
+# Google OAuth2 (public client ID — safe for frontend)
 VITE_GOOGLE_CLIENT_ID=your_google_client_id
 VITE_OAUTH_REDIRECT_URI=http://localhost:8080/admin/auth/callback
 
-# Admin Access
-VITE_ADMIN_EMAILS=admin@example.com
+# Session Configuration
+VITE_SESSION_TIMEOUT=1800000
+VITE_TOTP_ISSUER=Stock Market Sentiment Dashboard
 
-# Security
-VITE_SESSION_SECRET=your_session_secret
+# API Connection
+VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
 ---
@@ -488,19 +498,6 @@ alembic downgrade -1
 - [ ] Setup database backups
 - [ ] Configure monitoring
 
-### Docker Deployment
-
-```bash
-# Build images
-docker-compose build
-
-# Start services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-```
-
 ### Production URLs
 
 ```
@@ -553,9 +550,9 @@ API Docs: https://api.your-domain.com/api/docs
 
 ## Contributing
 
-This project was developed as a Final Year Project (FYP). Contributions are welcome for educational purposes.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
-### Development Workflow
+### Quick Start
 1. Fork the repository
 2. Create feature branch: `git checkout -b feature/your-feature`
 3. Follow architecture patterns (5-layer backend, feature-based frontend)
@@ -572,11 +569,7 @@ This project was developed as a Final Year Project (FYP). Contributions are welc
 
 ## License
 
-This project is developed as a Final Year Project (FYP) for educational purposes.
-
-**Academic Use**: Free for educational and research purposes  
-**Commercial Use**: Requires permission from original authors  
-**Attribution**: Please cite this project in academic work
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
@@ -599,4 +592,4 @@ This project is developed as a Final Year Project (FYP) for educational purposes
 ---
 
 **Version**: 1.0.0  
-**Last Updated**: February 5, 2026
+**Last Updated**: February 12, 2026

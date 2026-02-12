@@ -129,7 +129,8 @@ alembic downgrade -1
 backend/
 ├── app/
 │   ├── presentation/           # API routes, schemas, middleware
-│   │   ├── controllers/            # FastAPI routers
+│   │   ├── routes/                # FastAPI route handlers
+│   │   ├── controllers/           # Business logic controllers (OAuth2)
 │   │   ├── schemas/           # Pydantic models
 │   │   ├── middleware/        # Logging, security middleware
 │   │   └── dependencies/      # Auth dependencies
@@ -161,6 +162,7 @@ backend/
 │   │   └── database/          # Connection, migrations, retry
 │   │
 │   └── utils/                 # Utilities
+│       ├── sql.py
 │       └── timezone.py
 │
 ├── alembic/                   # Database migrations
@@ -226,7 +228,7 @@ python scripts/verify_tpm_fix.py
 | Database migration failed | `alembic downgrade base && alembic upgrade head` |
 | 429 errors from Gemini | Fixed in v1.0.0 - ensure TPM limits are configured |
 | Low sentiment confidence | Set `VERIFICATION_MODE=all` in .env |
-| Pipeline not running | Check scheduler: `curl http://localhost:8000/api/v1/admin/scheduler/status` |
+| Pipeline not running | Check scheduler: `curl http://localhost:8000/api/admin/scheduler/jobs` |
 
 ### Enable Debug Logging
 
@@ -248,8 +250,8 @@ See full API documentation at `http://localhost:8000/api/docs` when running.
 | `GET /api/dashboard/summary` | Market overview |
 | `GET /api/stocks/` | All tracked stocks |
 | `GET /api/analysis/stocks/{symbol}/sentiment` | Stock sentiment |
-| `POST /api/admin/pipeline/trigger` | Trigger pipeline (auth required) |
-| `GET /api/admin/scheduler/status` | Scheduler status (auth required) |
+| `POST /api/admin/pipeline/run` | Trigger pipeline (auth required) |
+| `GET /api/admin/scheduler/jobs` | Scheduler jobs (auth required) |
 
 ---
 
