@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "Stock market sentiment analysis and insights dashboard",
+  "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "vite",

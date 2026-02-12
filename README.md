@@ -4,7 +4,7 @@
 [![React](https://img.shields.io/badge/React-18.3.1-61DAFB.svg?style=flat&logo=react&logoColor=white)](https://reactjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.3-3178C6.svg?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 > **AI-Powered Stock Market Sentiment Analysis Platform for Retail Investors**
 
@@ -580,6 +580,20 @@ This project is licensed under the MIT License — see [LICENSE](LICENSE) for de
 - **shadcn**: Beautiful UI components
 - **FastAPI**: Modern Python web framework
 - **FYP Advisors**: Guidance and support
+
+---
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0** — see the [LICENSE](LICENSE) file for details.
+
+Copyright (C) 2025-2026 Abdulrahman Baidaq
+
+This means:
+- You **can** use, modify, and distribute this software
+- You **must** keep it open source under the same license (GPL v3)
+- You **must** include the original copyright notice
+- Any derivative work **must** also be licensed under GPL v3
 
 ---
 
