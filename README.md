@@ -583,13 +583,5 @@ This project is licensed under the MIT License — see [LICENSE](LICENSE) for de
 
 ---
 
-## Contact
-
-- **Project**: Stock Market Sentiment Dashboard
-- **Code**: FYP01-DS-T2510-0038
-- **Issues**: GitHub Issues for bug reports
-
----
-
 **Version**: 1.0.0  
 **Last Updated**: February 12, 2026
