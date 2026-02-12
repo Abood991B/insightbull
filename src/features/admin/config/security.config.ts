@@ -10,7 +10,7 @@ export const securityConfig = {
   oauth2: {
     clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
     // clientSecret is intentionally omitted - token exchange happens server-side only
-    redirectUri: import.meta.env.VITE_OAUTH_REDIRECT_URI || 'http://localhost:5173/admin/auth/callback',
+    redirectUri: import.meta.env.VITE_OAUTH_REDIRECT_URI || 'http://localhost:8080/admin/auth/callback',
     scope: 'openid email profile',
     discoveryDocs: ['https://accounts.google.com/.well-known/openid-configuration'],
   },

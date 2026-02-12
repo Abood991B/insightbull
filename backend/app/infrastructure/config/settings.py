@@ -61,17 +61,17 @@ class Settings(BaseSettings):
         return v or []
     
     # API Key Encryption (REQUIRED — no auto-generation)
-    api_key_encryption_key: str = ""
+    api_encryption_key: str = ""
     api_encryption_salt: str = ""
 
-    @field_validator('api_key_encryption_key', mode='after')
+    @field_validator('api_encryption_key', mode='after')
     @classmethod
     def validate_encryption_key(cls, v):
         """Warn if encryption key is not set."""
         if not v:
             import warnings
             warnings.warn(
-                "API_KEY_ENCRYPTION_KEY is not set. "
+                "API_ENCRYPTION_KEY is not set. "
                 "API key encryption will fail at runtime. "
                 "Generate one: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
             )

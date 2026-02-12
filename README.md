@@ -377,7 +377,7 @@ ADMIN_EMAILS=admin@example.com
 # Security (generate unique values!)
 SECRET_KEY=your_32_char_secret
 JWT_SECRET_KEY=your_jwt_secret
-API_KEY_ENCRYPTION_KEY=your_encryption_key
+API_ENCRYPTION_KEY=your_encryption_key
 API_ENCRYPTION_SALT=your_encryption_salt
 ```
 

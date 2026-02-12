@@ -78,7 +78,7 @@ GOOGLE_CLIENT_SECRET=your_client_secret
 ADMIN_EMAILS=admin@example.com
 SECRET_KEY=<random-string>
 JWT_SECRET_KEY=<random-string>
-API_KEY_ENCRYPTION_KEY=<32-byte-hex>
+API_ENCRYPTION_KEY=<32-byte-hex>
 API_ENCRYPTION_SALT=<16-byte-hex>
 ```
 

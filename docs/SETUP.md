@@ -75,7 +75,7 @@ ADMIN_EMAILS=admin@example.com
 # Security (generate unique values!)
 SECRET_KEY=<generate: python -c "import secrets; print(secrets.token_urlsafe(32))">
 JWT_SECRET_KEY=<generate: python -c "import secrets; print(secrets.token_urlsafe(32))">
-API_KEY_ENCRYPTION_KEY=<generate: python -c "import secrets; print(secrets.token_urlsafe(32))">
+API_ENCRYPTION_KEY=<generate: python -c "import secrets; print(secrets.token_urlsafe(32))">
 API_ENCRYPTION_SALT=<generate: python -c "import secrets; print(secrets.token_hex(16))">
 ```
 
