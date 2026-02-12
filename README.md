@@ -567,12 +567,6 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for det
 
 ---
 
-## License
-
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
-
----
-
 ## Acknowledgments
 
 - **Hugging Face**: ProsusAI/FinBERT model

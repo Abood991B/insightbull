@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.1] - 2026-02-12
+
+### Changed
+- Switched license from MIT to GNU General Public License v3.0 (GPL-3.0)
+- Added GPL v3 copyright headers to key source files (App.tsx, main.tsx, backend/main.py)
+- Updated README.md license badge and added License section
+- Updated package.json license field to GPL-3.0-only
+- Removed TODO comments from production code
+- Wrapped debug console.log calls with development-only guards
+- Removed database file from git history for security
+
 ## [1.0.0] - 2025-12-01
 
 ### Added
