@@ -50,7 +50,9 @@ const TOTPVerification = ({ email, isNewSetup, onSuccess, onCancel }: TOTPVerifi
         setCode('');
       }
     } catch (err) {
-      console.error('TOTP verification error:', err);
+      if (import.meta.env.DEV) {
+        console.error('TOTP verification error:', err);
+      }
       setError('Verification failed. Please try again.');
     } finally {
       setLoading(false);

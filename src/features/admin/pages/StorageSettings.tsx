@@ -83,7 +83,9 @@ const StorageSettings = () => {
         });
       }
     } catch (error) {
-      console.error('Failed to load storage settings:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load storage settings:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to load storage settings. Please try again.",
@@ -116,7 +118,9 @@ const StorageSettings = () => {
       await loadStorageSettings();
       
     } catch (error) {
-      console.error(`Failed to perform ${operation} operation:`, error);
+      if (import.meta.env.DEV) {
+        console.error(`Failed to perform ${operation} operation:`, error);
+      }
       toast({
         title: "Operation Failed",
         description: `Failed to ${operation}. Please try again.`,
@@ -135,7 +139,9 @@ const StorageSettings = () => {
       setSelectedTableData(data);
       setShowTableDialog(true);
     } catch (error) {
-      console.error('Failed to load table data:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load table data:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to load table data. Please try again.",
@@ -156,7 +162,9 @@ const StorageSettings = () => {
         description: `${tableName} has been exported to CSV format.`,
       });
     } catch (error) {
-      console.error('Failed to export table:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to export table:', error);
+      }
       toast({
         title: "Export Failed",
         description: "Failed to export table to CSV. Please try again.",

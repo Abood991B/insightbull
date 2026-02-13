@@ -291,7 +291,9 @@ const SchedulerManagerV2 = () => {
       }
     } catch (error) {
       // Silently ignore polling errors
-      console.debug('Job event polling error:', error);
+      if (import.meta.env.DEV) {
+        console.debug('Job event polling error:', error);
+      }
     }
   };
 
@@ -324,7 +326,9 @@ const SchedulerManagerV2 = () => {
         });
       }
     } catch (error) {
-      console.error('Failed to load scheduler data:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load scheduler data:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to load scheduler data. Please try again.",
@@ -341,7 +345,9 @@ const SchedulerManagerV2 = () => {
       const history = await adminAPI.getSchedulerHistory(7);
       setRunHistory(history);
     } catch (error) {
-      console.error('Failed to load run history:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load run history:', error);
+      }
     }
   };
 
@@ -409,7 +415,9 @@ const SchedulerManagerV2 = () => {
         nextClose: nextCloseDisplay
       });
     } catch (error) {
-      console.error('Failed to update market status:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to update market status:', error);
+      }
       // Keep existing status on error
     }
   };
@@ -495,7 +503,9 @@ const SchedulerManagerV2 = () => {
       
       setCollectorHealth(collectors);
     } catch (error) {
-      console.error('Failed to fetch collector health:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to fetch collector health:', error);
+      }
       // Fallback to empty array on error
       setCollectorHealth([]);
     }
@@ -519,7 +529,9 @@ const SchedulerManagerV2 = () => {
       await loadSchedulerData();
       
     } catch (error) {
-      console.error(`Failed to ${action} job:`, error);
+      if (import.meta.env.DEV) {
+        console.error(`Failed to ${action} job:`, error);
+      }
       toast({
         title: "Error",
         description: `Failed to ${action} job. Please try again.`,
@@ -548,7 +560,9 @@ const SchedulerManagerV2 = () => {
       await loadSchedulerData();
       
     } catch (error) {
-      console.error('Failed to run job:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to run job:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to trigger pipeline execution.",

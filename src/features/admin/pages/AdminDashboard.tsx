@@ -126,7 +126,9 @@ const AdminDashboard: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Failed to load dashboard data:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load dashboard data:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to load dashboard data. Please try again.",
@@ -188,7 +190,9 @@ const AdminDashboard: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Failed to check pipeline status:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to check pipeline status:', error);
+      }
     }
   }, [collectingData, toast]);
 
@@ -231,7 +235,9 @@ const AdminDashboard: React.FC = () => {
       
       setCollectorHealth(collectors);
     } catch (error) {
-      console.error('Failed to fetch collector health:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to fetch collector health:', error);
+      }
       // Fallback to empty array on error
       setCollectorHealth([]);
     }
@@ -265,7 +271,9 @@ const AdminDashboard: React.FC = () => {
       data_sources: selectedDataSources 
     })
       .catch(error => {
-        console.error('Pipeline failed:', error);
+        if (import.meta.env.DEV) {
+          console.error('Pipeline failed:', error);
+        }
         stopPipelinePolling();
         setCollectingData(false);
         setPipelineProgress(null);
@@ -286,7 +294,9 @@ const AdminDashboard: React.FC = () => {
         description: "Pipeline execution has been cancelled.",
       });
     } catch (error) {
-      console.error('Failed to cancel pipeline:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to cancel pipeline:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to cancel pipeline.",
@@ -320,12 +330,16 @@ const AdminDashboard: React.FC = () => {
           const response = await adminAPI.getRealTimePriceServiceStatus();
           setPriceServiceStatus(response);
         } catch (error) {
-          console.error('Failed to refresh price service status:', error);
+          if (import.meta.env.DEV) {
+            console.error('Failed to refresh price service status:', error);
+          }
         }
       }, 1000);
 
     } catch (error) {
-      console.error(`Failed to ${action} price service:`, error);
+      if (import.meta.env.DEV) {
+        console.error(`Failed to ${action} price service:`, error);
+      }
       toast({
         title: "Error",
         description: `Failed to ${action} real-time price service. Please try again.`,
@@ -356,7 +370,9 @@ const AdminDashboard: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Failed to test price fetch:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to test price fetch:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to test price fetch. Please try again.",

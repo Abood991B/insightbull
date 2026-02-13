@@ -11,13 +11,15 @@ print("=" * 70)
 print("DATABASE HEALTH CHECK")
 print("=" * 70)
 
-# Check tables
+# Check tables — validate names from sqlite_master (trusted source)
 c.execute("SELECT name FROM sqlite_master WHERE type='table'")
 tables = [t[0] for t in c.fetchall()]
 print(f"\n1. TABLES IN DATABASE: {len(tables)}")
 for t in tables:
     try:
-        cnt = c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+        # Table names come from sqlite_master, not user input.
+        # Use bracket-quoting for safety.
+        cnt = c.execute(f"SELECT COUNT(*) FROM [{t}]").fetchone()[0]
         print(f"   {t}: {cnt} rows")
     except Exception as e:
         print(f"   {t}: ERROR - {e}")

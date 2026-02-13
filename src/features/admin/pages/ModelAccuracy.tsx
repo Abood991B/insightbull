@@ -53,7 +53,9 @@ const ModelAccuracy = () => {
         });
       }
     } catch (error) {
-      console.error('Failed to load model accuracy:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load model accuracy:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to load metrics data.",
@@ -83,7 +85,9 @@ const ModelAccuracy = () => {
         await loadModelAccuracy();
       }
     } catch (error: any) {
-      console.error('Failed to run benchmark:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to run benchmark:', error);
+      }
       toast({
         title: "Benchmark Failed",
         description: error.message || "Failed to run benchmark evaluation.",

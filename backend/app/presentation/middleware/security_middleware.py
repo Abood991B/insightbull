@@ -76,7 +76,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def get_client_ip(self, request: Request) -> str:
         """Extract client IP from request"""
         # Only trust proxy headers if explicitly configured
-        trust_proxy = Settings().trust_proxy_headers if hasattr(Settings(), 'trust_proxy_headers') else False
+        trust_proxy = getattr(self, '_trust_proxy', None)
+        if trust_proxy is None:
+            self._trust_proxy = getattr(Settings(), 'trust_proxy_headers', False)
+            trust_proxy = self._trust_proxy
         if trust_proxy:
             forwarded_for = request.headers.get("X-Forwarded-For")
             if forwarded_for:
@@ -164,7 +167,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     
     def get_client_ip(self, request: Request) -> str:
         """Extract client IP from request"""
-        trust_proxy = Settings().trust_proxy_headers if hasattr(Settings(), 'trust_proxy_headers') else False
+        trust_proxy = getattr(self.settings, 'trust_proxy_headers', False)
         if trust_proxy:
             forwarded_for = request.headers.get("X-Forwarded-For")
             if forwarded_for:

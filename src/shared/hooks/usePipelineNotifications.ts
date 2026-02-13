@@ -54,7 +54,9 @@ export const usePipelineNotifications = (
           onPipelineComplete?.(event);
         }
       } catch (error) {
-        console.error('Failed to parse pipeline event:', error);
+        if (import.meta.env.DEV) {
+          console.error('Failed to parse pipeline event:', error);
+        }
       }
     };
 

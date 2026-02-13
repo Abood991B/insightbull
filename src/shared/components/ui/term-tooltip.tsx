@@ -143,7 +143,9 @@ export const TermTooltip = ({
   const termData = FINANCIAL_TERMS[term];
 
   if (!termData) {
-    console.warn(`TermTooltip: Unknown term "${term}"`);
+    if (import.meta.env.DEV) {
+      console.warn(`TermTooltip: Unknown term "${term}"`);
+    }
     return <>{children}</>;
   }
 

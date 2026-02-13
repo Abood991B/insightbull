@@ -59,7 +59,9 @@ const ApiConfig = () => {
         toast({ title: "Configuration Refreshed", description: "API configuration has been updated." });
       }
     } catch (error) {
-      console.error('Failed to load API configuration:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load API configuration:', error);
+      }
       toast({ title: "Error", description: "Failed to load API configuration.", variant: "destructive" });
     } finally {
       setLoading(false);
@@ -74,7 +76,9 @@ const ApiConfig = () => {
       toast({ title: "Success", description: `${service} API key updated successfully.` });
       await loadApiConfiguration();
     } catch (error) {
-      console.error(`Failed to update ${service}:`, error);
+      if (import.meta.env.DEV) {
+        console.error(`Failed to update ${service}:`, error);
+      }
       toast({ title: "Error", description: `Failed to update ${service} API key.`, variant: "destructive" });
     } finally {
       setSaving(false);
@@ -91,7 +95,9 @@ const ApiConfig = () => {
       });
       await loadApiConfiguration();
     } catch (error) {
-      console.error(`Failed to toggle ${collectorName}:`, error);
+      if (import.meta.env.DEV) {
+        console.error(`Failed to toggle ${collectorName}:`, error);
+      }
       toast({ title: "Error", description: `Failed to toggle ${collectorName}.`, variant: "destructive" });
     } finally {
       setToggling(prev => ({ ...prev, [collectorName]: false }));
@@ -108,7 +114,9 @@ const ApiConfig = () => {
       });
       await loadApiConfiguration();
     } catch (error) {
-      console.error(`Failed to toggle ${serviceName}:`, error);
+      if (import.meta.env.DEV) {
+        console.error(`Failed to toggle ${serviceName}:`, error);
+      }
       toast({ title: "Error", description: `Failed to toggle AI service.`, variant: "destructive" });
     } finally {
       setToggling(prev => ({ ...prev, [serviceName]: false }));
@@ -122,7 +130,9 @@ const ApiConfig = () => {
       toast({ title: "Settings Saved", description: "AI verification settings updated successfully." });
       await loadApiConfiguration();
     } catch (error) {
-      console.error('Failed to update AI settings:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to update AI settings:', error);
+      }
       toast({ title: "Error", description: "Failed to update AI settings.", variant: "destructive" });
     } finally {
       setSaving(false);

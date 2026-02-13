@@ -62,7 +62,9 @@ const OAuth2AdminAuth = () => {
         }
       }
     } catch (err) {
-      console.error('OAuth callback error:', err);
+      if (import.meta.env.DEV) {
+        console.error('OAuth callback error:', err);
+      }
       setError('An unexpected error occurred during authentication');
     } finally {
       setLoading(false);

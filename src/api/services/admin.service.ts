@@ -618,7 +618,7 @@ export interface MarketStatus {
 const getAuthHeaders = () => {
   // Get token from admin auth service session
   const session = authService.getSession();
-  const token = session?.accessToken || localStorage.getItem('admin_token');
+  const token = session?.accessToken || sessionStorage.getItem('admin_token') || localStorage.getItem('admin_token');
   
   return {
     'Authorization': `Bearer ${token}`,

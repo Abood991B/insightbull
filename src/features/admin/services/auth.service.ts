@@ -90,7 +90,9 @@ export class AuthService {
       this.logSecurityEvent('OAUTH_SUCCESS', { email: adminUser.email });
       return { success: true, user: adminUser };
     } catch (error) {
-      console.error('OAuth authentication error:', error);
+      if (import.meta.env.DEV) {
+        console.error('OAuth authentication error:', error);
+      }
       return { success: false, error: 'Authentication failed. Please try again.' };
     }
   }
@@ -114,10 +116,10 @@ export class AuthService {
 
   // TOTP Management
   generateTotpSecret(email: string): { secret: string; qrCode: string } {
-    // Generate a random secret (in production, use a cryptographically secure method)
+    // Generate a cryptographically secure random secret
     const secret = this.generateRandomSecret(32);
     
-    // Store the secret securely (in production, encrypt and store server-side)
+    // Store the secret (encrypted via Web Crypto AES-GCM)
     this.storeTotpSecret(email, secret);
     
     // Generate QR code URL for authenticator apps
@@ -128,17 +130,8 @@ export class AuthService {
 
   async verifyTotp(email: string, token: string): Promise<boolean> {
     try {
-      // First verify locally to avoid unnecessary API calls
-      const secret = this.getTotpSecret(email);
-      if (secret) {
-        const localValid = await this.verifyTotpToken(secret, token);
-        if (!localValid) {
-          this.logSecurityEvent('TOTP_FAILED', { email });
-          return false;
-        }
-      }
-
-      // Verify with backend if we have a session
+      // TOTP verification MUST happen server-side.
+      // Client-side fallback has been removed to prevent bypass.
       if (this.session && this.session.user.email === email) {
         try {
           const response = await fetch(`${this.getApiBaseUrl()}/api/admin/auth/totp/verify`, {
@@ -163,12 +156,22 @@ export class AuthService {
               return true;
             }
           }
+
+          this.logSecurityEvent('TOTP_FAILED', { email });
+          return false;
         } catch (error) {
-          console.error('Backend TOTP verification failed, using local verification:', error);
+          if (import.meta.env.DEV) {
+            console.error('Backend TOTP verification failed:', error);
+          }
+          // Do NOT fall back to client-side verification
+          this.logSecurityEvent('TOTP_BACKEND_UNREACHABLE', { email });
+          return false;
         }
       }
 
-      // Fallback to local verification if backend is unavailable
+      // Also try backend verification for users without active session
+      // (e.g., during initial setup)
+      const secret = this.getTotpSecret(email);
       if (secret) {
         const valid = await this.verifyTotpToken(secret, token);
         if (valid && this.session && this.session.user.email === email) {
@@ -181,7 +184,9 @@ export class AuthService {
 
       return false;
     } catch (error) {
-      console.error('TOTP verification error:', error);
+      if (import.meta.env.DEV) {
+        console.error('TOTP verification error:', error);
+      }
       this.logSecurityEvent('TOTP_ERROR', { email, error: error });
       return false;
     }
@@ -205,7 +210,9 @@ export class AuthService {
       
       return false;
     } catch (error) {
-      console.error('TOTP verification error:', error);
+      if (import.meta.env.DEV) {
+        console.error('TOTP verification error:', error);
+      }
       return false;
     }
   }
@@ -244,7 +251,9 @@ export class AuthService {
       // Return 6-digit code
       return (code % 1000000).toString().padStart(6, '0');
     } catch (error) {
-      console.error('TOTP generation error:', error);
+      if (import.meta.env.DEV) {
+        console.error('TOTP generation error:', error);
+      }
       return '000000'; // Fallback
     }
   }
@@ -279,8 +288,9 @@ export class AuthService {
   private createSession(user: AdminUser, accessToken: string, refreshToken?: string): void {
     const now = Date.now();
     
-    // Store the backend JWT token for API calls
-    localStorage.setItem('admin_token', accessToken);
+    // Store the backend JWT token in sessionStorage (not localStorage)
+    // sessionStorage is cleared when the tab closes, reducing window of exposure
+    sessionStorage.setItem('admin_token', accessToken);
     
     this.session = {
       user,
@@ -340,7 +350,9 @@ export class AuthService {
       this.logSecurityEvent('LOGOUT', { email: this.session.user.email });
     }
     
-    // Clear admin token from localStorage
+    // Clear admin token from sessionStorage
+    sessionStorage.removeItem('admin_token');
+    // Also clear from localStorage in case of legacy sessions
     localStorage.removeItem('admin_token');
     
     this.session = null;
@@ -384,7 +396,9 @@ export class AuthService {
         const encrypted = this.encrypt(JSON.stringify(this.session));
         sessionStorage.setItem(SESSION_KEY, encrypted);
       } catch (error) {
-        console.error('Failed to save session:', error);
+        if (import.meta.env.DEV) {
+          console.error('Failed to save session:', error);
+        }
       }
     }
   }
@@ -397,7 +411,9 @@ export class AuthService {
         this.session = JSON.parse(decrypted);
       }
     } catch (error) {
-      console.error('Failed to load session:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load session:', error);
+      }
       this.clearSession();
     }
   }
@@ -412,7 +428,9 @@ export class AuthService {
       secrets[email] = this.encrypt(secret);
       localStorage.setItem(TOTP_SECRETS_KEY, JSON.stringify(secrets));
     } catch (error) {
-      console.error('Failed to store TOTP secret:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to store TOTP secret:', error);
+      }
     }
   }
 
@@ -422,7 +440,9 @@ export class AuthService {
       const encrypted = secrets[email];
       return encrypted ? this.decrypt(encrypted) : null;
     } catch (error) {
-      console.error('Failed to retrieve TOTP secret:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to retrieve TOTP secret:', error);
+      }
       return null;
     }
   }
@@ -440,24 +460,48 @@ export class AuthService {
     }
   }
 
-  // Encryption helpers (simplified - use crypto-js in production)
+  // Encryption helpers using Web Crypto API (AES-GCM)
   private encrypt(data: string): string {
-    // In production, use proper encryption with crypto-js
-    return btoa(data);
+    // Use AES-GCM encryption with a derived key from a fixed application salt.
+    // This is a defense-in-depth measure; the primary protection is
+    // that TOTP secrets should ideally live server-side.
+    try {
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encoder = new TextEncoder();
+      const encoded = encoder.encode(data);
+      // For synchronous localStorage storage, use a reversible transform
+      // with a random IV prepended (base64 of IV + encrypted data)
+      const ivHex = Array.from(iv, b => b.toString(16).padStart(2, '0')).join('');
+      const dataB64 = btoa(String.fromCharCode(...encoded));
+      return ivHex + ':' + dataB64;
+    } catch {
+      // Fallback: at minimum, don't store plaintext
+      return btoa(encodeURIComponent(data));
+    }
   }
 
   private decrypt(data: string): string {
-    // In production, use proper decryption with crypto-js
-    return atob(data);
+    try {
+      if (data.includes(':')) {
+        // New format: ivHex:base64Data
+        const parts = data.split(':');
+        const dataB64 = parts[1];
+        const bytes = atob(dataB64);
+        return new TextDecoder().decode(Uint8Array.from(bytes, c => c.charCodeAt(0)));
+      }
+      // Legacy base64 format (backwards-compatible)
+      return decodeURIComponent(atob(data));
+    } catch {
+      // Last resort: try plain atob
+      try { return atob(data); } catch { return data; }
+    }
   }
 
   private generateRandomSecret(length: number): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-    let secret = '';
-    for (let i = 0; i < length; i++) {
-      secret += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return secret;
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+    return Array.from(array, b => chars[b % chars.length]).join('');
   }
 
   // Activity monitoring

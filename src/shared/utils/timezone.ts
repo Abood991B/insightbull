@@ -51,7 +51,9 @@ export const formatDateTime = (
     const date = typeof utcTimestamp === 'string' ? new Date(utcTimestamp) : utcTimestamp;
     
     if (isNaN(date.getTime())) {
-      console.warn('Invalid timestamp:', utcTimestamp);
+      if (import.meta.env.DEV) {
+        console.warn('Invalid timestamp:', utcTimestamp);
+      }
       return 'Invalid Date';
     }
 
@@ -78,7 +80,9 @@ export const formatDateTime = (
 
     return date.toLocaleString('en-US', defaultOptions);
   } catch (error) {
-    console.error('Error formatting datetime:', error, utcTimestamp);
+    if (import.meta.env.DEV) {
+      console.error('Error formatting datetime:', error, utcTimestamp);
+    }
     return 'Error formatting date';
   }
 };
@@ -150,7 +154,9 @@ export function formatTimeAgo(utcTimestamp: string | Date | null): string {
       });
     }
   } catch (error) {
-    console.error('Error in formatTimeAgo:', error, utcTimestamp);
+    if (import.meta.env.DEV) {
+      console.error('Error in formatTimeAgo:', error, utcTimestamp);
+    }
     return 'Unable to format';
   }
 }

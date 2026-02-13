@@ -21,6 +21,8 @@ from ...business.pipeline import DataPipeline, PipelineConfig, PipelineResult, P
 from ...business.processor import ProcessingConfig
 from ...infrastructure.collectors.base_collector import DateRange
 from ...infrastructure.rate_limiter import RateLimitHandler
+from app.presentation.dependencies.auth_dependencies import get_current_admin_user as get_current_admin
+from app.infrastructure.security.auth_service import AdminUser
 
 router = APIRouter(prefix="/api/admin/pipeline", tags=["Admin Pipeline Management"])
 
@@ -101,6 +103,7 @@ def get_pipeline() -> DataPipeline:
 @router.post("/configure", response_model=Dict[str, str])
 async def configure_pipeline(
     api_keys: APIKeysRequest,
+    current_admin: AdminUser = Depends(get_current_admin),
     pipeline: DataPipeline = Depends(get_pipeline)
 ):
     """
@@ -136,6 +139,7 @@ async def run_pipeline(
     config: PipelineConfigRequest,
     processing_config: Optional[ProcessingConfigRequest] = None,
     background_tasks: BackgroundTasks = None,
+    current_admin: AdminUser = Depends(get_current_admin),
     pipeline: DataPipeline = Depends(get_pipeline)
 ):
     """
@@ -207,7 +211,10 @@ async def run_pipeline(
 
 
 @router.get("/status", response_model=PipelineStatusResponse)
-async def get_pipeline_status(pipeline: DataPipeline = Depends(get_pipeline)):
+async def get_pipeline_status(
+    current_admin: AdminUser = Depends(get_current_admin),
+    pipeline: DataPipeline = Depends(get_pipeline)
+):
     """
     Get current pipeline status.
     
@@ -222,7 +229,10 @@ async def get_pipeline_status(pipeline: DataPipeline = Depends(get_pipeline)):
 
 
 @router.get("/result", response_model=Optional[PipelineResultResponse])
-async def get_pipeline_result(pipeline: DataPipeline = Depends(get_pipeline)):
+async def get_pipeline_result(
+    current_admin: AdminUser = Depends(get_current_admin),
+    pipeline: DataPipeline = Depends(get_pipeline)
+):
     """
     Get the result of the last pipeline execution.
     
@@ -254,7 +264,10 @@ async def get_pipeline_result(pipeline: DataPipeline = Depends(get_pipeline)):
 
 
 @router.post("/cancel", response_model=Dict[str, str])
-async def cancel_pipeline(pipeline: DataPipeline = Depends(get_pipeline)):
+async def cancel_pipeline(
+    current_admin: AdminUser = Depends(get_current_admin),
+    pipeline: DataPipeline = Depends(get_pipeline)
+):
     """
     Cancel the currently running pipeline.
     
@@ -281,7 +294,10 @@ async def cancel_pipeline(pipeline: DataPipeline = Depends(get_pipeline)):
 
 
 @router.get("/health", response_model=Dict[str, Any])
-async def pipeline_health_check(pipeline: DataPipeline = Depends(get_pipeline)):
+async def pipeline_health_check(
+    current_admin: AdminUser = Depends(get_current_admin),
+    pipeline: DataPipeline = Depends(get_pipeline)
+):
     """
     Perform health check on pipeline components.
     
@@ -300,7 +316,10 @@ async def pipeline_health_check(pipeline: DataPipeline = Depends(get_pipeline)):
 
 
 @router.get("/collectors", response_model=Dict[str, Any])
-async def get_collector_info(pipeline: DataPipeline = Depends(get_pipeline)):
+async def get_collector_info(
+    current_admin: AdminUser = Depends(get_current_admin),
+    pipeline: DataPipeline = Depends(get_pipeline)
+):
     """
     Get information about available data collectors.
     
@@ -328,7 +347,10 @@ async def get_collector_info(pipeline: DataPipeline = Depends(get_pipeline)):
 
 
 @router.get("/rate-limits", response_model=Dict[str, Dict[str, Any]])
-async def get_rate_limit_status(pipeline: DataPipeline = Depends(get_pipeline)):
+async def get_rate_limit_status(
+    current_admin: AdminUser = Depends(get_current_admin),
+    pipeline: DataPipeline = Depends(get_pipeline)
+):
     """
     Get rate limit status for all API sources.
     

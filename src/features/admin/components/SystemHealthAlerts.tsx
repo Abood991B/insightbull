@@ -67,7 +67,9 @@ const SystemHealthAlerts: React.FC<SystemHealthAlertsProps> = ({
         const data = await adminAPI.getStorageSettings();
         setStorageInfo(data);
       } catch (error) {
-        console.error('Failed to fetch storage info:', error);
+        if (import.meta.env.DEV) {
+          console.error('Failed to fetch storage info:', error);
+        }
       }
     };
 

@@ -81,7 +81,9 @@ const WatchlistManager = () => {
         });
       }
     } catch (error) {
-      console.error('Failed to load watchlist:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load watchlist:', error);
+      }
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to load watchlist. Please try again.",
@@ -98,7 +100,9 @@ const WatchlistManager = () => {
       const stocks = await adminAPI.searchStockSymbols(query);
       setAvailableStocks(stocks);
     } catch (error) {
-      console.error('Failed to load available stocks:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load available stocks:', error);
+      }
       // Don't show toast for this as it's background loading
     }
   };
@@ -128,7 +132,9 @@ const WatchlistManager = () => {
       setStockSearchOpen(false);
       await loadWatchlist(); // Reload the watchlist
     } catch (error) {
-      console.error('Failed to add stock:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to add stock:', error);
+      }
       const errorMessage = error instanceof Error ? error.message : `Failed to add ${symbol}. Please try again.`;
       toast({
         title: "Error",
@@ -146,11 +152,15 @@ const WatchlistManager = () => {
       setIsUpdating(true);
       const response = await adminAPI.toggleStock(stock);
       
-      console.log('Toggle response:', response);
+      if (import.meta.env.DEV) {
+        console.log('Toggle response:', response);
+      }
       
       // The backend returns updated_watchlist in the response
       if (response.updated_watchlist) {
-        console.log('Updated watchlist from API:', response.updated_watchlist);
+        if (import.meta.env.DEV) {
+          console.log('Updated watchlist from API:', response.updated_watchlist);
+        }
         setWatchlistData(response.updated_watchlist);
       } else {
         // Fallback: reload from API if not in response
@@ -163,7 +173,9 @@ const WatchlistManager = () => {
         description: `${stock} has been ${action}.`,
       });
     } catch (error) {
-      console.error('Failed to toggle stock:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to toggle stock:', error);
+      }
       toast({
         title: "Error",
         description: `Failed to update ${stock}. Please try again.`,

@@ -93,7 +93,9 @@ const SystemLogs = () => {
       setPage(currentPage + 1);
 
     } catch (error) {
-      console.error('Failed to load logs:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to load logs:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to load system logs. Please try again.",
@@ -142,7 +144,9 @@ const SystemLogs = () => {
         description: "System logs downloaded successfully.",
       });
     } catch (error) {
-      console.error('Failed to download logs:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to download logs:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to download system logs. Please try again.",
@@ -170,7 +174,9 @@ const SystemLogs = () => {
       // Refresh the logs list
       loadLogs(true);
     } catch (error) {
-      console.error('Failed to clear logs:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to clear logs:', error);
+      }
       toast({
         title: "Error",
         description: "Failed to clear system logs. Please try again.",

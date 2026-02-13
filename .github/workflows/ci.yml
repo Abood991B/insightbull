@@ -31,11 +31,9 @@ jobs:
 
       - name: Lint
         run: npx eslint . --max-warnings 0
-        continue-on-error: true
 
       - name: Run tests
         run: npx vitest run --reporter=verbose
-        continue-on-error: true
 
       - name: Build
         run: npm run build
@@ -65,11 +63,9 @@ jobs:
 
       - name: Lint with Ruff
         run: ruff check .
-        continue-on-error: true
 
       - name: Run tests
         run: pytest --tb=short -q
-        continue-on-error: true
         env:
           DATABASE_URL: "sqlite+aiosqlite:///./data/test.db"
           API_ENCRYPTION_KEY: "ci-test-key-not-for-production-use"
