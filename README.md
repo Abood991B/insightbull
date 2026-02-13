@@ -14,6 +14,17 @@
 
 The platform aggregates financial news from multiple sources, applies hybrid AI sentiment analysis (FinBERT + Google Gemma 3 27B), and correlates sentiment trends with stock price movements to help retail investors, financial analysts, and researchers make informed decisions.
 
+<img width="1920" height="1080" alt="Main Dashboard Screenshot" src="https://github.com/user-attachments/assets/3edaab38-d2c7-4f92-b301-96d8148e3ec0" />
+
+<img width="1920" height="1705" alt="Stock Analysis Screenshot" src="https://github.com/user-attachments/assets/5a18ea41-fce8-4d4e-90c1-cb950c17707c" />
+
+<img width="1920" height="963" alt="Sentiment vs Price Analysis Screenshot" src="https://github.com/user-attachments/assets/57709804-2dc7-45d9-a924-51b5828bdbfa" />
+
+<img width="1920" height="1245" alt="Admin Dashboard Screenshot" src="https://github.com/user-attachments/assets/3a3392fa-bb07-4a08-8259-002abc76e980" />
+
+<img width="1920" height="2748" alt="Scheduler Manager Screenshot" src="https://github.com/user-attachments/assets/946de31f-38b8-4b75-afb5-4bbba4304815" />
+
+
 ### Key Highlights
 
 | Feature | Description |
