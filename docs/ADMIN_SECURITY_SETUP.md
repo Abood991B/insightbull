@@ -65,7 +65,7 @@ VITE_GOOGLE_CLIENT_ID=your_client_id_here
 VITE_OAUTH_REDIRECT_URI=http://localhost:8080/admin
 VITE_API_BASE_URL=http://localhost:8000
 VITE_SESSION_TIMEOUT=1800000
-VITE_TOTP_ISSUER=StockDashboard
+VITE_TOTP_ISSUER=InsightBull
 ```
 
 **Backend** (`backend/.env` — all secrets):

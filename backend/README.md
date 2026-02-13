@@ -1,6 +1,6 @@
-# Insight Stock Dashboard - Backend
+# InsightBull - Backend
 
-> FastAPI backend for the Insight Stock Dashboard. For full project documentation, see the [main README](../README.md).
+> FastAPI backend for InsightBull. For full project documentation, see the [main README](../README.md).
 
 ## Quick Start
 

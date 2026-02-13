@@ -12,8 +12,8 @@
 ## 1. Clone Repository
 
 ```bash
-git clone https://github.com/Abood991B/insight-stock-dash.git
-cd insight-stock-dash
+git clone https://github.com/Abood991B/insightbull.git
+cd insightbull
 ```
 
 ---

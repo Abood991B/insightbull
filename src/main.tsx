@@ -1,5 +1,5 @@
 /*
- * Insight Stock Dashboard
+ * InsightBull
  * Copyright (C) 2025-2026 Abdulrahman Baidaq
  *
  * This program is free software: you can redistribute it and/or modify

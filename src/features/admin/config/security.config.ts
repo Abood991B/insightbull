@@ -21,7 +21,7 @@ export const securityConfig = {
   },
 
   totp: {
-    issuer: import.meta.env.VITE_TOTP_ISSUER || 'Stock Market Sentiment Dashboard',
+    issuer: import.meta.env.VITE_TOTP_ISSUER || 'InsightBull',
     algorithm: 'SHA1',
     digits: 6,
     period: 30,

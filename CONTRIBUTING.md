@@ -1,4 +1,4 @@
-# Contributing to Insight Stock Dashboard
+# Contributing to InsightBull
 
 Thank you for your interest in contributing! This guide will help you get started.
 

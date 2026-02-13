@@ -33,12 +33,12 @@ describe('Accessibility Compliance', () => {
     render(
       <div>
         <img src="/stock-chart.png" alt="AAPL stock price chart for the last 30 days" />
-        <img src="/logo.png" alt="Insight Stock Dashboard logo" />
+        <img src="/logo.png" alt="InsightBull logo" />
       </div>
     );
     
     expect(screen.getByAltText(/AAPL stock price chart/i)).toBeInTheDocument();
-    expect(screen.getByAltText(/Insight Stock Dashboard logo/i)).toBeInTheDocument();
+    expect(screen.getByAltText(/InsightBull logo/i)).toBeInTheDocument();
   });
 
   // TC-FE068: Form inputs have labels

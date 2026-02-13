@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
-        description='Database Management CLI for Insight Stock Dashboard',
+        description='Database Management CLI for InsightBull',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

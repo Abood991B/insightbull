@@ -197,7 +197,7 @@ class StorageManager:
             backup_timestamp = utc_now()
             # Format backup ID with date for better readability
             date_str = backup_timestamp.strftime("%Y%m%d_%H%M%S")
-            backup_id = f"Insight_stock_backup_{date_str}"
+            backup_id = f"InsightBull_backup_{date_str}"
             
             # Get current data counts for backup metadata
             metrics = await self.calculate_storage_metrics()

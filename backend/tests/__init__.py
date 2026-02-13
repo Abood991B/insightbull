@@ -1,5 +1,5 @@
 """
-Insight Stock Dashboard Test Suite
+InsightBull Test Suite
 ===================================
 
 Comprehensive test suite for the Stock Market Sentiment Analysis Dashboard.

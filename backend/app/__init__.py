@@ -1,5 +1,5 @@
 """
-Insight Stock Dashboard Backend
+InsightBull Backend
 ===============================
 
 A FastAPI-based backend system for sentiment analysis and stock market insights.

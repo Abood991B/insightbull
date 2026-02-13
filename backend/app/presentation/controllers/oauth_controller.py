@@ -210,7 +210,7 @@ async def setup_totp(
         secret = base64.b32encode(secrets.token_bytes(20)).decode('utf-8')
         
         # Create QR code URL for authenticator apps
-        issuer = "Stock Market Dashboard"
+        issuer = "InsightBull"
         otpauth_url = f"otpauth://totp/{quote(issuer)}:{quote(email)}?secret={secret}&issuer={quote(issuer)}"
         
         logger.info("TOTP setup initiated", email=email)

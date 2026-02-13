@@ -1,4 +1,4 @@
-# Insight Stock Dashboard
+# InsightBull
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-009688.svg?style=flat&logo=FastAPI&logoColor=white)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18.3.1-61DAFB.svg?style=flat&logo=react&logoColor=white)](https://reactjs.org)
@@ -10,7 +10,7 @@
 
 ## Overview
 
-**Insight Stock Dashboard** is a production-ready, full-stack web application that combines real-time sentiment analysis with stock market data to provide actionable insights. Built as a Final Year Project (FYP), it bridges the gap between qualitative market psychology and quantitative financial data.
+**InsightBull** is a production-ready, full-stack web application that combines real-time sentiment analysis with stock market data to provide actionable insights. Built as a Final Year Project (FYP), it bridges the gap between qualitative market psychology and quantitative financial data.
 
 The platform aggregates financial news from multiple sources, applies hybrid AI sentiment analysis (FinBERT + Google Gemma 3 27B), and correlates sentiment trends with stock price movements to help retail investors, financial analysts, and researchers make informed decisions.
 
@@ -37,7 +37,7 @@ AVGO  ORCL  PLTR  IBM   CRM   INTU  QCOM  TXN   AMAT  MU
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         INSIGHT STOCK DASHBOARD                         │
+│                              INSIGHTBULL                                │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
@@ -179,8 +179,8 @@ src/
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/Abood991B/insight-stock-dash.git
-cd insight-stock-dash
+git clone https://github.com/Abood991B/insightbull.git
+cd insightbull
 ```
 
 ### 2. Backend Setup
@@ -243,7 +243,7 @@ Frontend runs at: `http://localhost:8080`
 ## Project Structure
 
 ```
-insight-stock-dashboard/
+insightbull/
 ├── backend/                          # Python/FastAPI Backend
 │   ├── app/
 │   │   ├── presentation/             # API routes and schemas
@@ -394,7 +394,7 @@ VITE_OAUTH_REDIRECT_URI=http://localhost:8080/admin/auth/callback
 
 # Session Configuration
 VITE_SESSION_TIMEOUT=1800000
-VITE_TOTP_ISSUER=Stock Market Sentiment Dashboard
+VITE_TOTP_ISSUER=InsightBull
 
 # API Connection
 VITE_API_BASE_URL=http://127.0.0.1:8000

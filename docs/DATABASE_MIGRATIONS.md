@@ -1,6 +1,6 @@
 # Database Migration Management
 
-This document provides comprehensive information about managing database migrations in the Insight Stock Dashboard backend.
+This document provides comprehensive information about managing database migrations in the InsightBull backend.
 
 ## Overview
 

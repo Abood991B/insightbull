@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # YFinance - No API key required (free and unlimited)
     
     # Application Settings
-    app_name: str = "Insight Stock Dashboard"
+    app_name: str = "InsightBull"
     app_version: str = "1.0.0"
     debug: bool = Field(default=False, description="Enable debug mode")
     environment: str = Field(default="production", description="Environment: development, staging, production")

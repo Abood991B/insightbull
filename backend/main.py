@@ -2,8 +2,7 @@
 Main FastAPI Application
 ========================
 
-Insight Stock Dashboard
-Copyright (C) 2025-2026 Abdulrahman Baidaq
+InsightBullCopyright (C) 2025-2026 Abdulrahman Baidaq
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,7 +17,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-Entry point for the Insight Stock Dashboard backend.
+Entry point for the InsightBull backend.
 Implements the 5-layer architecture with proper dependency injection.
 """
 
@@ -254,7 +253,7 @@ async def lifespan(app: FastAPI):
     print_startup_banner()
     
     # Startup
-    logger.info("Starting Insight Stock Dashboard Backend")
+    logger.info("Starting InsightBull Backend")
     
     # Initialize database
     await init_database()
@@ -275,7 +274,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    logger.info("Shutting down Insight Stock Dashboard Backend")
+    logger.info("Shutting down InsightBull Backend")
     
     # Stop Scheduler
     await scheduler.stop()

@@ -1,5 +1,5 @@
 /**
- * Frontend Test Suite for Insight Stock Dashboard
+ * Frontend Test Suite for InsightBull
  * 
  * Test Organization:
  * - TC-FE001-TC-FE020: UI Component Tests
