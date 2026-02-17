@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-> **AI-Powered Stock Market Sentiment Analysis Platform for Retail Investors**
+> **Stock Market Sentiment Analysis Platform for Retail Investors**
 
 ## Overview
 
